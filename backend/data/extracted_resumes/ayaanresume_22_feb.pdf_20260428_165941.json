@@ -1,0 +1,479 @@
+{
+  "source_filename": "ayaanresume_22_feb.pdf",
+  "saved_at_utc": "2026-04-28T16:59:41.658510Z",
+  "data": {
+    "work_experience_years": "N/A",
+    "profiles": {
+      "urls": [
+        "https://apps.apple.com/in/app/photosage/id6740922284",
+        "https://ayaankhan2812.netlify.app/",
+        "https://github.com/ayaankhan28",
+        "https://github.com/runablehq/mcp_ctl",
+        "https://timesofindia.indiatimes.com/city/bengaluru/gamer-controls-car-in-racing-game-with-gestures-instead-of-wheel/articleshow/110283734.cms",
+        "https://www.business-standard.com/content/specials/scaler-school-of-technology-students-create-ai-companion-to-simplify-interview-prep-125010800921_1.html",
+        "https://www.deccanherald.com/india/karnataka/bengaluru/student-develops-system-to-control-pc-racing-games-with-hand-gestures-3021121",
+        "https://www.edexlive.com/news/2025/Mar/05/while-developing-photosage-these-students-top-priority-was-user-privacy?utm_source=perplexity",
+        "https://www.edexlive.com/opinion/2024/Dec/26/scaler-companion-three-students-one-amazing-gen-ai-tool",
+        "https://www.linkedin.com/in/ayaankhan2812/",
+        "https://www.siliconindia.com/news/startups/student-of-scaler-school-of-technology-develops-innovative-hand-gesture-control-for-racing-game-nid-229267-cid-19.html"
+      ],
+      "github_url": "https://github.com/ayaankhan28",
+      "github_username": "ayaankhan28",
+      "codeforces_url": null,
+      "codeforces_username": null,
+      "leetcode_url": null,
+      "leetcode_username": null,
+      "codechef_url": null,
+      "codechef_username": null,
+      "atcoder_url": null,
+      "atcoder_username": null
+    },
+    "platform_stats": {
+      "codeforces": null,
+      "leetcode": null,
+      "codechef": null,
+      "atcoder": null,
+      "errors": {}
+    },
+    "github_analysis": {
+      "inferred_username": "ayaankhan28",
+      "repositories": [
+        {
+          "repository": {
+            "url": "https://github.com/runablehq/mcp_ctl",
+            "owner": "runablehq",
+            "name": "mcp_ctl",
+            "matched_by_title": false
+          },
+          "analysis": {
+            "repository_url": "https://github.com/runablehq/mcp_ctl",
+            "project_name": "mcp_ctl",
+            "full_repo_name": "runablehq/mcp_ctl",
+            "primary_language": "JavaScript",
+            "languages_breakdown": {
+              "JavaScript": "50.03%",
+              "TypeScript": "49.97%"
+            },
+            "repository_description": "A package manager to manage all your mcp servers across platforms",
+            "identified_tech_stack_dependencies": [
+              "@hono/node-server",
+              "@types/node",
+              "@types/yargs",
+              "chalk",
+              "dotenv",
+              "drizzle-kit",
+              "drizzle-orm",
+              "hono",
+              "inquirer",
+              "postgres",
+              "tsup",
+              "tsx",
+              "typescript",
+              "yargs"
+            ],
+            "target_username": "ayaankhan28",
+            "target_user_role": "External Open-Source Contributor",
+            "target_user_code_retention_audit": {
+              "target_user_surviving_lines": 3851,
+              "total_project_lines": 6997,
+              "tracked_user_emails": [
+                "98885614+ayaankhan28@users.noreply.github.com"
+              ],
+              "surviving_percentage": "55.04%"
+            },
+            "target_user_recent_commits": [
+              {
+                "sha": "2313271",
+                "message": "refactor: Turn it into monorepo",
+                "date": "2025-04-20T09:04:43Z",
+                "lines_added": 796,
+                "lines_deleted": 77,
+                "net_churn": 719,
+                "total_lines_changed": 873
+              },
+              {
+                "sha": "f7f7925",
+                "message": "feat: Add registry to the mcpctl repo (#9)",
+                "date": "2025-04-24T13:45:46Z",
+                "lines_added": 3068,
+                "lines_deleted": 342,
+                "net_churn": 2726,
+                "total_lines_changed": 3410
+              },
+              {
+                "sha": "fa7f012",
+                "message": "Feat: Added /packages[GET,POST] for adding and fetching packages (#13)",
+                "date": "2025-04-28T09:51:38Z",
+                "lines_added": 58,
+                "lines_deleted": 2,
+                "net_churn": 56,
+                "total_lines_changed": 60
+              },
+              {
+                "sha": "9e52916",
+                "message": "feat:Added package instructions (#11)",
+                "date": "2025-04-28T10:37:06Z",
+                "lines_added": 9,
+                "lines_deleted": 0,
+                "net_churn": 9,
+                "total_lines_changed": 9
+              },
+              {
+                "sha": "05c920d",
+                "message": "fix: added type casting to input type as sting (#14)",
+                "date": "2025-04-30T09:24:18Z",
+                "lines_added": 1,
+                "lines_deleted": 1,
+                "net_churn": 0,
+                "total_lines_changed": 2
+              }
+            ],
+            "target_user_pr_stats": {
+              "total_merged_prs": 5,
+              "prs": [
+                {
+                  "number": 14,
+                  "title": "fix: added type casting to input type as sting",
+                  "additions": 1,
+                  "deletions": 1,
+                  "changed_files": 1
+                },
+                {
+                  "number": 13,
+                  "title": "Feat: Added /packages[GET,POST] for adding and fetching packages",
+                  "additions": 58,
+                  "deletions": 2,
+                  "changed_files": 3
+                },
+                {
+                  "number": 11,
+                  "title": "feat:Added package instructions",
+                  "additions": 9,
+                  "deletions": 0,
+                  "changed_files": 3
+                },
+                {
+                  "number": 10,
+                  "title": "refactor into monorepo",
+                  "additions": 796,
+                  "deletions": 77,
+                  "changed_files": 14
+                },
+                {
+                  "number": 9,
+                  "title": "feat: Add registry to the mcpctl repo",
+                  "additions": 3784,
+                  "deletions": 339,
+                  "changed_files": 27
+                }
+              ]
+            },
+            "scoring_breakdown": {
+              "overall_contribution_score": 0.8827,
+              "evaluation_role_profile": "job",
+              "score_breakdown_normalized": {
+                "code_ownership": 0.5504,
+                "pr_depth": 1.0,
+                "repo_quality": 1.0,
+                "reality": 0.6377,
+                "collaborator": 0.9
+              },
+              "applied_weights": {
+                "code_ownership": 0.3,
+                "pr_depth": 0.3,
+                "repo_quality": 0.2,
+                "reality": 0.2,
+                "collaborator": 0.1
+              }
+            }
+          },
+          "score": {
+            "overall_contribution_score": 0.8827,
+            "evaluation_role_profile": "job",
+            "score_breakdown_normalized": {
+              "code_ownership": 0.5504,
+              "pr_depth": 1.0,
+              "repo_quality": 1.0,
+              "reality": 0.6377,
+              "collaborator": 0.9
+            },
+            "applied_weights": {
+              "code_ownership": 0.3,
+              "pr_depth": 0.3,
+              "repo_quality": 0.2,
+              "reality": 0.2,
+              "collaborator": 0.1
+            }
+          }
+        },
+        {
+          "repository": {
+            "url": "https://github.com/ayaankhan28/hackathon",
+            "owner": "ayaankhan28",
+            "name": "hackathon",
+            "matched_by_title": true
+          },
+          "analysis": {
+            "repository_url": "https://github.com/ayaankhan28/hackathon",
+            "project_name": "hackathon",
+            "full_repo_name": "ayaankhan28/hackathon",
+            "primary_language": "Python",
+            "languages_breakdown": {
+              "Python": "66.06%",
+              "CSS": "18.83%",
+              "HTML": "15.11%"
+            },
+            "repository_description": null,
+            "identified_tech_stack_dependencies": [],
+            "target_username": "ayaankhan28",
+            "target_user_role": "Owner",
+            "target_user_code_retention_audit": {
+              "target_user_surviving_lines": 465,
+              "total_project_lines": 465,
+              "tracked_user_emails": [
+                "98885614+ayaankhan28@users.noreply.github.com"
+              ],
+              "surviving_percentage": "100.0%"
+            },
+            "target_user_recent_commits": [
+              {
+                "sha": "99425bb",
+                "message": "Initial commit",
+                "date": "2023-09-23T10:52:26Z",
+                "lines_added": 22,
+                "lines_deleted": 0,
+                "net_churn": 22,
+                "total_lines_changed": 22
+              },
+              {
+                "sha": "49da72c",
+                "message": "Update README.md",
+                "date": "2023-09-24T06:53:11Z",
+                "lines_added": 102,
+                "lines_deleted": 1,
+                "net_churn": 101,
+                "total_lines_changed": 103
+              },
+              {
+                "sha": "4cac8cc",
+                "message": "Update README.md",
+                "date": "2023-09-24T06:54:19Z",
+                "lines_added": 2,
+                "lines_deleted": 2,
+                "net_churn": 0,
+                "total_lines_changed": 4
+              },
+              {
+                "sha": "b635b26",
+                "message": "Add files via upload",
+                "date": "2023-09-24T07:21:31Z",
+                "lines_added": 295,
+                "lines_deleted": 0,
+                "net_churn": 295,
+                "total_lines_changed": 295
+              },
+              {
+                "sha": "771bed6",
+                "message": "Add files via upload",
+                "date": "2023-09-24T07:22:09Z",
+                "lines_added": 37,
+                "lines_deleted": 0,
+                "net_churn": 37,
+                "total_lines_changed": 37
+              },
+              {
+                "sha": "53e3353",
+                "message": "Create IMP points",
+                "date": "2023-09-24T07:25:37Z",
+                "lines_added": 2,
+                "lines_deleted": 0,
+                "net_churn": 2,
+                "total_lines_changed": 2
+              },
+              {
+                "sha": "d2269e5",
+                "message": "Update IMP points",
+                "date": "2023-09-24T07:26:02Z",
+                "lines_added": 1,
+                "lines_deleted": 1,
+                "net_churn": 0,
+                "total_lines_changed": 2
+              },
+              {
+                "sha": "28e5af0",
+                "message": "Update IMP points",
+                "date": "2023-09-24T07:28:47Z",
+                "lines_added": 1,
+                "lines_deleted": 0,
+                "net_churn": 1,
+                "total_lines_changed": 1
+              },
+              {
+                "sha": "12faf48",
+                "message": "Update README.md",
+                "date": "2023-09-24T07:31:23Z",
+                "lines_added": 8,
+                "lines_deleted": 1,
+                "net_churn": 7,
+                "total_lines_changed": 9
+              }
+            ],
+            "target_user_pr_stats": {
+              "total_merged_prs": 0,
+              "prs": []
+            },
+            "scoring_breakdown": {
+              "overall_contribution_score": 0.4567,
+              "evaluation_role_profile": "job",
+              "score_breakdown_normalized": {
+                "code_ownership": 1.0,
+                "pr_depth": 0.0,
+                "repo_quality": 0.0465,
+                "reality": 0.2369,
+                "collaborator": 1.0
+              },
+              "applied_weights": {
+                "code_ownership": 0.3,
+                "pr_depth": 0.3,
+                "repo_quality": 0.2,
+                "reality": 0.2,
+                "collaborator": 0.1
+              }
+            }
+          },
+          "score": {
+            "overall_contribution_score": 0.4567,
+            "evaluation_role_profile": "job",
+            "score_breakdown_normalized": {
+              "code_ownership": 1.0,
+              "pr_depth": 0.0,
+              "repo_quality": 0.0465,
+              "reality": 0.2369,
+              "collaborator": 1.0
+            },
+            "applied_weights": {
+              "code_ownership": 0.3,
+              "pr_depth": 0.3,
+              "repo_quality": 0.2,
+              "reality": 0.2,
+              "collaborator": 0.1
+            }
+          }
+        },
+        {
+          "repository": {
+            "url": "https://github.com/ayaankhan28/iris-cli",
+            "owner": "ayaankhan28",
+            "name": "iris-cli",
+            "matched_by_title": true
+          },
+          "analysis": {
+            "repository_url": "https://github.com/ayaankhan28/iris-cli",
+            "project_name": "iris-cli",
+            "full_repo_name": "ayaankhan28/iris-cli",
+            "primary_language": "Python",
+            "languages_breakdown": {
+              "Python": "100.0%"
+            },
+            "repository_description": null,
+            "identified_tech_stack_dependencies": [
+              "GitPython",
+              "groq",
+              "psutil",
+              "rich"
+            ],
+            "target_username": "ayaankhan28",
+            "target_user_role": "Owner",
+            "target_user_code_retention_audit": {
+              "target_user_surviving_lines": 1521,
+              "total_project_lines": 1521,
+              "tracked_user_emails": [
+                "ayaan.khan2812@gmail.com"
+              ],
+              "surviving_percentage": "100.0%"
+            },
+            "target_user_recent_commits": [
+              {
+                "sha": "47fb4d0",
+                "message": "first commit",
+                "date": "2025-05-24T10:16:39Z",
+                "lines_added": 1012,
+                "lines_deleted": 0,
+                "net_churn": 1012,
+                "total_lines_changed": 1012
+              },
+              {
+                "sha": "21c25dc",
+                "message": "added better git info",
+                "date": "2025-05-24T10:41:05Z",
+                "lines_added": 16,
+                "lines_deleted": 16,
+                "net_churn": 0,
+                "total_lines_changed": 32
+              },
+              {
+                "sha": "d2557e7",
+                "message": "relasing version 0.1.6 with more file handling support",
+                "date": "2025-05-26T07:08:31Z",
+                "lines_added": 356,
+                "lines_deleted": 61,
+                "net_churn": 295,
+                "total_lines_changed": 417
+              },
+              {
+                "sha": "2575c5d",
+                "message": "[0.1.8] added new prompt and file reading",
+                "date": "2025-05-26T10:29:21Z",
+                "lines_added": 323,
+                "lines_deleted": 109,
+                "net_churn": 214,
+                "total_lines_changed": 432
+              }
+            ],
+            "target_user_pr_stats": {
+              "total_merged_prs": 0,
+              "prs": []
+            },
+            "scoring_breakdown": {
+              "overall_contribution_score": 0.5758,
+              "evaluation_role_profile": "job",
+              "score_breakdown_normalized": {
+                "code_ownership": 1.0,
+                "pr_depth": 0.0,
+                "repo_quality": 0.3521,
+                "reality": 0.5267,
+                "collaborator": 1.0
+              },
+              "applied_weights": {
+                "code_ownership": 0.3,
+                "pr_depth": 0.3,
+                "repo_quality": 0.2,
+                "reality": 0.2,
+                "collaborator": 0.1
+              }
+            }
+          },
+          "score": {
+            "overall_contribution_score": 0.5758,
+            "evaluation_role_profile": "job",
+            "score_breakdown_normalized": {
+              "code_ownership": 1.0,
+              "pr_depth": 0.0,
+              "repo_quality": 0.3521,
+              "reality": 0.5267,
+              "collaborator": 1.0
+            },
+            "applied_weights": {
+              "code_ownership": 0.3,
+              "pr_depth": 0.3,
+              "repo_quality": 0.2,
+              "reality": 0.2,
+              "collaborator": 0.1
+            }
+          }
+        }
+      ]
+    },
+    "raw_text_preview": "AYAAN KHAN\nAgent Orchestration Systems | Multi-Tenant Microservices | Real-Time AI Infrastructure | AWS\n9343282801|ayaan.khan2812@gmail.com |linkedin.com/in/ayaankhan2812 |github.com/ayaankhan28 |portfolio\nACHIEVEMENTS\n•Secured2nd positionas a solo participant in theEmerging Tech Hackathonby Metadome.ai\n•Got featured inTimes Of India ,Deccan Herald ,Business Standard ,EdexLive-1 ,EdexLive-2 ,Silicon India\n•Contributed to open-source developer CLI tool atRunnable mcp_ctl(GitHub ) with5+ merged pull requests.\nEXPERIENCE\nForward Deployed Engineer June 2025 – Sep 2025\nAiStudio (Remote – Dubai based)\n•Architecting amulti-agent orchestration systemfor enterprise data querying across CRM, Excel, and Salesforce usingPineconeandKnowledge\nGraphs.\n•Designed scalablemicroservices architecturewith modular skill execution, workflow composition, and state management for long-running\nagent tasks.\n•Built real-time data pipelines integrating vector search andGraph RAG, enabling low-latency contextual retrieval.\n•Deployed and managed services onAWS, focusing on reliability, logging, and production monitoring.\nSoftware Engineering Intern June 2024 – Feb 2025\nScaler Bangalore, India\n•Owned end-to-end development of an AI Support chatbot built onFastAPI microservices, reducing GPT queries by10%and human dependency\nby33%.\n•Designed amulti-model orchestration layerto compose and manage multiple LLM workflows with centralized observability (Langfuse).\n•Implementedreal-time communication layers using "
+  }
+}
