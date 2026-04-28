@@ -6,12 +6,13 @@ This is the backend service for the Kovidam Skill Graph project.
 
 - `app/`: Main application code
   - `api/`: API routes (v1)
-  - `agents/`: AI agents for various platforms (GitHub, Kaggle, etc.)
+  - `agents/`: AI agents for platforms (`atcoder`, `codechef`, `codeforces`, `github`, `hackerrank`, `kaggle`, `leetcode`, `linkedin`)
   - `services/`: Business logic services
   - `pipelines/`: Data ingestion and enrichment pipelines
-  - `integrations/`: Third-party service integrations
+  - `integrations/`: Third-party integrations (`atcoder`, `codechef`, `codeforces`, `github`, `hackerrank`, `kaggle`, `leetcode`, `linkedin`)
   - `db/`: Database configurations (Postgres, Vector, Graph)
   - `workers/`: Background job consumers
+  - `data/extracted_resumes/`: Auto-saved parsed resume JSON files
 - `tests/`: Unit and integration tests
 - `scripts/`: Utility scripts
 - `docker/`: Docker configuration files
@@ -52,3 +53,10 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 The API will be available at `http://localhost:8000`.
 You can access the interactive API documentation at `http://localhost:8000/docs`.
+
+## Resume Extraction Endpoint
+
+- `POST /resume/extract`
+- Accepts a PDF resume file (`multipart/form-data`, field: `file`)
+- Extracts profile URLs/usernames and coding platform stats
+- Saves output JSON locally in `backend/data/extracted_resumes/`

@@ -16,8 +16,23 @@ def _safe_get(url: str, timeout: int = 10) -> requests.Response:
 
 
 def get_atcoder_stats(username: str) -> Dict[str, Any]:
-    url = f"https://atcoder.jp/users/{username}"
-    response = _safe_get(url)
+    urls = [
+        f"https://atcoder.jp/users/{username}",
+        f"https://www.atcoder.jp/users/{username}",
+    ]
+
+    response = None
+    last_error: Optional[Exception] = None
+    for url in urls:
+        try:
+            response = _safe_get(url)
+            break
+        except Exception as exc:
+            last_error = exc
+
+    if response is None:
+        raise ValueError(f"Failed to fetch AtCoder profile for '{username}': {last_error}")
+
     soup = BeautifulSoup(response.text, "html.parser")
 
     highest_rating = "N/A"
