@@ -1,6 +1,6 @@
 {
   "source_filename": "Varun_Deep_Saini_Resume.pdf",
-  "saved_at_utc": "2026-04-28T06:34:31.905304Z",
+  "saved_at_utc": "2026-04-28T20:14:13.776213Z",
   "data": {
     "work_experience_years": "N/A",
     "profiles": {
@@ -33,10 +33,16 @@
         "highest_rating": "2126",
         "contests_participated": "26"
       },
-      "atcoder": null,
-      "errors": {
-        "atcoder": "HTTPSConnectionPool(host='atcoder.jp', port=443): Max retries exceeded with url: /users/sojabhai (Caused by NameResolutionError(\"HTTPSConnection(host='atcoder.jp', port=443): Failed to resolve 'atcoder.jp' ([Errno -5] No address associated with hostname)\"))"
-      }
+      "atcoder": {
+        "username": "sojabhai",
+        "highest_rating": "1485",
+        "contests_participated": "32"
+      },
+      "errors": {}
+    },
+    "github_analysis": {
+      "inferred_username": "varundeepsaini",
+      "repositories": []
     },
     "raw_text_preview": "Codeforces: https://codeforces.com/profile/sojabhai\n\nCodeChef: https://www.codechef.com/users/sojabhai\nAtCoder: https://atcoder.jp/users/sojabhai\nGitHub: https://github.com/varundeepsaini\n"
   }
