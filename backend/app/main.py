@@ -1,9 +1,12 @@
 import os
 import tempfile
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
+from app.config import load_environment
 from app.services.resume_parser import parse_resume_and_enrich, save_extracted_data_to_json
+
+load_environment()
 
 app = FastAPI(title="Kovidam Skill Graph API")
 
@@ -14,9 +17,14 @@ async def root():
 
 
 @app.post("/resume/extract")
-async def extract_resume(file: UploadFile = File(...)):
+async def extract_resume(
+    file: UploadFile = File(...),
+    role: str = Form(default="job"),
+):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    if role not in {"job", "internship"}:
+        raise HTTPException(status_code=400, detail="Role must be either 'job' or 'internship'")
 
     tmp_path = None
     try:
@@ -25,7 +33,7 @@ async def extract_resume(file: UploadFile = File(...)):
             tmp.write(content)
             tmp_path = tmp.name
 
-        result = parse_resume_and_enrich(tmp_path)
+        result = parse_resume_and_enrich(tmp_path, role=role)
         saved_json_path = save_extracted_data_to_json(result, file.filename)
         return {
             "filename": file.filename,
