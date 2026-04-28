@@ -33,7 +33,7 @@ async def extract_resume(
             tmp.write(content)
             tmp_path = tmp.name
 
-        result = parse_resume_and_enrich(tmp_path, role=role)
+        result = await parse_resume_and_enrich(tmp_path, role=role)
         saved_json_path = save_extracted_data_to_json(result, file.filename)
         return {
             "filename": file.filename,

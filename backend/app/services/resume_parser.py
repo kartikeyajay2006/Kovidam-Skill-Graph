@@ -53,6 +53,8 @@ def _extract_handles_and_urls(text: str) -> Dict[str, Any]:
         "codechef_username": None,
         "atcoder_url": None,
         "atcoder_username": None,
+        "kaggle_url": None,
+        "kaggle_username": None,
     }
 
     patterns = {
@@ -60,6 +62,7 @@ def _extract_handles_and_urls(text: str) -> Dict[str, Any]:
         "leetcode": re.compile(r"https?://(?:www\.)?leetcode\.com/([A-Za-z0-9_-]+)", re.IGNORECASE),
         "codechef": re.compile(r"https?://(?:www\.)?codechef\.com/users/([A-Za-z0-9_-]+)", re.IGNORECASE),
         "atcoder": re.compile(r"https?://(?:www\.)?atcoder\.jp/users/([A-Za-z0-9_-]+)", re.IGNORECASE),
+        "kaggle": re.compile(r"https?://(?:www\.)?kaggle\.com/([A-Za-z0-9_-]+)", re.IGNORECASE),
     }
 
     for url in urls:
@@ -93,7 +96,7 @@ def _extract_work_experience_years(text: str) -> str:
     return str(max_years)
 
 
-def parse_resume_and_enrich(
+async def parse_resume_and_enrich(
     file_path: str,
     role: str = "job",
 ) -> Dict[str, Any]:
@@ -105,9 +108,10 @@ def parse_resume_and_enrich(
         "leetcode": profile_data.get("leetcode_username"),
         "codechef": profile_data.get("codechef_username"),
         "atcoder": profile_data.get("atcoder_username"),
+        "kaggle": profile_data.get("kaggle_username"),
     }
 
-    platform_stats = fetch_all_platform_stats(handles)
+    platform_stats = await fetch_all_platform_stats(handles)
 
     # --- GitHub Integration ---
     github_scan_result = scan_resume_for_github(
