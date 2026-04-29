@@ -48,3 +48,4 @@ backend/kaggle_session.json
 *.dylib
 *.dll
 .env
+backend/.env
