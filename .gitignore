@@ -1,6 +1,6 @@
 # Environment files
 .env
-.env.*
+.env.
 backend/.env
 
 # Python cache/bytecode
@@ -49,3 +49,11 @@ backend/kaggle_session.json
 *.dll
 .env
 backend/.env
+
+# local env files
+.env
+.env.*
+!.env.example
+
+# nested env files
+**/.env
