@@ -47,3 +47,4 @@ backend/kaggle_session.json
 *.so
 *.dylib
 *.dll
+.env

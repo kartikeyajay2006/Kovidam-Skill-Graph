@@ -132,21 +132,19 @@ async def parse_resume_and_enrich(
                 score_job = score_repository(analysis, role="job")
                 score_internship = score_repository(analysis, role="internship")
                 selected_score = score_job if role == "job" else score_internship
-                analysis["scoring_breakdown"] = selected_score
-                analysis["scoring_profiles"] = {
-                    "job": score_job,
-                    "internship": score_internship,
+                analysis["scoring"] = {
+                    "selected_role_profile": role,
+                    "selected": selected_score,
+                    "profiles": {
+                        "job": score_job,
+                        "internship": score_internship,
+                    },
                 }
                 repo_scores_job.append(float(score_job.get("overall_contribution_score_100", 0.0)))
                 repo_scores_internship.append(float(score_internship.get("overall_contribution_score_100", 0.0)))
                 github_repos_data.append({
                     "repository": repo,
                     "analysis": analysis,
-                    "score": selected_score,
-                    "score_profiles": {
-                        "job": score_job,
-                        "internship": score_internship,
-                    }
                 })
             else:
                 github_repos_data.append({
