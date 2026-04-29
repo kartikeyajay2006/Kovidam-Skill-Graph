@@ -87,13 +87,10 @@ async def get_kaggle_data(username: str) -> Dict[str, Any]:
             return int(best_rank) if best_rank != float("inf") else 0
 
         try:
-            await page.goto("https://www.kaggle.com", wait_until="domcontentloaded", timeout=60000)
-            await page.wait_for_timeout(3000)
-
-            await page.goto(f"https://www.kaggle.com/{username}", wait_until="domcontentloaded", timeout=60000)
-            await page.wait_for_timeout(6000)
+            await page.goto(f"https://www.kaggle.com/{username}", wait_until="domcontentloaded", timeout=25000)
+            await page.wait_for_timeout(1500)
             await page.mouse.wheel(0, 2000)
-            await page.wait_for_timeout(1200)
+            await page.wait_for_timeout(500)
 
             # Primary source: parse Next.js payload (more stable than visible DOM labels)
             try:

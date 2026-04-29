@@ -1,4 +1,5 @@
 import inspect
+import asyncio
 from typing import Any, Dict
 
 from app.integrations.atcoder.client import get_atcoder_stats
@@ -18,22 +19,32 @@ async def fetch_all_platform_stats(handles: Dict[str, str]) -> Dict[str, Any]:
         "errors": {},
     }
 
-    for platform, fn in {
+    fetchers = {
         "codeforces": get_codeforces_stats,
         "leetcode": get_leetcode_stats,
         "codechef": get_codechef_stats,
         "atcoder": get_atcoder_stats,
         "kaggle": get_kaggle_data,
-    }.items():
+    }
+
+    async def run_one(platform: str, fn, username: str):
         username = handles.get(platform)
         if not username:
-            continue
+            return platform, None, None
         try:
             if inspect.iscoroutinefunction(fn):
-                result[platform] = await fn(username)
+                data = await fn(username)
             else:
-                result[platform] = fn(username)
+                data = await asyncio.to_thread(fn, username)
+            return platform, data, None
         except Exception as exc:
-            result["errors"][platform] = str(exc)
+            return platform, None, str(exc)
+
+    tasks = [run_one(platform, fn, handles.get(platform, "")) for platform, fn in fetchers.items()]
+    for platform, data, err in await asyncio.gather(*tasks):
+        if err:
+            result["errors"][platform] = err
+        elif data is not None:
+            result[platform] = data
 
     return result
