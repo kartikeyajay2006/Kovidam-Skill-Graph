@@ -121,27 +121,19 @@ async def parse_resume_and_enrich(
     
     github_repos_data = []
     inferred_username = github_scan_result.get("inferred_username")
-    repo_scores_job: List[float] = []
-    repo_scores_internship: List[float] = []
+    repo_scores_selected: List[float] = []
     
     if inferred_username:
         for repo in github_scan_result.get("repositories", []):
             url = repo.get("url")
             analysis = analyze_github_repo_by_url(url, inferred_username)
             if "error" not in analysis:
-                score_job = score_repository(analysis, role="job")
-                score_internship = score_repository(analysis, role="internship")
-                selected_score = score_job if role == "job" else score_internship
+                selected_score = score_repository(analysis, role=role)
                 analysis["scoring"] = {
                     "selected_role_profile": role,
                     "selected": selected_score,
-                    "profiles": {
-                        "job": score_job,
-                        "internship": score_internship,
-                    },
                 }
-                repo_scores_job.append(float(score_job.get("overall_contribution_score_100", 0.0)))
-                repo_scores_internship.append(float(score_internship.get("overall_contribution_score_100", 0.0)))
+                repo_scores_selected.append(float(selected_score.get("overall_contribution_score_100", 0.0)))
                 github_repos_data.append({
                     "repository": repo,
                     "analysis": analysis,
@@ -154,9 +146,7 @@ async def parse_resume_and_enrich(
                 })
 
     repo_count = len(github_repos_data)
-    avg_job = round(sum(repo_scores_job) / len(repo_scores_job), 3) if repo_scores_job else 0.0
-    avg_internship = round(sum(repo_scores_internship) / len(repo_scores_internship), 3) if repo_scores_internship else 0.0
-    active_role_score = avg_job if role == "job" else avg_internship
+    active_role_score = round(sum(repo_scores_selected) / len(repo_scores_selected), 3) if repo_scores_selected else 0.0
 
     return {
         "work_experience_years": _extract_work_experience_years(text),
@@ -168,18 +158,8 @@ async def parse_resume_and_enrich(
             "repositories": github_repos_data,
             "summary": {
                 "repo_count": repo_count,
-                "overall_score_100": round(active_role_score, 3),
+                "overall_score_100": active_role_score,
                 "overall_score_100_str": f"{active_role_score:.3f}",
-                "profiles": {
-                    "job": {
-                        "overall_score_100": avg_job,
-                        "overall_score_100_str": f"{avg_job:.3f}",
-                    },
-                    "internship": {
-                        "overall_score_100": avg_internship,
-                        "overall_score_100_str": f"{avg_internship:.3f}",
-                    },
-                },
             },
         },
         "raw_text_preview": text[:1500],

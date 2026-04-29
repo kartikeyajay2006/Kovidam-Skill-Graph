@@ -1,5 +1,6 @@
 import os
 import tempfile
+from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
@@ -19,12 +20,10 @@ async def root():
 @app.post("/resume/extract")
 async def extract_resume(
     file: UploadFile = File(...),
-    role: str = Form(default="job"),
+    role: Literal["job", "internship"] = Form(default="job"),
 ):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
-    if role not in {"job", "internship"}:
-        raise HTTPException(status_code=400, detail="Role must be either 'job' or 'internship'")
 
     tmp_path = None
     try:
