@@ -59,7 +59,7 @@ def _extract_handles_and_urls(text: str) -> Dict[str, Any]:
 
     patterns = {
         "codeforces": re.compile(r"https?://(?:www\.)?codeforces\.com/profile/([A-Za-z0-9_.-]+)", re.IGNORECASE),
-        "leetcode": re.compile(r"https?://(?:www\.)?leetcode\.com/([A-Za-z0-9_-]+)", re.IGNORECASE),
+        "leetcode": re.compile(r"https?://(?:www\.)?leetcode\.com/(?:u/)?([A-Za-z0-9_-]+)/?", re.IGNORECASE),
         "codechef": re.compile(r"https?://(?:www\.)?codechef\.com/users/([A-Za-z0-9_-]+)", re.IGNORECASE),
         "atcoder": re.compile(r"https?://(?:www\.)?atcoder\.jp/users/([A-Za-z0-9_-]+)", re.IGNORECASE),
         "kaggle": re.compile(r"https?://(?:www\.)?kaggle\.com/([A-Za-z0-9_-]+)", re.IGNORECASE),

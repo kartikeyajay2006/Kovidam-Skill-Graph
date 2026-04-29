@@ -1,6 +1,12 @@
 from app.services import resume_parser
 
 
+def test_extract_handles_and_urls_parses_leetcode_u_profile():
+    text = "LeetCode: https://leetcode.com/u/someName/"
+    extracted = resume_parser._extract_handles_and_urls(text)
+    assert extracted["leetcode_username"] == "someName"
+
+
 def test_parse_resume_and_enrich_uses_resume_username_and_role(monkeypatch):
     monkeypatch.setattr(
         resume_parser,
