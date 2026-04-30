@@ -87,6 +87,22 @@ Behavior:
 - processing is asynchronous,
 - in-process concurrency is capped by `RESUME_CONCURRENCY` (default: `2`).
 
+
+### `POST /hiring/shortlist`
+Form fields:
+- `files` (multiple PDFs, required)
+- `company_name` (required)
+- `position_title` (required)
+- `role` (`job` or `internship`, optional; default `internship`)
+- `required_skills_csv` (required, comma-separated; e.g. `python,fastapi,sql,git`)
+- `min_experience_years` (optional; default `0.0`)
+
+Behavior:
+- extracts all resumes,
+- computes deterministic fit score per candidate,
+- sorts candidates by fit score descending,
+- returns ranked shortlist with transparent score breakdown.
+
 Output includes:
 - `profiles`
 - `platform_stats`
@@ -118,6 +134,22 @@ curl -X POST "http://localhost:8000/resume/extract/batch" \
   -F "files=@/absolute/path/resume1.pdf" \
   -F "files=@/absolute/path/resume2.pdf" \
   -F "files=@/absolute/path/resume3.pdf"
+```
+
+
+## Quick Test (Hiring Shortlist)
+
+```bash
+curl -X POST "http://localhost:8000/hiring/shortlist" \
+  -F "company_name=Acme Labs" \
+  -F "position_title=Backend Intern" \
+  -F "role=internship" \
+  -F "required_skills_csv=python,fastapi,sql,git,github" \
+  -F "min_experience_years=0.5" \
+  -F "files=@/absolute/path/resume1.pdf" \
+  -F "files=@/absolute/path/resume2.pdf" \
+  -F "files=@/absolute/path/resume3.pdf" \
+  -F "files=@/absolute/path/resume4.pdf"
 ```
 
 ## Environment Variables
