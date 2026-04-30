@@ -6,8 +6,8 @@ This backend parses PDF resumes, enriches coding-profile data, audits GitHub rep
 
 ### API Layer
 - `backend/app/main.py`
-Purpose: FastAPI entrypoint and `/resume/extract` endpoint.
-What it does: accepts PDF + `role`, runs extraction pipeline, returns JSON, saves output file.
+Purpose: FastAPI entrypoint and resume extraction endpoints.
+What it does: accepts PDF(s) + `role`, runs extraction pipeline, returns JSON, saves output file.
 
 ### Configuration
 - `backend/app/config.py`
@@ -77,6 +77,16 @@ Form fields:
 - `file` (PDF, required)
 - `role` (`job` or `internship`, optional; default `job`)
 
+### `POST /resume/extract/batch`
+Form fields:
+- `files` (multiple PDFs, required)
+- `role` (`job` or `internship`, optional; default `job`)
+
+Behavior:
+- all files are accepted in one request,
+- processing is asynchronous,
+- in-process concurrency is capped by `RESUME_CONCURRENCY` (default: `2`).
+
 Output includes:
 - `profiles`
 - `platform_stats`
@@ -86,22 +96,37 @@ Output includes:
 ## Setup
 
 ```bash
-cd backend
+cd /home/kartikeyayadav/Desktop/kovidam-skill-graph/backend
+rm -rf venv
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
+export RESUME_CONCURRENCY=2
+export GITHUB_REPO_CONCURRENCY=2
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Docs UI:
 - `http://localhost:8000/docs`
 
+## Quick Test (Batch)
+
+```bash
+curl -X POST "http://localhost:8000/resume/extract/batch" \
+  -F "role=job" \
+  -F "files=@/absolute/path/resume1.pdf" \
+  -F "files=@/absolute/path/resume2.pdf" \
+  -F "files=@/absolute/path/resume3.pdf"
+```
+
 ## Environment Variables
 
 Create `backend/.env` with:
 - `GITHUB_PAT`
 - `OPENAI_API_KEY`
+- `RESUME_CONCURRENCY` (optional, default `2`)
+- `GITHUB_REPO_CONCURRENCY` (optional, default `3`)
 
 ## Output Storage
 

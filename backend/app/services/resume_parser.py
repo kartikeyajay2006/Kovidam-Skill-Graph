@@ -1,4 +1,6 @@
+import asyncio
 import json
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -16,6 +18,7 @@ load_environment()
 
 URL_PATTERN = re.compile(r"https?://[^\s)>,]+")
 YEARS_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years|yrs)", re.IGNORECASE)
+GITHUB_REPO_CONCURRENCY = max(1, int(os.getenv("GITHUB_REPO_CONCURRENCY", "3")))
 
 
 def extract_text_from_pdf(file_path: str) -> str:
@@ -100,7 +103,7 @@ async def parse_resume_and_enrich(
     file_path: str,
     role: str = "job",
 ) -> Dict[str, Any]:
-    text = extract_text_from_pdf(file_path)
+    text = await asyncio.to_thread(extract_text_from_pdf, file_path)
     profile_data = _extract_handles_and_urls(text)
 
     handles = {
@@ -113,37 +116,56 @@ async def parse_resume_and_enrich(
 
     platform_stats = await fetch_all_platform_stats(handles)
 
-    # --- GitHub Integration ---
     github_scan_result = scan_resume_for_github(
         text,
         force_username=profile_data.get("github_username"),
     )
-    
+
     github_repos_data = []
     inferred_username = github_scan_result.get("inferred_username")
     repo_scores_selected: List[float] = []
-    
+
+    async def analyze_one_repo(repo: Dict[str, Any], username: str, semaphore: asyncio.Semaphore):
+        url = repo.get("url")
+        async with semaphore:
+            analysis = await asyncio.to_thread(analyze_github_repo_by_url, url, username)
+            if "error" in analysis:
+                return {
+                    "repository": repo,
+                    "analysis": analysis,
+                    "error": analysis["error"],
+                }, None
+
+            selected_score = await asyncio.to_thread(score_repository, analysis, role)
+            analysis["scoring"] = {
+                "selected_role_profile": role,
+                "selected": selected_score,
+            }
+            score_value = float(selected_score.get("overall_contribution_score_100", 0.0))
+            return {
+                "repository": repo,
+                "analysis": analysis,
+            }, score_value
+
     if inferred_username:
-        for repo in github_scan_result.get("repositories", []):
-            url = repo.get("url")
-            analysis = analyze_github_repo_by_url(url, inferred_username)
-            if "error" not in analysis:
-                selected_score = score_repository(analysis, role=role)
-                analysis["scoring"] = {
-                    "selected_role_profile": role,
-                    "selected": selected_score,
-                }
-                repo_scores_selected.append(float(selected_score.get("overall_contribution_score_100", 0.0)))
+        repos = github_scan_result.get("repositories", [])
+        repo_semaphore = asyncio.Semaphore(GITHUB_REPO_CONCURRENCY)
+        tasks = [analyze_one_repo(repo, inferred_username, repo_semaphore) for repo in repos]
+        analyzed = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for repo, result in zip(repos, analyzed):
+            if isinstance(result, Exception):
                 github_repos_data.append({
                     "repository": repo,
-                    "analysis": analysis,
+                    "analysis": {"error": str(result)},
+                    "error": str(result),
                 })
-            else:
-                github_repos_data.append({
-                    "repository": repo,
-                    "analysis": analysis,
-                    "error": analysis["error"]
-                })
+                continue
+
+            payload, maybe_score = result
+            github_repos_data.append(payload)
+            if maybe_score is not None:
+                repo_scores_selected.append(maybe_score)
 
     repo_count = len(github_repos_data)
     active_role_score = round(sum(repo_scores_selected) / len(repo_scores_selected), 3) if repo_scores_selected else 0.0
