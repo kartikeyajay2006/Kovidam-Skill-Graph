@@ -3,71 +3,39 @@ import tempfile
 import asyncio
 import re
 import json
-import uuid
-import logging
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from app.config import load_environment
-from app.services.resume_parser import parse_resume_and_enrich
-from app.services.json_logger import save_raw_output
-from app.services.transformer import transform_resume_data
-from app.services.db_writer import save_to_db
-from app.utils.hash_utils import generate_resume_hash
-
-from app.db.postgres.session import engine
+from app.services.resume_parser import parse_resume_and_enrich, save_extracted_data_to_json
 
 load_environment()
 
-DEBUG_MODE = True
-logger = logging.getLogger(__name__)
-
 app = FastAPI(title="Kovidam Skill Graph API")
-
-try:
-    from app.models import Base
-    Base.metadata.create_all(bind=engine)
-    print("[DB DEBUG] Models loaded successfully and tables verified.")
-except Exception as e:
-    print(f"[DB DEBUG] Failed to load models or create tables: {e}")
-
-def _persist_data(raw_data: dict, filename: str, resume_hash: str):
-    trace_id = str(uuid.uuid4())
-    saved_json_path = None
-    
-    try:
-        structured_data = transform_resume_data(raw_data)
-        
-        # save_to_db handles its own prints: Session created, Inserting candidate_id=..., Commit successful
-        db_result = save_to_db(structured_data, trace_id, resume_hash)
-        
-    except Exception as e:
-        print(f"[DB ERROR] Exception outside of db_writer in persist layer: {e}")
-        logger.error(f"Error during DB persistence for trace {trace_id}: {e}", exc_info=True)
-
-    if DEBUG_MODE:
-        try:
-            saved_json_path = save_raw_output(raw_data, trace_id, filename)
-        except Exception as e:
-            logger.error(f"Error saving raw JSON for trace {trace_id}: {e}", exc_info=True)
-            
-    return saved_json_path
-
-def _remove_commits_from_response(extracted: dict):
-    if not isinstance(extracted, dict):
-        return
-    repos = extracted.get("github_analysis", {}).get("repositories", [])
-    for repo in repos:
-        if isinstance(repo, dict) and isinstance(repo.get("analysis"), dict):
-            analysis = repo["analysis"]
-            if "target_user_recent_commits" in analysis:
-                del analysis["target_user_recent_commits"]
 
 # Limit in-process resume parsing concurrency. Default: 2 at a time.
 RESUME_CONCURRENCY = max(1, int(os.getenv("RESUME_CONCURRENCY", "2")))
 resume_semaphore = asyncio.Semaphore(RESUME_CONCURRENCY)
 NOTES_AI_TIMEOUT_SECONDS = float(os.getenv("NOTES_AI_TIMEOUT_SECONDS", "1.8"))
+EXPERIENCE_KEYWORDS = [
+    "intern",
+    "internship",
+    "software engineer",
+    "developer",
+    "full stack",
+    "backend",
+    "frontend",
+    "sde",
+    "work experience",
+    "employment",
+]
+COMPANY_HINTS = [
+    "google", "microsoft", "amazon", "meta", "apple", "netflix", "adobe", "oracle",
+    "salesforce", "uber", "airbnb", "atlassian", "ibm", "intel", "nvidia", "sap",
+    "goldman sachs", "jpmorgan", "deutsche bank", "flipkart", "swiggy", "zomato",
+    "razorpay", "phonepe", "paytm", "infosys", "tcs", "wipro", "hcl", "accenture",
+]
 
 
 @app.get("/")
@@ -92,10 +60,11 @@ async def _process_resume_file(file: UploadFile, role: str):
         async with resume_semaphore:
             result = await parse_resume_and_enrich(tmp_path, role=role)
 
+        saved_json_path = save_extracted_data_to_json(result, file.filename)
         return {
             "filename": file.filename,
             "extracted": result,
-            "saved_json_path": None,
+            "saved_json_path": saved_json_path,
         }
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -204,21 +173,105 @@ def _project_evidence_score(extracted: dict) -> float:
 def _role_weights(role: str) -> dict:
     if role.lower() == "internship":
         return {
-            "skills": 0.40,
-            "github": 0.25,
+            "skills": 0.35,
+            "github": 0.22,
             "experience": 0.10,
             "platform": 0.15,
             "projects": 0.07,
             "profile": 0.03,
+            "experience_quality": 0.08,
         }
     return {
-        "skills": 0.35,
-        "github": 0.30,
-        "experience": 0.20,
+        "skills": 0.30,
+        "github": 0.25,
+        "experience": 0.18,
         "platform": 0.08,
         "projects": 0.05,
         "profile": 0.02,
+        "experience_quality": 0.12,
     }
+
+
+def _role_thresholds(role: str, min_experience_years: float) -> dict:
+    if role.lower() == "job":
+        return {
+            "min_skill_match_pct": 55.0,
+            "min_github_score_100": 35.0,
+            "min_experience_years": min_experience_years,
+        }
+    return {
+        "min_skill_match_pct": 0.0,
+        "min_github_score_100": 0.0,
+        "min_experience_years": min_experience_years,
+    }
+
+
+def _experience_quality_score(extracted: dict) -> tuple[float, dict]:
+    text = _normalize_text(extracted.get("raw_text_preview", ""))
+    years = _to_float(extracted.get("work_experience_years", "0"), 0.0)
+    keyword_hits = sum(1 for k in EXPERIENCE_KEYWORDS if k in text)
+    keyword_score = min(keyword_hits / 4.0, 1.0)
+    company_hits = [name for name in COMPANY_HINTS if name in text]
+    company_score = min(len(company_hits) / 2.0, 1.0)
+    years_score = min(years / 2.0, 1.0)
+    final = (years_score * 0.45) + (keyword_score * 0.35) + (company_score * 0.20)
+    return final, {
+        "years_score_100": round(years_score * 100.0, 3),
+        "keyword_score_100": round(keyword_score * 100.0, 3),
+        "company_signal_score_100": round(company_score * 100.0, 3),
+        "company_mentions": company_hits[:8],
+    }
+
+
+def _parse_csv_list(value: str) -> list[str]:
+    return [s.strip() for s in (value or "").split(",") if s.strip()]
+
+
+def _normalize_skill_set(skills: list[str]) -> set[str]:
+    return {_normalize_text(s) for s in skills if _normalize_text(s)}
+
+
+def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresholds: dict) -> tuple[bool, list[str], dict]:
+    matched_norm = _normalize_skill_set(fit.get("skills", {}).get("matched", []))
+    missing_must_have = [s for s in must_have_skills if _normalize_text(s) not in matched_norm]
+    rejection_reasons = []
+
+    skill_match_score_100 = _to_float(fit.get("breakdown", {}).get("skills_match_score_100"), 0.0)
+    github_score_100 = _to_float(fit.get("breakdown", {}).get("github_score_100"), 0.0)
+    experience_years = _to_float(fit.get("experience", {}).get("candidate_years"), 0.0)
+
+    if missing_must_have:
+        rejection_reasons.append(f"Missing must-have skills: {', '.join(missing_must_have)}")
+
+    if role == "job":
+        if skill_match_score_100 < thresholds["min_skill_match_pct"]:
+            rejection_reasons.append(
+                f"Skill match {skill_match_score_100:.3f} below minimum {thresholds['min_skill_match_pct']:.3f}"
+            )
+        if github_score_100 < thresholds["min_github_score_100"]:
+            rejection_reasons.append(
+                f"GitHub score {github_score_100:.3f} below minimum {thresholds['min_github_score_100']:.3f}"
+            )
+        if experience_years < thresholds["min_experience_years"]:
+            rejection_reasons.append(
+                f"Experience {experience_years:.3f} years below minimum {thresholds['min_experience_years']:.3f}"
+            )
+
+    decision_log = {
+        "role_profile": role,
+        "must_have_skills": must_have_skills,
+        "missing_must_have_skills": missing_must_have,
+        "applied_thresholds": thresholds,
+        "candidate_metrics": {
+            "skills_match_score_100": skill_match_score_100,
+            "github_score_100": github_score_100,
+            "experience_years": experience_years,
+            "experience_quality_score_100": _to_float(
+                fit.get("breakdown", {}).get("experience_quality_score_100"), 0.0
+            ),
+        },
+    }
+    return len(rejection_reasons) == 0, rejection_reasons, decision_log
 
 
 def _fallback_notes(role: str, fit: dict) -> list[str]:
@@ -307,6 +360,7 @@ def _candidate_company_fit(
     platform_score = _platform_strength_score(extracted.get("platform_stats", {}) or {})
     profile_score = _profile_completeness_score(extracted)
     project_evidence = _project_evidence_score(extracted)
+    experience_quality, experience_quality_meta = _experience_quality_score(extracted)
     weights = _role_weights(role)
 
     final = (
@@ -316,6 +370,7 @@ def _candidate_company_fit(
         + (platform_score * weights["platform"])
         + (project_evidence * weights["projects"])
         + (profile_score * weights["profile"])
+        + (experience_quality * weights["experience_quality"])
     )
 
     final_100 = round(final * 100.0, 3)
@@ -330,6 +385,7 @@ def _candidate_company_fit(
             "platform_strength_score_100": round(platform_score * 100.0, 3),
             "project_evidence_score_100": round(project_evidence * 100.0, 3),
             "profile_completeness_score_100": round(profile_score * 100.0, 3),
+            "experience_quality_score_100": round(experience_quality * 100.0, 3),
         },
         "criteria_used": {
             "role_profile": role.lower(),
@@ -344,6 +400,7 @@ def _candidate_company_fit(
         "experience": {
             "required_min_years": min_experience_years,
             "candidate_years": exp,
+            "quality_meta": experience_quality_meta,
         },
         "ranking_reason": (
             f"Matched {len(matched_skills)}/{len(required_skills) if required_skills else 0} required skills, "
@@ -360,14 +417,7 @@ async def extract_resume(
     role: Literal["job", "internship"] = Form(default="job"),
 ):
     try:
-        file_bytes = await file.read()
-        resume_hash = generate_resume_hash(file_bytes)
-        file.file.seek(0)
-        
-        data = await _process_resume_file(file, role)
-        data["saved_json_path"] = _persist_data(data["extracted"], data["filename"], resume_hash)
-        _remove_commits_from_response(data["extracted"])
-        return data
+        return await _process_resume_file(file, role)
     except HTTPException:
         raise
     except Exception as exc:
@@ -382,17 +432,11 @@ async def extract_resume_batch(
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
-    resume_hashes = []
-    for file in files:
-        file_bytes = await file.read()
-        resume_hashes.append(generate_resume_hash(file_bytes))
-        file.file.seek(0)
-
     tasks = [asyncio.create_task(_process_resume_file(file, role)) for file in files]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     response_items = []
-    for idx, (file, outcome) in enumerate(zip(files, results)):
+    for file, outcome in zip(files, results):
         if isinstance(outcome, Exception):
             response_items.append({
                 "filename": file.filename,
@@ -400,8 +444,6 @@ async def extract_resume_batch(
                 "error": str(outcome),
             })
         else:
-            outcome["saved_json_path"] = _persist_data(outcome["extracted"], outcome["filename"], resume_hashes[idx])
-            _remove_commits_from_response(outcome["extracted"])
             response_items.append({
                 "filename": file.filename,
                 "ok": True,
@@ -422,24 +464,21 @@ async def hiring_shortlist(
     company_name: str = Form(...),
     position_title: str = Form(...),
     required_skills_csv: str = Form(...),
+    must_have_skills_csv: str = Form(default=""),
     min_experience_years: float = Form(default=0.0),
 ):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
-    resume_hashes = []
-    for file in files:
-        file_bytes = await file.read()
-        resume_hashes.append(generate_resume_hash(file_bytes))
-        file.file.seek(0)
-
-    required_skills = [s.strip() for s in required_skills_csv.split(",") if s.strip()]
+    required_skills = _parse_csv_list(required_skills_csv)
+    must_have_skills = _parse_csv_list(must_have_skills_csv)
+    thresholds = _role_thresholds(role, min_experience_years)
 
     tasks = [asyncio.create_task(_process_resume_file(file, role)) for file in files]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     candidates = []
-    for idx, (file, outcome) in enumerate(zip(files, results)):
+    for file, outcome in zip(files, results):
         if isinstance(outcome, Exception):
             candidates.append({
                 "filename": file.filename,
@@ -451,26 +490,20 @@ async def hiring_shortlist(
         extracted = outcome.get("extracted", {})
         fit = _candidate_company_fit(extracted, required_skills, min_experience_years, role)
         fit["criteria_used"]["notes"] = await _generate_ai_notes(role, fit, extracted)
-
-        full_raw_data = {
-            "filename": outcome.get("filename") or file.filename,
-            "data": extracted,
-            "fit": fit,
-            "job": {
-                "company_name": company_name,
-                "position_title": position_title,
-                "role": role,
-                "required_skills": required_skills,
-                "min_experience_years": min_experience_years,
-            }
-        }
-        
-        saved_json_path = _persist_data(full_raw_data, full_raw_data["filename"], resume_hashes[idx])
+        eligible, rejection_reasons, decision_log = _build_eligibility(
+            role=role,
+            fit=fit,
+            must_have_skills=must_have_skills,
+            thresholds=thresholds,
+        )
+        fit["ranking_decision_log"] = decision_log
 
         candidates.append({
-            "filename": full_raw_data["filename"],
+            "filename": outcome.get("filename") or file.filename,
             "ok": True,
-            "saved_json_path": saved_json_path,
+            "saved_json_path": outcome.get("saved_json_path"),
+            "eligible": eligible,
+            "rejection_reasons": rejection_reasons,
             "fit": fit,
             "profiles": extracted.get("profiles", {}),
             "github_summary": extracted.get("github_analysis", {}).get("summary", {}),
@@ -478,7 +511,7 @@ async def hiring_shortlist(
         })
 
     ranked = sorted(
-        [c for c in candidates if c.get("ok")],
+        [c for c in candidates if c.get("ok") and c.get("eligible")],
         key=lambda c: c.get("fit", {}).get("fit_score_100", 0.0),
         reverse=True,
     )
@@ -487,6 +520,7 @@ async def hiring_shortlist(
         candidate["rank"] = idx
 
     failed = [c for c in candidates if not c.get("ok")]
+    rejected = [c for c in candidates if c.get("ok") and not c.get("eligible")]
 
     return {
         "job": {
@@ -494,12 +528,16 @@ async def hiring_shortlist(
             "position_title": position_title,
             "role": role,
             "required_skills": required_skills,
+            "must_have_skills": must_have_skills,
             "min_experience_years": min_experience_years,
+            "applied_thresholds": thresholds,
         },
         "count_uploaded": len(files),
         "count_ranked": len(ranked),
+        "count_rejected": len(rejected),
         "count_failed": len(failed),
         "ranked_candidates": ranked,
+        "rejected_candidates": rejected,
         "failed_candidates": failed,
     }
 
