@@ -113,12 +113,31 @@ Output includes:
 
 ### 1. Database Configuration
 Ensure you have **PostgreSQL** installed and running. Create a database to store the skill graph data (default name `kovidam`).
+For first Time only: 
+```bash
+docker run -d \
+  --name kovidam-db \
+  -p 5432:5432 \
+  -e POSTGRES_PASSWORD=postgres \
+  ankane/pgvector
+```
+
+Then :
+```bash 
+docker start kovidam-db
+```
+For checking the Database:
+```bash
+docker exec -it kovidam-db psql -U postgres
+```
 
 ### 2. Environment Variables
 Copy `.env.example` to `.env` inside the `backend` directory and configure your keys:
 - `GITHUB_PAT`: Your GitHub Personal Access Token
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `DATABASE_URL`: Connection string for Postgres (default: `postgresql://postgres:postgres@localhost:5432/kovidam`)
+- `RESUME_CONCURRENCY`: (optional, default `2`)
+- `GITHUB_REPO_CONCURRENCY`: (optional, default `3`)
 
 ### 3. Installation & Run
 Open a terminal and navigate to the backend directory:

@@ -7,3 +7,4 @@ from .schema import skills
 from .schema import candidate_skills
 from .schema import platform_stats
 from .schema import candidate_github_summary
+from .schema import candidate_github_commits

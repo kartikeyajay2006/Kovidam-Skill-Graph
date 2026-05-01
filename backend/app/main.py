@@ -54,6 +54,16 @@ def _persist_data(raw_data: dict, filename: str, resume_hash: str):
             
     return saved_json_path
 
+def _remove_commits_from_response(extracted: dict):
+    if not isinstance(extracted, dict):
+        return
+    repos = extracted.get("github_analysis", {}).get("repositories", [])
+    for repo in repos:
+        if isinstance(repo, dict) and isinstance(repo.get("analysis"), dict):
+            analysis = repo["analysis"]
+            if "target_user_recent_commits" in analysis:
+                del analysis["target_user_recent_commits"]
+
 # Limit in-process resume parsing concurrency. Default: 2 at a time.
 RESUME_CONCURRENCY = max(1, int(os.getenv("RESUME_CONCURRENCY", "2")))
 resume_semaphore = asyncio.Semaphore(RESUME_CONCURRENCY)
@@ -356,6 +366,7 @@ async def extract_resume(
         
         data = await _process_resume_file(file, role)
         data["saved_json_path"] = _persist_data(data["extracted"], data["filename"], resume_hash)
+        _remove_commits_from_response(data["extracted"])
         return data
     except HTTPException:
         raise
@@ -390,6 +401,7 @@ async def extract_resume_batch(
             })
         else:
             outcome["saved_json_path"] = _persist_data(outcome["extracted"], outcome["filename"], resume_hashes[idx])
+            _remove_commits_from_response(outcome["extracted"])
             response_items.append({
                 "filename": file.filename,
                 "ok": True,

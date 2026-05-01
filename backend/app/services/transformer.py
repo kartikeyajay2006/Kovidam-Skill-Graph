@@ -126,6 +126,29 @@ def transform_resume_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
             "overall_score": _safe_float(github_summary_raw.get("overall_score_100")),
         }
 
+        # 9. GitHub Commits
+        github_commits = []
+        repos = c_data.get("github_analysis", {}).get("repositories", [])
+        for repo in repos:
+            analysis = repo.get("analysis") or {}
+            repo_name = repo.get("repo_url", "").split("github.com/")[-1] if repo.get("repo_url") else ""
+            if not repo_name or repo_name == "unknown":
+                repo_name = analysis.get("full_repo_name") or analysis.get("project_name") or "unknown"
+                
+            commits = analysis.get("target_user_recent_commits", [])
+            if commits:
+                repo_commits = []
+                for commit in commits:
+                    repo_commits.append({
+                        "sha": commit.get("sha"),
+                        "message": commit.get("message"),
+                        "date": commit.get("date"),
+                    })
+                github_commits.append({
+                    "repo_name": repo_name,
+                    "commits": repo_commits
+                })
+
         return {
             "candidate": candidate,
             "job": job,
@@ -135,6 +158,7 @@ def transform_resume_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
             "candidate_skills": candidate_skills,
             "platform_stats": platform_stats_normalized,
             "github_summary": github_summary,
+            "github_commits": github_commits,
         }
 
     except Exception as e:
@@ -149,4 +173,5 @@ def transform_resume_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
             "candidate_skills": [],
             "platform_stats": [],
             "github_summary": {},
+            "github_commits": [],
         }

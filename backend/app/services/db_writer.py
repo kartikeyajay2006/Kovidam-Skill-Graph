@@ -13,6 +13,7 @@ try:
     from app.models import (
         candidates,
         candidate_github_summary,
+        candidate_github_commits,
         candidate_job_scores,
         candidate_scores,
         candidate_skills,
@@ -21,7 +22,7 @@ try:
         skills,
     )
 except ImportError:
-    candidates = candidate_github_summary = candidate_job_scores = candidate_scores = candidate_skills = jobs = platform_stats = skills = None
+    candidates = candidate_github_summary = candidate_github_commits = candidate_job_scores = candidate_scores = candidate_skills = jobs = platform_stats = skills = None
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def save_to_db(structured_data: Dict[str, Any], trace_id: str, resume_hash: str)
     if SessionLocal is None:
         raise Exception("SessionLocal is not initialized")
 
-    if any(m is None for m in [candidates, jobs, candidate_job_scores, candidate_scores, candidate_skills, platform_stats, candidate_github_summary, skills]):
+    if any(m is None for m in [candidates, jobs, candidate_job_scores, candidate_scores, candidate_skills, platform_stats, candidate_github_summary, candidate_github_commits, skills]):
         print("[DB ERROR] ORM models are not loaded (NoneType). Skipping DB insert.")
         return None
 
@@ -173,6 +174,16 @@ def save_to_db(structured_data: Dict[str, Any], trace_id: str, resume_hash: str)
             overall_score=gh_data.get("overall_score") or None,
         )
         db.add(candidate_github_summary_record)
+
+        # 9. candidate_github_commits
+        for repo_data in structured_data.get("github_commits", []):
+            commit_record = candidate_github_commits(
+                id=str(uuid.uuid4()),
+                candidate_id=candidate_id,
+                repo_name=repo_data.get("repo_name"),
+                commits=repo_data.get("commits", [])
+            )
+            db.add(commit_record)
 
         # Commit the transaction safely
         db.commit()

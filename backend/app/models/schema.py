@@ -71,3 +71,10 @@ class candidate_github_summary(Base):
     candidate_id = Column(String, ForeignKey("candidates.id"))
     repo_count = Column(Integer)
     overall_score = Column(Float)
+
+class candidate_github_commits(Base):
+    __tablename__ = "candidate_github_commits"
+    id = Column(String, primary_key=True)
+    candidate_id = Column(String, ForeignKey("candidates.id"))
+    repo_name = Column(String)
+    commits = Column(JSON)
