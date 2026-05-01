@@ -111,15 +111,24 @@ Output includes:
 
 ## Setup
 
+### 1. Database Configuration
+Ensure you have **PostgreSQL** installed and running. Create a database to store the skill graph data (default name `kovidam`).
+
+### 2. Environment Variables
+Copy `.env.example` to `.env` inside the `backend` directory and configure your keys:
+- `GITHUB_PAT`: Your GitHub Personal Access Token
+- `OPENAI_API_KEY`: Your OpenAI API key
+- `DATABASE_URL`: Connection string for Postgres (default: `postgresql://postgres:postgres@localhost:5432/kovidam`)
+
+### 3. Installation & Run
+Open a terminal and navigate to the backend directory:
 ```bash
-cd /home/kartikeyayadav/Desktop/kovidam-skill-graph/backend
+cd backend
 rm -rf venv
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
-export RESUME_CONCURRENCY=2
-export GITHUB_REPO_CONCURRENCY=2
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -157,6 +166,7 @@ curl -X POST "http://localhost:8000/hiring/shortlist" \
 Create `backend/.env` with:
 - `GITHUB_PAT`
 - `OPENAI_API_KEY`
+- `DATABASE_URL`
 - `RESUME_CONCURRENCY` (optional, default `2`)
 - `GITHUB_REPO_CONCURRENCY` (optional, default `3`)
 
