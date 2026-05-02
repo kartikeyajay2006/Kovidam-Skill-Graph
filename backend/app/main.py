@@ -3,10 +3,10 @@ import tempfile
 import asyncio
 import re
 import json
+import math
 import uuid
 import time
 import logging
-import string
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -23,14 +23,13 @@ load_environment()
 app = FastAPI(title="Kovidam Skill Graph API")
 logger = logging.getLogger("kovidam.shortlist")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-logging.getLogger("pypdf._reader").setLevel(logging.ERROR)
 
 # Limit in-process resume parsing concurrency. Default: 2 at a time.
 RESUME_CONCURRENCY = max(1, int(os.getenv("RESUME_CONCURRENCY", "2")))
 resume_semaphore = asyncio.Semaphore(RESUME_CONCURRENCY)
 NOTES_AI_TIMEOUT_SECONDS = float(os.getenv("NOTES_AI_TIMEOUT_SECONDS", "1.8"))
 API_VERSION = os.getenv("SHORTLIST_API_VERSION", "v1.0.0")
-SCORING_VERSION = os.getenv("SHORTLIST_SCORING_VERSION", "v1.1.0")
+SCORING_VERSION = os.getenv("SHORTLIST_SCORING_VERSION", "v1.2.0")
 POLICY_VERSION = os.getenv("SHORTLIST_POLICY_VERSION", "v1.1.0")
 SHORTLIST_INCLUDE_LEGACY_KEYS = os.getenv("SHORTLIST_INCLUDE_LEGACY_KEYS", "true").lower() == "true"
 EXPERIENCE_KEYWORDS = [
@@ -45,6 +44,27 @@ EXPERIENCE_KEYWORDS = [
     "work experience",
     "employment",
 ]
+COMPANY_SIGNAL_TIERS = {
+    # Tier-1 global product and high bar engineering orgs
+    1.00: [
+        "google", "microsoft", "amazon", "meta", "apple", "netflix", "nvidia", "openai",
+        "deepmind", "anthropic", "stripe", "databricks", "snowflake", "airbnb", "uber",
+    ],
+    # Tier-2 globally respected tech/product or strong platform orgs
+    0.78: [
+        "adobe", "oracle", "salesforce", "atlassian", "palantir", "twilio", "intuit",
+        "servicenow", "cloudflare", "shopify", "ibm", "intel", "sap", "linkedin",
+    ],
+    # Tier-3 strong regional or scaled engineering companies
+    0.62: [
+        "flipkart", "swiggy", "zomato", "razorpay", "phonepe", "paytm", "cred", "meesho",
+        "oyo", "freshworks", "zoho", "upstox", "groww", "postman",
+    ],
+    # Tier-4 large service-heavy orgs (still relevant, lower signal for product depth)
+    0.45: [
+        "infosys", "tcs", "wipro", "hcl", "accenture", "cognizant", "capgemini", "tech mahindra",
+    ],
+}
 LEADERSHIP_KEYWORDS = [
     "led", "owned", "mentored", "managed", "architected", "drove", "spearheaded",
     "designed end-to-end", "initiated", "coordinated",
@@ -61,8 +81,49 @@ INTERNSHIP_CREDIBILITY_KEYWORDS = [
     "internship", "intern", "research intern", "summer intern", "winter intern",
     "ppo", "pre-placement offer", "return offer",
 ]
-EXPERIENCE_AI_TIMEOUT_SECONDS = float(os.getenv("EXPERIENCE_AI_TIMEOUT_SECONDS", "2.2"))
-EXPERIENCE_AI_BLEND_WEIGHT = max(0.0, min(1.0, float(os.getenv("EXPERIENCE_AI_BLEND_WEIGHT", "0.55"))))
+ACHIEVEMENT_KEYWORDS = [
+    "google summer of code",
+    "gsoc",
+    "icpc",
+    "ieeextreme",
+    "hackathon winner",
+    "global rank",
+    "air ",
+    "kaggle master",
+    "kaggle grandmaster",
+    "open source program",
+]
+SKILL_ALIASES = {
+    "js": "javascript",
+    "node": "nodejs",
+    "node.js": "nodejs",
+    "express.js": "express",
+    "next.js": "nextjs",
+    "postgres": "postgresql",
+    "py": "python",
+    "tf": "tensorflow",
+}
+SKILL_IMPLICATIONS = {
+    "react": {"javascript"},
+    "reactjs": {"javascript"},
+    "nextjs": {"javascript", "react"},
+    "vue": {"javascript"},
+    "angular": {"javascript", "typescript"},
+    "nodejs": {"javascript"},
+    "express": {"javascript", "nodejs"},
+    "fastapi": {"python"},
+    "django": {"python"},
+    "flask": {"python"},
+    "pandas": {"python"},
+    "numpy": {"python"},
+    "pytorch": {"python"},
+    "tensorflow": {"python"},
+    "spring boot": {"java"},
+    "postgresql": {"sql"},
+    "mysql": {"sql"},
+    "mongodb": {"nosql"},
+    "redis": {"nosql"},
+}
 
 
 @app.get("/")
@@ -92,12 +153,21 @@ async def _process_resume_file(file: UploadFile, role: str):
 
         saved_json_path = save_extracted_data_to_json(result, file.filename)
 
+        # Persist parsed data to PostgreSQL.
+        raw_for_transform = {
+            "filename": file.filename,
+            "data": result,
+        }
+        structured_data = transform_resume_data(raw_for_transform)
+        db_result = await asyncio.to_thread(save_to_db, structured_data, trace_id, resume_hash)
+
         return {
             "filename": file.filename,
             "extracted": result,
             "saved_json_path": saved_json_path,
             "trace_id": trace_id,
             "resume_hash": resume_hash,
+            "db_result": db_result,
         }
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -115,86 +185,257 @@ def _normalize_text(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 
-def _skill_match_score(required_skills: list[str], extracted: dict) -> tuple[float, list[str], list[str]]:
+def _canonical_skill(skill: str) -> str:
+    norm = _normalize_text(skill)
+    return SKILL_ALIASES.get(norm, norm)
+
+
+def _expand_skill_with_implications(skill: str) -> set[str]:
+    expanded = set()
+    queue = [_canonical_skill(skill)]
+    while queue:
+        cur = queue.pop()
+        if not cur or cur in expanded:
+            continue
+        expanded.add(cur)
+        for implied in SKILL_IMPLICATIONS.get(cur, set()):
+            canon_implied = _canonical_skill(implied)
+            if canon_implied not in expanded:
+                queue.append(canon_implied)
+    return expanded
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(value, 1.0))
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        if isinstance(value, str):
+            value = value.replace(",", "").strip()
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def _inverse_rank_score(rank_value, worst_rank: int = 200000) -> float:
+    rank = _safe_int(rank_value, 0)
+    if rank <= 0:
+        return 0.0
+    bounded = max(1, min(rank, worst_rank))
+    log_worst = math.log10(float(worst_rank))
+    if log_worst <= 0:
+        return 0.0
+    return _clamp01(1.0 - (math.log10(float(bounded)) / log_worst))
+
+
+def _skill_token_variants(skill: str) -> set[str]:
+    canon = _canonical_skill(skill)
+    variants = {canon}
+    if canon == "c++":
+        variants.update({"cpp", "c plus plus"})
+    return {v for v in variants if v}
+
+
+def _skill_in_text(text: str, skill: str) -> bool:
+    for variant in _skill_token_variants(skill):
+        if not variant:
+            continue
+        pattern = rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])"
+        if re.search(pattern, text):
+            return True
+    return False
+
+
+def _skill_match_score(required_skills: list[str], extracted: dict) -> tuple[float, list[str], list[str], dict]:
     if not required_skills:
         return 1.0, [], []
 
-    # Anti-gaming policy:
-    # Do not trust plain resume text for required skill matching.
-    # Use stronger evidence from GitHub repo analysis only.
-    raw_text = extracted.get("raw_text_full") or extracted.get("raw_text_preview", "")
-    text = _normalize_text(raw_text)
-
-    def _skill_boundary_pattern(skill: str) -> str:
-        # e.g. fastapi -> FastAPI / fast api / fast-api
-        # e.g. pypdf -> py pdf / py-pdf
-        cleaned = "".join(ch for ch in skill.lower() if ch in (string.ascii_lowercase + string.digits))
-        if not cleaned:
-            return r"$a"
-        flexible = r"[\s._-]*".join(list(cleaned))
-        return rf"(?<![a-z0-9]){flexible}(?![a-z0-9])"
-
-    def _has_text_skill(skill: str, source_text: str) -> bool:
-        pattern = _skill_boundary_pattern(skill)
-        return re.search(pattern, source_text) is not None
-
+    # Hybrid evidence policy:
+    # Prefer GitHub repository dependencies when available, but also
+    # consider resume raw text to avoid false negatives when repos are missing.
     repos = extracted.get("github_analysis", {}).get("repositories", [])
     tech_tokens = set()
     for repo in repos:
         analysis = repo.get("analysis", {})
         for dep in analysis.get("identified_tech_stack_dependencies", []) or []:
-            dep_norm = _normalize_text(str(dep))
+            dep_norm = _canonical_skill(str(dep))
             if dep_norm:
                 tech_tokens.add(dep_norm)
+                tech_tokens.update(_expand_skill_with_implications(dep_norm))
+
+    raw_text = _normalize_text(extracted.get("raw_text_full") or extracted.get("raw_text_preview", ""))
 
     matched = []
     missing = []
+    evidence = {}
     for skill in required_skills:
-        s = _normalize_text(skill)
+        s = _canonical_skill(skill)
         if not s:
             continue
-        in_text = _has_text_skill(s, text)
-        in_tech = any(s == t or s in t or t in s for t in tech_tokens)
-        if in_tech:
+        required_equivalents = _expand_skill_with_implications(s)
+        matched_by_github = any(
+            (req == t or req in t or t in req)
+            for req in required_equivalents
+            for t in tech_tokens
+        )
+        matched_by_text = any(_skill_in_text(raw_text, req) for req in required_equivalents)
+        evidence[skill] = {
+            "matched_by_github": matched_by_github,
+            "matched_by_text": matched_by_text,
+        }
+        if matched_by_github or matched_by_text:
             matched.append(skill)
         else:
             missing.append(skill)
 
     denominator = max(1, len([s for s in required_skills if _normalize_text(s)]))
-    return len(matched) / denominator, matched, missing
+    return len(matched) / denominator, matched, missing, evidence
+
+
+def _codeforces_score(cf: dict) -> float:
+    rating = _to_float(cf.get("max_rating"), 0.0)
+    solved = _to_float(cf.get("problems_solved"), 0.0)
+    rating_score = _clamp01((rating - 900.0) / 1400.0)
+    solved_score = _clamp01(solved / 900.0)
+    return (rating_score * 0.72) + (solved_score * 0.28)
+
+
+def _leetcode_score(lc: dict) -> float:
+    rating = _to_float(lc.get("rating"), 0.0)
+    easy = _to_float(lc.get("easy_solved"), 0.0)
+    medium = _to_float(lc.get("medium_solved"), 0.0)
+    hard = _to_float(lc.get("hard_solved"), 0.0)
+    total_solved = _to_float(lc.get("total_solved") or lc.get("problems_solved"), 0.0)
+    weighted_solved = (easy * 0.25) + (medium * 1.0) + (hard * 2.5)
+    if weighted_solved <= 0 and total_solved > 0:
+        weighted_solved = total_solved
+    rating_score = _clamp01((rating - 1300.0) / 1300.0)
+    solved_score = _clamp01(weighted_solved / 900.0)
+    return (rating_score * 0.55) + (solved_score * 0.45)
+
+
+def _codechef_score(cc: dict) -> float:
+    rating = _to_float(cc.get("highest_rating"), 0.0)
+    contests = _to_float(cc.get("contests_participated"), 0.0)
+    rating_score = _clamp01((rating - 1200.0) / 1300.0)
+    consistency_score = _clamp01(contests / 60.0)
+    return (rating_score * 0.7) + (consistency_score * 0.3)
+
+
+def _atcoder_score(ac: dict) -> float:
+    rating = _to_float(ac.get("highest_rating"), 0.0)
+    contests = _to_float(ac.get("contests_participated"), 0.0)
+    rating_score = _clamp01((rating - 600.0) / 1800.0)
+    consistency_score = _clamp01(contests / 70.0)
+    return (rating_score * 0.7) + (consistency_score * 0.3)
+
+
+def _kaggle_score(kg: dict) -> float:
+    competitions = _to_float(kg.get("competitions") or kg.get("competitions_count"), 0.0)
+    notebooks = _to_float(kg.get("notebooks"), 0.0)
+    datasets = _to_float(kg.get("datasets"), 0.0)
+    medals = kg.get("medals") or {}
+    medal_points = (
+        (_to_float(medals.get("gold"), 0.0) * 3.0)
+        + (_to_float(medals.get("silver"), 0.0) * 2.0)
+        + (_to_float(medals.get("bronze"), 0.0) * 1.0)
+    )
+    rank_score = _inverse_rank_score(kg.get("rank"), worst_rank=200000)
+    medal_score = _clamp01(medal_points / 18.0)
+    competition_score = _clamp01(competitions / 35.0)
+    artifact_score = _clamp01((notebooks + datasets) / 60.0)
+    return (
+        (rank_score * 0.35)
+        + (medal_score * 0.35)
+        + (competition_score * 0.2)
+        + (artifact_score * 0.1)
+    )
 
 
 def _platform_strength_score(platform_stats: dict) -> float:
-    # Conservative deterministic score from available platforms only.
-    signals = []
+    # Normalize each platform on comparable scales so one rating system cannot dominate.
+    platform_scores = {}
+    platform_weights = {
+        "codeforces": 0.24,
+        "leetcode": 0.24,
+        "codechef": 0.14,
+        "atcoder": 0.14,
+        "kaggle": 0.24,
+    }
 
     cf = platform_stats.get("codeforces") or {}
-    if isinstance(cf, dict) and cf.get("max_rating") is not None:
-        signals.append(min(_to_float(cf.get("max_rating")) / 2200.0, 1.0))
+    if isinstance(cf, dict) and cf:
+        platform_scores["codeforces"] = _codeforces_score(cf)
 
     lc = platform_stats.get("leetcode") or {}
-    if isinstance(lc, dict):
-        solved = _to_float(lc.get("total_solved") or lc.get("problems_solved") or 0)
-        if solved > 0:
-            signals.append(min(solved / 800.0, 1.0))
+    if isinstance(lc, dict) and lc:
+        platform_scores["leetcode"] = _leetcode_score(lc)
 
     cc = platform_stats.get("codechef") or {}
-    if isinstance(cc, dict) and cc.get("highest_rating") is not None:
-        signals.append(min(_to_float(cc.get("highest_rating")) / 2500.0, 1.0))
+    if isinstance(cc, dict) and cc:
+        platform_scores["codechef"] = _codechef_score(cc)
 
     ac = platform_stats.get("atcoder") or {}
-    if isinstance(ac, dict) and ac.get("highest_rating") is not None:
-        signals.append(min(_to_float(ac.get("highest_rating")) / 2400.0, 1.0))
+    if isinstance(ac, dict) and ac:
+        platform_scores["atcoder"] = _atcoder_score(ac)
 
     kg = platform_stats.get("kaggle") or {}
-    if isinstance(kg, dict):
-        comps = _to_float(kg.get("competitions") or kg.get("competitions_count") or 0)
-        if comps > 0:
-            signals.append(min(comps / 20.0, 1.0))
+    if isinstance(kg, dict) and kg:
+        platform_scores["kaggle"] = _kaggle_score(kg)
 
-    if not signals:
+    if not platform_scores:
         return 0.0
-    return sum(signals) / len(signals)
+
+    present_weight_sum = sum(platform_weights[p] for p in platform_scores)
+    if present_weight_sum <= 0:
+        return 0.0
+    blended = sum(platform_scores[p] * platform_weights[p] for p in platform_scores) / present_weight_sum
+    return _clamp01(blended)
+
+
+def _platform_achievement_score(platform_stats: dict) -> float:
+    cf = platform_stats.get("codeforces") or {}
+    lc = platform_stats.get("leetcode") or {}
+    cc = platform_stats.get("codechef") or {}
+    ac = platform_stats.get("atcoder") or {}
+    kg = platform_stats.get("kaggle") or {}
+
+    points = 0.0
+    cf_rating = _to_float(cf.get("max_rating"), 0.0) if isinstance(cf, dict) else 0.0
+    lc_rating = _to_float(lc.get("rating"), 0.0) if isinstance(lc, dict) else 0.0
+    cc_rating = _to_float(cc.get("highest_rating"), 0.0) if isinstance(cc, dict) else 0.0
+    ac_rating = _to_float(ac.get("highest_rating"), 0.0) if isinstance(ac, dict) else 0.0
+
+    if cf_rating >= 2000:
+        points += 1.0
+    elif cf_rating >= 1700:
+        points += 0.55
+
+    if lc_rating >= 2200:
+        points += 1.0
+    elif lc_rating >= 1850:
+        points += 0.55
+
+    if cc_rating >= 2200:
+        points += 0.6
+    if ac_rating >= 2000:
+        points += 0.6
+
+    if isinstance(kg, dict):
+        medals = kg.get("medals") or {}
+        gold = _to_float(medals.get("gold"), 0.0)
+        silver = _to_float(medals.get("silver"), 0.0)
+        bronze = _to_float(medals.get("bronze"), 0.0)
+        rank = _safe_int(kg.get("rank"), 0)
+        if gold >= 1:
+            points += 1.0
+        elif silver + bronze >= 3:
+            points += 0.6
+        if rank and rank <= 2000:
+            points += 0.6
+
+    return _clamp01(points / 3.6)
 
 
 def _profile_completeness_score(extracted: dict) -> float:
@@ -231,13 +472,13 @@ def _policy_config(role: str) -> dict:
     if role_l == "internship":
         return {
             "weights": {
-                "skills": _to_float(os.getenv("INTERN_WEIGHT_SKILLS", "0.34"), 0.34),
-                "github": _to_float(os.getenv("INTERN_WEIGHT_GITHUB", "0.21"), 0.21),
-                "experience": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE", "0.09"), 0.09),
-                "platform": _to_float(os.getenv("INTERN_WEIGHT_PLATFORM", "0.14"), 0.14),
-                "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.08"), 0.08),
+                "skills": _to_float(os.getenv("INTERN_WEIGHT_SKILLS", "0.30"), 0.30),
+                "github": _to_float(os.getenv("INTERN_WEIGHT_GITHUB", "0.22"), 0.22),
+                "experience": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE", "0.10"), 0.10),
+                "platform": _to_float(os.getenv("INTERN_WEIGHT_PLATFORM", "0.13"), 0.13),
+                "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.09"), 0.09),
                 "profile": _to_float(os.getenv("INTERN_WEIGHT_PROFILE", "0.02"), 0.02),
-                "experience_quality": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_QUALITY", "0.12"), 0.12),
+                "experience_quality": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_QUALITY", "0.14"), 0.14),
             },
             "thresholds": {
                 "min_skill_match_pct": 0.0,
@@ -247,13 +488,13 @@ def _policy_config(role: str) -> dict:
         }
     return {
         "weights": {
-            "skills": _to_float(os.getenv("JOB_WEIGHT_SKILLS", "0.27"), 0.27),
-            "github": _to_float(os.getenv("JOB_WEIGHT_GITHUB", "0.20"), 0.20),
-            "experience": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE", "0.19"), 0.19),
-            "platform": _to_float(os.getenv("JOB_WEIGHT_PLATFORM", "0.08"), 0.08),
-            "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.04"), 0.04),
-            "profile": _to_float(os.getenv("JOB_WEIGHT_PROFILE", "0.02"), 0.02),
-            "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.20"), 0.20),
+            "skills": _to_float(os.getenv("JOB_WEIGHT_SKILLS", "0.20"), 0.20),
+            "github": _to_float(os.getenv("JOB_WEIGHT_GITHUB", "0.18"), 0.18),
+            "experience": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE", "0.22"), 0.22),
+            "platform": _to_float(os.getenv("JOB_WEIGHT_PLATFORM", "0.07"), 0.07),
+            "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.07"), 0.07),
+            "profile": _to_float(os.getenv("JOB_WEIGHT_PROFILE", "0.01"), 0.01),
+            "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.25"), 0.25),
         },
         "thresholds": {
             "min_skill_match_pct": _to_float(os.getenv("JOB_MIN_SKILL_MATCH_PCT", "55"), 55.0),
@@ -288,63 +529,21 @@ def _count_keyword_hits(text: str, keywords: list[str]) -> int:
     return sum(1 for k in keywords if k in text)
 
 
-def _ai_experience_quality_score(text: str, role_l: str) -> tuple[float | None, dict]:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return None, {"ai_used": False, "ai_reason": "missing_openai_api_key"}
-
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key, timeout=EXPERIENCE_AI_TIMEOUT_SECONDS)
-        prompt_payload = {
-            "role_profile": role_l,
-            "resume_excerpt": text[:3500],
-            "task": (
-                "Score candidate experience quality from 0 to 100 only from evidence in text. "
-                "Prioritize ownership, impact, complexity, reliability signals, team collaboration, and progression. "
-                "Do not use hardcoded company prestige lists. Unknown companies are neutral."
-            ),
-            "required_json_schema": {
-                "experience_quality_score_100": "number",
-                "confidence_100": "number",
-                "reasoning": "string<=220",
-            },
-        }
-        resp = client.chat.completions.create(
-            model=os.getenv("EXPERIENCE_AI_MODEL", "gpt-4o-mini"),
-            temperature=0,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a strict ATS evaluator. Return JSON only with required keys.",
-                },
-                {"role": "user", "content": json.dumps(prompt_payload)},
-            ],
-        )
-        content = (resp.choices[0].message.content or "").strip()
-        start, end = content.find("{"), content.rfind("}")
-        parsed = json.loads(content[start:end + 1]) if start != -1 and end != -1 else {}
-        score_100 = _to_float(parsed.get("experience_quality_score_100"), -1.0)
-        confidence_100 = _to_float(parsed.get("confidence_100"), 0.0)
-        reasoning = str(parsed.get("reasoning") or "").strip()[:220]
-        if score_100 < 0:
-            return None, {"ai_used": False, "ai_reason": "invalid_model_output"}
-        return max(0.0, min(1.0, score_100 / 100.0)), {
-            "ai_used": True,
-            "ai_confidence_100": round(max(0.0, min(100.0, confidence_100)), 3),
-            "ai_reasoning": reasoning,
-        }
-    except Exception as exc:
-        return None, {"ai_used": False, "ai_reason": f"ai_error:{type(exc).__name__}"}
-def _company_signal(text: str) -> float:
+def _company_signal(text: str) -> tuple[float, list[str], dict]:
     hits: list[tuple[str, float]] = []
+    tier_counts: dict[str, int] = {}
     for tier_score, companies in COMPANY_SIGNAL_TIERS.items():
+        label = f"{tier_score:.2f}"
+        count = 0
         for company in companies:
             if company in text:
                 hits.append((company, tier_score))
+                count += 1
+        if count:
+            tier_counts[label] = count
 
     if not hits:
-        return 0.0
+        return 0.0, [], {"tier_counts": tier_counts, "max_tier_score": 0.0, "avg_tier_score": 0.0}
 
     unique_hits = {}
     for name, score in hits:
@@ -355,16 +554,20 @@ def _company_signal(text: str) -> float:
     max_score = max(scores)
     avg_score = sum(scores) / len(scores)
     blended = (max_score * 0.65) + (avg_score * 0.35)
-    return blended
+    mentions = sorted(unique_hits.keys())[:12]
+    return blended, mentions, {
+        "tier_counts": tier_counts,
+        "max_tier_score": round(max_score * 100.0, 3),
+        "avg_tier_score": round(avg_score * 100.0, 3),
+    }
 
 
 def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
-    raw_text = extracted.get("raw_text_full") or extracted.get("raw_text_preview", "")
-    text = _normalize_text(raw_text)
+    text = _normalize_text(extracted.get("raw_text") or extracted.get("raw_text_preview", ""))
     years = _to_float(extracted.get("work_experience_years", "0"), 0.0)
     role_l = (role or "job").lower()
 
-    company_score = _company_signal(text)
+    company_score, _, company_meta = _company_signal(text)
     keyword_hits = _count_keyword_hits(text, EXPERIENCE_KEYWORDS)
     keyword_score = min(keyword_hits / 5.0, 1.0)
 
@@ -379,6 +582,10 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
 
     internship_hits = _count_keyword_hits(text, INTERNSHIP_CREDIBILITY_KEYWORDS)
     internship_score = min(internship_hits / 3.0, 1.0)
+    achievement_hits = _count_keyword_hits(text, ACHIEVEMENT_KEYWORDS)
+    achievement_score = min(achievement_hits / 3.0, 1.0)
+    gsoc_signal = 1.0 if ("google summer of code" in text or "gsoc" in text) else 0.0
+    platform_achievement = _platform_achievement_score(extracted.get("platform_stats", {}) or {})
 
     # Detect quantified impact patterns: percentages, x multipliers, and absolute numbers.
     quant_patterns = [
@@ -393,51 +600,54 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
 
     if role_l == "job":
         years_score = min(years / 4.0, 1.0)
-        deterministic = (
-            (years_score * 0.23)
-            + (leadership_score * 0.20)
-            + (impact_score * 0.21)
-            + (ownership_score * 0.21)
-            + (quant_score * 0.10)
+        final = (
+            (years_score * 0.20)
+            + (company_score * 0.25)
+            + (leadership_score * 0.10)
+            + (impact_score * 0.12)
+            + (ownership_score * 0.10)
+            + (quant_score * 0.08)
             + (keyword_score * 0.05)
+            + (achievement_score * 0.05)
+            + (platform_achievement * 0.05)
+            + (gsoc_signal * 0.05)
         )
     else:
         years_score = min(years / 2.0, 1.0)
-        deterministic = (
-            (years_score * 0.16)
-            + (internship_score * 0.20)
-            + (impact_score * 0.24)
-            + (ownership_score * 0.19)
-            + (quant_score * 0.10)
-            + (keyword_score * 0.11)
+        final = (
+            (years_score * 0.12)
+            + (company_score * 0.18)
+            + (internship_score * 0.15)
+            + (impact_score * 0.12)
+            + (ownership_score * 0.10)
+            + (quant_score * 0.09)
+            + (keyword_score * 0.07)
+            + (achievement_score * 0.08)
+            + (platform_achievement * 0.06)
+            + (gsoc_signal * 0.03)
         )
-
-    ai_score, ai_meta = _ai_experience_quality_score(text, role_l)
-    if ai_score is None:
-        final = deterministic
-    else:
-        final = ((1.0 - EXPERIENCE_AI_BLEND_WEIGHT) * deterministic) + (EXPERIENCE_AI_BLEND_WEIGHT * ai_score)
 
     return final, {
         "role_profile": role_l,
-        "scoring_mode": "ai_blended_experience_intelligence",
         "years_score_100": round(years_score * 100.0, 3),
         "keyword_score_100": round(keyword_score * 100.0, 3),
         "impact_signal_score_100": round(impact_score * 100.0, 3),
         "ownership_signal_score_100": round(ownership_score * 100.0, 3),
         "quantified_impact_score_100": round(quant_score * 100.0, 3),
         "internship_credibility_score_100": round(internship_score * 100.0, 3),
-        "deterministic_experience_quality_score_100": round(deterministic * 100.0, 3),
-        "ai_experience_quality_score_100": None if ai_score is None else round(ai_score * 100.0, 3),
-        "ai_blend_weight": EXPERIENCE_AI_BLEND_WEIGHT,
-        "ai_meta": ai_meta,
+        "achievement_signal_score_100": round(achievement_score * 100.0, 3),
+        "platform_achievement_score_100": round(platform_achievement * 100.0, 3),
+        "gsoc_signal_score_100": round(gsoc_signal * 100.0, 3),
+        # Keep aggregate company signal only; hide raw company mentions.
         "company_signal_score_100": round(company_score * 100.0, 3),
+        "company_tier_meta": company_meta,
         "signal_hits": {
             "experience_keywords": keyword_hits,
             "leadership_keywords": leadership_hits,
             "impact_keywords": impact_hits,
             "ownership_keywords": ownership_hits,
             "internship_keywords": internship_hits,
+            "achievement_keywords": achievement_hits,
             "quantified_impact_patterns": quant_hits,
         },
     }
@@ -603,7 +813,7 @@ def _generate_ai_notes_sync(role: str, fit: dict, extracted: dict) -> list[str]:
             "No praise/buttering. No extra keys. Data: " + json.dumps(payload)
         )
         resp = client.chat.completions.create(
-            model=os.getenv("NOTES_AI_MODEL", "gpt-4o-mini"),
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": "You are a strict hiring analyst. Output JSON only."},
                 {"role": "user", "content": prompt},
@@ -651,16 +861,20 @@ def _candidate_company_fit(
         neutral_target_years = 2.0 if role_l == "job" else 1.0
         exp_score = min(exp / neutral_target_years, 1.0)
 
-    skill_score, matched_skills, missing_skills = _skill_match_score(required_skills, extracted)
+    skill_score, matched_skills, missing_skills, skill_evidence = _skill_match_score(required_skills, extracted)
 
     github_summary = extracted.get("github_analysis", {}).get("summary", {})
     github_score_100 = _to_float(github_summary.get("overall_score_100"), 0.0)
     github_score = max(0.0, min(github_score_100 / 100.0, 1.0))
 
-    platform_score = _platform_strength_score(extracted.get("platform_stats", {}) or {})
+    platform_score_raw = _platform_strength_score(extracted.get("platform_stats", {}) or {})
     profile_score = _profile_completeness_score(extracted)
     project_evidence = _project_evidence_score(extracted)
     experience_quality, experience_quality_meta = _experience_quality_score(extracted, role)
+    # Prevent one-dimensional ranking spikes from contest platforms when practical delivery evidence is weak.
+    platform_score = platform_score_raw
+    if platform_score_raw >= 0.75 and github_score < 0.45 and experience_quality < 0.45:
+        platform_score = platform_score_raw * 0.7
     weights = _role_weights(role)
 
     final = (
@@ -683,6 +897,7 @@ def _candidate_company_fit(
             "github_score_100": round(github_score * 100.0, 3),
             "experience_score_100": round(exp_score * 100.0, 3),
             "platform_strength_score_100": round(platform_score * 100.0, 3),
+            "platform_strength_raw_score_100": round(platform_score_raw * 100.0, 3),
             "project_evidence_score_100": round(project_evidence * 100.0, 3),
             "profile_completeness_score_100": round(profile_score * 100.0, 3),
             "experience_quality_score_100": round(experience_quality * 100.0, 3),
@@ -696,6 +911,8 @@ def _candidate_company_fit(
             "required": required_skills,
             "matched": matched_skills,
             "missing": missing_skills,
+            "match_score_100": round(skill_score * 100.0, 3),
+            "evidence": skill_evidence,
         },
         "experience": {
             "required_min_years": min_experience_years,
@@ -799,25 +1016,6 @@ async def hiring_shortlist(
         )
         fit["ranking_decision_log"] = decision_log
 
-        raw_for_transform = {
-            "filename": outcome.get("filename") or file.filename,
-            "data": extracted,
-            "job": {
-                "company_name": company_name,
-                "position_title": position_title,
-                "role": role,
-                "required_skills": required_skills,
-                "min_experience_years": min_experience_years,
-            },
-            "fit": fit,
-        }
-        structured_data = transform_resume_data(raw_for_transform)
-        trace_id = outcome.get("trace_id")
-        resume_hash = outcome.get("resume_hash")
-        
-        # Persist parsed data to PostgreSQL now that we have job and fit context
-        db_result = await asyncio.to_thread(save_to_db, structured_data, trace_id, resume_hash)
-
         candidates.append({
             "filename": outcome.get("filename") or file.filename,
             "ok": True,
@@ -828,7 +1026,6 @@ async def hiring_shortlist(
             "profiles": extracted.get("profiles", {}),
             "github_summary": extracted.get("github_analysis", {}).get("summary", {}),
             "platform_stats": extracted.get("platform_stats", {}),
-            "db_result": db_result,
         })
 
     ranked = sorted(
