@@ -52,3 +52,7 @@ backend/kaggle_session.json
 *.dll
 
 .codex
+
+# Python cache
+__pycache__/
+*.pyc
