@@ -3,21 +3,34 @@ import tempfile
 import asyncio
 import re
 import json
+import uuid
+import time
+import logging
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from app.config import load_environment
 from app.services.resume_parser import parse_resume_and_enrich, save_extracted_data_to_json
+from app.services.transformer import transform_resume_data
+from app.services.db_writer import save_to_db
+from app.utils.hash_utils import generate_resume_hash
+from app.schemas.shortlist_response import ShortlistResponse
 
 load_environment()
 
 app = FastAPI(title="Kovidam Skill Graph API")
+logger = logging.getLogger("kovidam.shortlist")
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
 # Limit in-process resume parsing concurrency. Default: 2 at a time.
 RESUME_CONCURRENCY = max(1, int(os.getenv("RESUME_CONCURRENCY", "2")))
 resume_semaphore = asyncio.Semaphore(RESUME_CONCURRENCY)
 NOTES_AI_TIMEOUT_SECONDS = float(os.getenv("NOTES_AI_TIMEOUT_SECONDS", "1.8"))
+API_VERSION = os.getenv("SHORTLIST_API_VERSION", "v1.0.0")
+SCORING_VERSION = os.getenv("SHORTLIST_SCORING_VERSION", "v1.1.0")
+POLICY_VERSION = os.getenv("SHORTLIST_POLICY_VERSION", "v1.1.0")
+SHORTLIST_INCLUDE_LEGACY_KEYS = os.getenv("SHORTLIST_INCLUDE_LEGACY_KEYS", "true").lower() == "true"
 EXPERIENCE_KEYWORDS = [
     "intern",
     "internship",
@@ -30,11 +43,42 @@ EXPERIENCE_KEYWORDS = [
     "work experience",
     "employment",
 ]
-COMPANY_HINTS = [
-    "google", "microsoft", "amazon", "meta", "apple", "netflix", "adobe", "oracle",
-    "salesforce", "uber", "airbnb", "atlassian", "ibm", "intel", "nvidia", "sap",
-    "goldman sachs", "jpmorgan", "deutsche bank", "flipkart", "swiggy", "zomato",
-    "razorpay", "phonepe", "paytm", "infosys", "tcs", "wipro", "hcl", "accenture",
+COMPANY_SIGNAL_TIERS = {
+    # Tier-1 global product and high bar engineering orgs
+    1.00: [
+        "google", "microsoft", "amazon", "meta", "apple", "netflix", "nvidia", "openai",
+        "deepmind", "anthropic", "stripe", "databricks", "snowflake", "airbnb", "uber",
+    ],
+    # Tier-2 globally respected tech/product or strong platform orgs
+    0.78: [
+        "adobe", "oracle", "salesforce", "atlassian", "palantir", "twilio", "intuit",
+        "servicenow", "cloudflare", "shopify", "ibm", "intel", "sap", "linkedin",
+    ],
+    # Tier-3 strong regional or scaled engineering companies
+    0.62: [
+        "flipkart", "swiggy", "zomato", "razorpay", "phonepe", "paytm", "cred", "meesho",
+        "oyo", "freshworks", "zoho", "upstox", "groww", "postman",
+    ],
+    # Tier-4 large service-heavy orgs (still relevant, lower signal for product depth)
+    0.45: [
+        "infosys", "tcs", "wipro", "hcl", "accenture", "cognizant", "capgemini", "tech mahindra",
+    ],
+}
+LEADERSHIP_KEYWORDS = [
+    "led", "owned", "mentored", "managed", "architected", "drove", "spearheaded",
+    "designed end-to-end", "initiated", "coordinated",
+]
+IMPACT_KEYWORDS = [
+    "reduced", "improved", "increased", "optimized", "scaled", "decreased",
+    "latency", "throughput", "uptime", "reliability", "performance", "cost",
+]
+OWNERSHIP_KEYWORDS = [
+    "production", "deployed", "on-call", "sla", "slo", "microservices",
+    "ci/cd", "kubernetes", "distributed system", "monitoring", "observability",
+]
+INTERNSHIP_CREDIBILITY_KEYWORDS = [
+    "internship", "intern", "research intern", "summer intern", "winter intern",
+    "ppo", "pre-placement offer", "return offer",
 ]
 
 
@@ -57,14 +101,29 @@ async def _process_resume_file(file: UploadFile, role: str):
             tmp.write(content)
             tmp_path = tmp.name
 
+        resume_hash = generate_resume_hash(content)
+        trace_id = str(uuid.uuid4())
+
         async with resume_semaphore:
             result = await parse_resume_and_enrich(tmp_path, role=role)
 
         saved_json_path = save_extracted_data_to_json(result, file.filename)
+
+        # Persist parsed data to PostgreSQL.
+        raw_for_transform = {
+            "filename": file.filename,
+            "data": result,
+        }
+        structured_data = transform_resume_data(raw_for_transform)
+        db_result = await asyncio.to_thread(save_to_db, structured_data, trace_id, resume_hash)
+
         return {
             "filename": file.filename,
             "extracted": result,
             "saved_json_path": saved_json_path,
+            "trace_id": trace_id,
+            "resume_hash": resume_hash,
+            "db_result": db_result,
         }
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -170,56 +229,180 @@ def _project_evidence_score(extracted: dict) -> float:
     return (repo_count_score * 0.6) + (quality_score * 0.4)
 
 
-def _role_weights(role: str) -> dict:
-    if role.lower() == "internship":
+def _json_log(event: str, payload: dict) -> None:
+    logger.info(json.dumps({"event": event, **payload}, ensure_ascii=False))
+
+
+def _policy_config(role: str) -> dict:
+    role_l = (role or "internship").lower()
+    job_min_exp_quality = _to_float(os.getenv("JOB_MIN_EXPERIENCE_QUALITY_SCORE_100", "0"), 0.0)
+    if role_l == "internship":
         return {
-            "skills": 0.35,
-            "github": 0.22,
-            "experience": 0.10,
-            "platform": 0.15,
-            "projects": 0.07,
-            "profile": 0.03,
-            "experience_quality": 0.08,
+            "weights": {
+                "skills": _to_float(os.getenv("INTERN_WEIGHT_SKILLS", "0.34"), 0.34),
+                "github": _to_float(os.getenv("INTERN_WEIGHT_GITHUB", "0.21"), 0.21),
+                "experience": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE", "0.09"), 0.09),
+                "platform": _to_float(os.getenv("INTERN_WEIGHT_PLATFORM", "0.14"), 0.14),
+                "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.08"), 0.08),
+                "profile": _to_float(os.getenv("INTERN_WEIGHT_PROFILE", "0.02"), 0.02),
+                "experience_quality": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_QUALITY", "0.12"), 0.12),
+            },
+            "thresholds": {
+                "min_skill_match_pct": 0.0,
+                "min_github_score_100": 0.0,
+                "min_experience_quality_score_100": 0.0,
+            },
         }
     return {
-        "skills": 0.30,
-        "github": 0.25,
-        "experience": 0.18,
-        "platform": 0.08,
-        "projects": 0.05,
-        "profile": 0.02,
-        "experience_quality": 0.12,
+        "weights": {
+            "skills": _to_float(os.getenv("JOB_WEIGHT_SKILLS", "0.27"), 0.27),
+            "github": _to_float(os.getenv("JOB_WEIGHT_GITHUB", "0.20"), 0.20),
+            "experience": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE", "0.19"), 0.19),
+            "platform": _to_float(os.getenv("JOB_WEIGHT_PLATFORM", "0.08"), 0.08),
+            "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.04"), 0.04),
+            "profile": _to_float(os.getenv("JOB_WEIGHT_PROFILE", "0.02"), 0.02),
+            "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.20"), 0.20),
+        },
+        "thresholds": {
+            "min_skill_match_pct": _to_float(os.getenv("JOB_MIN_SKILL_MATCH_PCT", "55"), 55.0),
+            "min_github_score_100": _to_float(os.getenv("JOB_MIN_GITHUB_SCORE_100", "35"), 35.0),
+            "min_experience_quality_score_100": job_min_exp_quality,
+        },
     }
+
+
+def _role_weights(role: str) -> dict:
+    return _policy_config(role)["weights"]
 
 
 def _role_thresholds(role: str, min_experience_years: float) -> dict:
+    base = _policy_config(role)["thresholds"]
     if role.lower() == "job":
         return {
-            "min_skill_match_pct": 55.0,
-            "min_github_score_100": 35.0,
+            "min_skill_match_pct": base["min_skill_match_pct"],
+            "min_github_score_100": base["min_github_score_100"],
             "min_experience_years": min_experience_years,
+            "min_experience_quality_score_100": base["min_experience_quality_score_100"],
         }
     return {
-        "min_skill_match_pct": 0.0,
-        "min_github_score_100": 0.0,
+        "min_skill_match_pct": base["min_skill_match_pct"],
+        "min_github_score_100": base["min_github_score_100"],
         "min_experience_years": min_experience_years,
+        "min_experience_quality_score_100": base["min_experience_quality_score_100"],
     }
 
 
-def _experience_quality_score(extracted: dict) -> tuple[float, dict]:
+def _count_keyword_hits(text: str, keywords: list[str]) -> int:
+    return sum(1 for k in keywords if k in text)
+
+
+def _company_signal(text: str) -> tuple[float, list[str], dict]:
+    hits: list[tuple[str, float]] = []
+    tier_counts: dict[str, int] = {}
+    for tier_score, companies in COMPANY_SIGNAL_TIERS.items():
+        label = f"{tier_score:.2f}"
+        count = 0
+        for company in companies:
+            if company in text:
+                hits.append((company, tier_score))
+                count += 1
+        if count:
+            tier_counts[label] = count
+
+    if not hits:
+        return 0.0, [], {"tier_counts": tier_counts, "max_tier_score": 0.0, "avg_tier_score": 0.0}
+
+    unique_hits = {}
+    for name, score in hits:
+        # If same company appears, keep highest tier score.
+        unique_hits[name] = max(score, unique_hits.get(name, 0.0))
+
+    scores = list(unique_hits.values())
+    max_score = max(scores)
+    avg_score = sum(scores) / len(scores)
+    blended = (max_score * 0.65) + (avg_score * 0.35)
+    mentions = sorted(unique_hits.keys())[:12]
+    return blended, mentions, {
+        "tier_counts": tier_counts,
+        "max_tier_score": round(max_score * 100.0, 3),
+        "avg_tier_score": round(avg_score * 100.0, 3),
+    }
+
+
+def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
     text = _normalize_text(extracted.get("raw_text_preview", ""))
     years = _to_float(extracted.get("work_experience_years", "0"), 0.0)
-    keyword_hits = sum(1 for k in EXPERIENCE_KEYWORDS if k in text)
-    keyword_score = min(keyword_hits / 4.0, 1.0)
-    company_hits = [name for name in COMPANY_HINTS if name in text]
-    company_score = min(len(company_hits) / 2.0, 1.0)
-    years_score = min(years / 2.0, 1.0)
-    final = (years_score * 0.45) + (keyword_score * 0.35) + (company_score * 0.20)
+    role_l = (role or "job").lower()
+
+    company_score, company_mentions, company_meta = _company_signal(text)
+    keyword_hits = _count_keyword_hits(text, EXPERIENCE_KEYWORDS)
+    keyword_score = min(keyword_hits / 5.0, 1.0)
+
+    leadership_hits = _count_keyword_hits(text, LEADERSHIP_KEYWORDS)
+    leadership_score = min(leadership_hits / 4.0, 1.0)
+
+    impact_hits = _count_keyword_hits(text, IMPACT_KEYWORDS)
+    impact_score = min(impact_hits / 5.0, 1.0)
+
+    ownership_hits = _count_keyword_hits(text, OWNERSHIP_KEYWORDS)
+    ownership_score = min(ownership_hits / 5.0, 1.0)
+
+    internship_hits = _count_keyword_hits(text, INTERNSHIP_CREDIBILITY_KEYWORDS)
+    internship_score = min(internship_hits / 3.0, 1.0)
+
+    # Detect quantified impact patterns: percentages, x multipliers, and absolute numbers.
+    quant_patterns = [
+        r"\b\d+(\.\d+)?\s*%",
+        r"\b\d+(\.\d+)?x\b",
+        r"\b\d{2,}\b",
+    ]
+    quant_hits = 0
+    for p in quant_patterns:
+        quant_hits += len(re.findall(p, text))
+    quant_score = min(quant_hits / 6.0, 1.0)
+
+    if role_l == "job":
+        years_score = min(years / 4.0, 1.0)
+        final = (
+            (years_score * 0.23)
+            + (company_score * 0.24)
+            + (leadership_score * 0.13)
+            + (impact_score * 0.12)
+            + (ownership_score * 0.11)
+            + (quant_score * 0.10)
+            + (keyword_score * 0.07)
+        )
+    else:
+        years_score = min(years / 2.0, 1.0)
+        final = (
+            (years_score * 0.16)
+            + (company_score * 0.22)
+            + (internship_score * 0.20)
+            + (impact_score * 0.13)
+            + (ownership_score * 0.11)
+            + (quant_score * 0.10)
+            + (keyword_score * 0.08)
+        )
+
     return final, {
+        "role_profile": role_l,
         "years_score_100": round(years_score * 100.0, 3),
         "keyword_score_100": round(keyword_score * 100.0, 3),
+        "impact_signal_score_100": round(impact_score * 100.0, 3),
+        "ownership_signal_score_100": round(ownership_score * 100.0, 3),
+        "quantified_impact_score_100": round(quant_score * 100.0, 3),
+        "internship_credibility_score_100": round(internship_score * 100.0, 3),
         "company_signal_score_100": round(company_score * 100.0, 3),
-        "company_mentions": company_hits[:8],
+        "company_mentions": company_mentions,
+        "company_tier_meta": company_meta,
+        "signal_hits": {
+            "experience_keywords": keyword_hits,
+            "leadership_keywords": leadership_hits,
+            "impact_keywords": impact_hits,
+            "ownership_keywords": ownership_hits,
+            "internship_keywords": internship_hits,
+            "quantified_impact_patterns": quant_hits,
+        },
     }
 
 
@@ -239,6 +422,7 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
     skill_match_score_100 = _to_float(fit.get("breakdown", {}).get("skills_match_score_100"), 0.0)
     github_score_100 = _to_float(fit.get("breakdown", {}).get("github_score_100"), 0.0)
     experience_years = _to_float(fit.get("experience", {}).get("candidate_years"), 0.0)
+    experience_quality_score_100 = _to_float(fit.get("breakdown", {}).get("experience_quality_score_100"), 0.0)
 
     if missing_must_have:
         rejection_reasons.append(f"Missing must-have skills: {', '.join(missing_must_have)}")
@@ -256,6 +440,11 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
             rejection_reasons.append(
                 f"Experience {experience_years:.3f} years below minimum {thresholds['min_experience_years']:.3f}"
             )
+        min_exp_quality = _to_float(thresholds.get("min_experience_quality_score_100"), 0.0)
+        if experience_quality_score_100 < min_exp_quality:
+            rejection_reasons.append(
+                f"Experience quality score {experience_quality_score_100:.3f} below minimum {min_exp_quality:.3f}"
+            )
 
     decision_log = {
         "role_profile": role,
@@ -272,6 +461,72 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
         },
     }
     return len(rejection_reasons) == 0, rejection_reasons, decision_log
+
+
+def _summarize_candidate_for_table(candidate: dict) -> dict:
+    fit = candidate.get("fit", {}) or {}
+    decision_log = fit.get("ranking_decision_log", {}) or {}
+    experience = fit.get("experience", {}) or {}
+    summary = {
+        "filename": candidate.get("filename"),
+        "rank": candidate.get("rank"),
+        "eligible": bool(candidate.get("eligible")),
+        "fit_score_100": fit.get("fit_score_100"),
+        "rejection_reasons": candidate.get("rejection_reasons", []),
+        "ranking_decision_log": decision_log,
+        "experience": {
+            "candidate_years": experience.get("candidate_years"),
+            "required_min_years": experience.get("required_min_years"),
+            "quality_meta": experience.get("quality_meta", {}),
+        },
+    }
+    return summary
+
+
+def _top_ranking_insights(shortlisted: list[dict], rejected: list[dict]) -> list[str]:
+    eligible_pool = shortlisted
+    considered_pool = shortlisted + rejected
+    insights = []
+
+    if eligible_pool:
+        top = eligible_pool[0]
+        top_fit = top.get("fit_score_100", 0.0) or 0.0
+        top_file = top.get("filename", "unknown")
+        top_skills = (
+            ((top.get("ranking_decision_log", {}) or {}).get("candidate_metrics", {}) or {})
+            .get("skills_match_score_100", 0.0)
+        )
+        insights.append(
+            f"Top ranked candidate is {top_file} with fit_score_100={top_fit:.3f} and skills_match_score_100={top_skills:.3f}."
+        )
+    else:
+        insights.append("No candidate passed eligibility filters, so no ranked shortlist was produced.")
+
+    if considered_pool:
+        must_have_failures = 0
+        threshold_failures = 0
+        for c in considered_pool:
+            reasons = c.get("rejection_reasons", []) or []
+            if any("Missing must-have skills" in r for r in reasons):
+                must_have_failures += 1
+            if any("below minimum" in r for r in reasons):
+                threshold_failures += 1
+        insights.append(
+            f"Hard-filter impact: must-have skill mismatches caused {must_have_failures} rejections; threshold checks caused {threshold_failures} rejections."
+        )
+    else:
+        insights.append("No candidates were processed in this run.")
+
+    if shortlisted:
+        avg_fit = sum((c.get("fit_score_100") or 0.0) for c in shortlisted) / len(shortlisted)
+        avg_exp = sum((c.get("experience", {}).get("candidate_years") or 0.0) for c in shortlisted) / len(shortlisted)
+        insights.append(
+            f"Shortlisted cohort averages: fit_score_100={avg_fit:.3f}, experience_years={avg_exp:.3f}."
+        )
+    else:
+        insights.append("Shortlisted cohort averages are unavailable because zero candidates were eligible.")
+
+    return insights[:3]
 
 
 def _fallback_notes(role: str, fit: dict) -> list[str]:
@@ -349,7 +604,15 @@ def _candidate_company_fit(
 ) -> dict:
     exp_str = extracted.get("work_experience_years", "N/A")
     exp = _to_float(exp_str, 0.0)
-    exp_score = 1.0 if exp >= min_experience_years else (exp / min_experience_years if min_experience_years > 0 else 1.0)
+    # If minimum experience is not specified, still reward real experience
+    # instead of giving every candidate full marks.
+    if min_experience_years > 0:
+        exp_score = 1.0 if exp >= min_experience_years else (exp / min_experience_years)
+    else:
+        role_l = (role or "internship").lower()
+        # Jobs: stronger experience expectation. Internships: gentler scaling.
+        neutral_target_years = 2.0 if role_l == "job" else 1.0
+        exp_score = min(exp / neutral_target_years, 1.0)
 
     skill_score, matched_skills, missing_skills = _skill_match_score(required_skills, extracted)
 
@@ -360,7 +623,7 @@ def _candidate_company_fit(
     platform_score = _platform_strength_score(extracted.get("platform_stats", {}) or {})
     profile_score = _profile_completeness_score(extracted)
     project_evidence = _project_evidence_score(extracted)
-    experience_quality, experience_quality_meta = _experience_quality_score(extracted)
+    experience_quality, experience_quality_meta = _experience_quality_score(extracted, role)
     weights = _role_weights(role)
 
     final = (
@@ -457,7 +720,7 @@ async def extract_resume_batch(
     }
 
 
-@app.post("/hiring/shortlist")
+@app.post("/hiring/shortlist", response_model=ShortlistResponse)
 async def hiring_shortlist(
     files: list[UploadFile] = File(...),
     role: Literal["job", "internship"] = Form(default="internship"),
@@ -467,6 +730,7 @@ async def hiring_shortlist(
     must_have_skills_csv: str = Form(default=""),
     min_experience_years: float = Form(default=0.0),
 ):
+    started_at = time.time()
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
@@ -522,8 +786,22 @@ async def hiring_shortlist(
     failed = [c for c in candidates if not c.get("ok")]
     rejected = [c for c in candidates if c.get("ok") and not c.get("eligible")]
 
-    return {
-        "job": {
+    shortlisted_table = [_summarize_candidate_for_table(c) for c in ranked]
+    rejected_table = [_summarize_candidate_for_table(c) for c in rejected]
+    failed_table = [
+        {
+            "filename": c.get("filename"),
+            "error": c.get("error"),
+        }
+        for c in failed
+    ]
+    top_3_insights = _top_ranking_insights(shortlisted_table, rejected_table)
+
+    response_payload = {
+        "api_version": API_VERSION,
+        "scoring_version": SCORING_VERSION,
+        "policy_version": POLICY_VERSION,
+        "job_summary": {
             "company_name": company_name,
             "position_title": position_title,
             "role": role,
@@ -532,14 +810,43 @@ async def hiring_shortlist(
             "min_experience_years": min_experience_years,
             "applied_thresholds": thresholds,
         },
-        "count_uploaded": len(files),
-        "count_ranked": len(ranked),
-        "count_rejected": len(rejected),
-        "count_failed": len(failed),
-        "ranked_candidates": ranked,
-        "rejected_candidates": rejected,
-        "failed_candidates": failed,
+        "counts": {
+            "uploaded": len(files),
+            "ranked": len(ranked),
+            "rejected": len(rejected),
+            "failed": len(failed),
+        },
+        "shortlisted": shortlisted_table,
+        "rejected": rejected_table,
+        "failed": failed_table,
+        "top_3_insights_from_ranking_decision_log": top_3_insights,
     }
+    if SHORTLIST_INCLUDE_LEGACY_KEYS:
+        response_payload["ranked_candidates"] = ranked
+        response_payload["rejected_candidates"] = rejected
+        response_payload["failed_candidates"] = failed
+    else:
+        response_payload["ranked_candidates"] = []
+        response_payload["rejected_candidates"] = []
+        response_payload["failed_candidates"] = []
+
+    _json_log(
+        "shortlist_completed",
+        {
+            "role": role,
+            "company_name": company_name,
+            "position_title": position_title,
+            "uploaded": len(files),
+            "ranked": len(ranked),
+            "rejected": len(rejected),
+            "failed": len(failed),
+            "duration_ms": round((time.time() - started_at) * 1000.0, 2),
+            "api_version": API_VERSION,
+            "scoring_version": SCORING_VERSION,
+            "policy_version": POLICY_VERSION,
+        },
+    )
+    return response_payload
 
 
 if __name__ == "__main__":
