@@ -5,7 +5,9 @@
 
 # Python cache/bytecode
 __pycache__/
+**/__pycache__/
 *.py[cod]
+**/*.py[cod]
 *$py.class
 backend/app/services/__pycache__/*.pyc
 backend/app/main__pycache__/*.pyc
