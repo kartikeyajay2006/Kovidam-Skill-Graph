@@ -6,6 +6,7 @@ import json
 import uuid
 import time
 import logging
+import string
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -121,6 +122,22 @@ def _skill_match_score(required_skills: list[str], extracted: dict) -> tuple[flo
     # Anti-gaming policy:
     # Do not trust plain resume text for required skill matching.
     # Use stronger evidence from GitHub repo analysis only.
+    raw_text = extracted.get("raw_text_full") or extracted.get("raw_text_preview", "")
+    text = _normalize_text(raw_text)
+
+    def _skill_boundary_pattern(skill: str) -> str:
+        # e.g. fastapi -> FastAPI / fast api / fast-api
+        # e.g. pypdf -> py pdf / py-pdf
+        cleaned = "".join(ch for ch in skill.lower() if ch in (string.ascii_lowercase + string.digits))
+        if not cleaned:
+            return r"$a"
+        flexible = r"[\s._-]*".join(list(cleaned))
+        return rf"(?<![a-z0-9]){flexible}(?![a-z0-9])"
+
+    def _has_text_skill(skill: str, source_text: str) -> bool:
+        pattern = _skill_boundary_pattern(skill)
+        return re.search(pattern, source_text) is not None
+
     repos = extracted.get("github_analysis", {}).get("repositories", [])
     tech_tokens = set()
     for repo in repos:
@@ -136,6 +153,7 @@ def _skill_match_score(required_skills: list[str], extracted: dict) -> tuple[flo
         s = _normalize_text(skill)
         if not s:
             continue
+        in_text = _has_text_skill(s, text)
         in_tech = any(s == t or s in t or t in s for t in tech_tokens)
         if in_tech:
             matched.append(skill)
@@ -318,13 +336,35 @@ def _ai_experience_quality_score(text: str, role_l: str) -> tuple[float | None, 
         }
     except Exception as exc:
         return None, {"ai_used": False, "ai_reason": f"ai_error:{type(exc).__name__}"}
+def _company_signal(text: str) -> float:
+    hits: list[tuple[str, float]] = []
+    for tier_score, companies in COMPANY_SIGNAL_TIERS.items():
+        for company in companies:
+            if company in text:
+                hits.append((company, tier_score))
+
+    if not hits:
+        return 0.0
+
+    unique_hits = {}
+    for name, score in hits:
+        # If same company appears, keep highest tier score.
+        unique_hits[name] = max(score, unique_hits.get(name, 0.0))
+
+    scores = list(unique_hits.values())
+    max_score = max(scores)
+    avg_score = sum(scores) / len(scores)
+    blended = (max_score * 0.65) + (avg_score * 0.35)
+    return blended
 
 
 def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
-    text = _normalize_text(extracted.get("raw_text_preview", ""))
+    raw_text = extracted.get("raw_text_full") or extracted.get("raw_text_preview", "")
+    text = _normalize_text(raw_text)
     years = _to_float(extracted.get("work_experience_years", "0"), 0.0)
     role_l = (role or "job").lower()
 
+    company_score = _company_signal(text)
     keyword_hits = _count_keyword_hits(text, EXPERIENCE_KEYWORDS)
     keyword_score = min(keyword_hits / 5.0, 1.0)
 
@@ -391,6 +431,7 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
         "ai_experience_quality_score_100": None if ai_score is None else round(ai_score * 100.0, 3),
         "ai_blend_weight": EXPERIENCE_AI_BLEND_WEIGHT,
         "ai_meta": ai_meta,
+        "company_signal_score_100": round(company_score * 100.0, 3),
         "signal_hits": {
             "experience_keywords": keyword_hits,
             "leadership_keywords": leadership_hits,

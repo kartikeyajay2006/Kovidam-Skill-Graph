@@ -184,6 +184,7 @@ async def parse_resume_and_enrich(
                 "overall_score_100_str": f"{active_role_score:.3f}",
             },
         },
+        "raw_text_full": text,
         "raw_text_preview": text[:1500],
     }
 
