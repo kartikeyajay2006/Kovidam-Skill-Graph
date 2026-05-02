@@ -116,21 +116,27 @@ Output includes:
 ## Setup
 
 ### 1. Database Configuration
-Ensure you have **PostgreSQL** installed and running. Create a database to store the skill graph data (default name `kovidam`).
-For first Time only: 
+Use Docker (`ankane/pgvector`) for PostgreSQL + pgvector.
+For first time only:
 ```bash
 docker run -d \
   --name kovidam-db \
-  -p 5432:5432 \
+  -p 5434:5432 \
   -e POSTGRES_PASSWORD=postgres \
   ankane/pgvector
 ```
 
-Then :
+Then start it when needed:
 ```bash 
 docker start kovidam-db
 ```
-For checking the Database:
+
+Create the database once:
+```bash
+docker exec -it kovidam-db psql -U postgres -c "CREATE DATABASE kovidam;"
+```
+
+Check DB connection:
 ```bash
 docker exec -it kovidam-db psql -U postgres
 ```
@@ -142,7 +148,7 @@ Create `backend/.env` and configure:
 # Core keys
 GITHUB_PAT=your_github_pat
 OPENAI_API_KEY=your_openai_api_key
-DATABASE_URL=postgresql://postgres:postgres@localhost:5433/kovidam
+DATABASE_URL=postgresql://postgres:postgres@localhost:5434/kovidam
 
 # Concurrency
 RESUME_CONCURRENCY=2
@@ -195,8 +201,9 @@ Open a terminal and navigate to the backend directory:
 ```bash
 cd backend
 rm -rf venv
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 playwright install chromium
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

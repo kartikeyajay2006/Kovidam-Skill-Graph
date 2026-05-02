@@ -4,7 +4,11 @@ from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
+from app.config import load_environment
 from app.models.schema import Base
+
+# Ensure backend/.env is loaded before reading DATABASE_URL
+load_environment()
 
 # Load database URL from environment variable, with a localhost default for development fallback
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/kovidam")
