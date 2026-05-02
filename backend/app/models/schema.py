@@ -20,6 +20,7 @@ class candidates(Base):
 class jobs(Base):
     __tablename__ = "jobs"
     id = Column(String, primary_key=True)
+    candidate_id = Column(String, ForeignKey("candidates.id"))
     company_name = Column(String)
     position_title = Column(String)
     role = Column(String)

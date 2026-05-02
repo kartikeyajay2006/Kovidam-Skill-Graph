@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Dict, Tuple
 import math
 
+GITHUB_AI_ADJUSTMENT_ENABLED = os.getenv("GITHUB_AI_ADJUSTMENT_ENABLED", "false").lower() == "true"
+
 
 def _r3(value: float) -> float:
     return round(float(value), 3)
@@ -95,6 +97,9 @@ def _deterministic_score(metrics: Dict[str, float], role: str) -> Tuple[float, D
 
 
 def _ai_adjustment(analysis_data: dict, role: str) -> Dict[str, object]:
+    if not GITHUB_AI_ADJUSTMENT_ENABLED:
+        return {"enabled": False, "reason": "GITHUB_AI_ADJUSTMENT_ENABLED is false", "adjustment": 0.0}
+
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return {"enabled": False, "reason": "OPENAI_API_KEY not set", "adjustment": 0.0}
@@ -122,14 +127,14 @@ def _ai_adjustment(analysis_data: dict, role: str) -> Dict[str, object]:
         # Newer SDK path
         if hasattr(client, "responses"):
             resp = client.responses.create(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 input=prompt,
             )
             text = getattr(resp, "output_text", "") or ""
         # Backward-compatible path for openai==1.13.x
         else:
             completion = client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -153,7 +158,7 @@ def _ai_adjustment(analysis_data: dict, role: str) -> Dict[str, object]:
             "adjustment": adj,
             "confidence": float(parsed.get("confidence", 0.0)),
             "rationale": str(parsed.get("rationale", ""))[:240],
-            "model": "gpt-5-mini",
+            "model": "gpt-4o-mini",
         }
     except Exception as exc:
         return {"enabled": False, "reason": f"ai_error: {exc}", "adjustment": 0.0}

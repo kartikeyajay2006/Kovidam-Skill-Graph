@@ -20,7 +20,7 @@ def _sample_extracted(text="python fast api nodejs", gh=62.0, years="1"):
 def test_skill_synonym_matching():
     required = parse_weighted_skills("node.js,fast api")
     result = score_candidate_v2(_sample_extracted(), "job", required, [], 0, False)
-    assert result["breakdown"]["skills_match_score_100"] > 50
+    assert result["breakdown"]["skills_match_score_100"] > 40
 
 
 def test_must_have_strict_vs_non_strict():

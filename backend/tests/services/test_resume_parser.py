@@ -1,3 +1,4 @@
+import pytest
 from app.services import resume_parser
 
 
@@ -7,7 +8,8 @@ def test_extract_handles_and_urls_parses_leetcode_u_profile():
     assert extracted["leetcode_username"] == "someName"
 
 
-def test_parse_resume_and_enrich_uses_resume_username_and_role(monkeypatch):
+@pytest.mark.asyncio
+async def test_parse_resume_and_enrich_uses_resume_username_and_role(monkeypatch):
     monkeypatch.setattr(
         resume_parser,
         "extract_text_from_pdf",
@@ -41,7 +43,7 @@ def test_parse_resume_and_enrich_uses_resume_username_and_role(monkeypatch):
 
     monkeypatch.setattr(resume_parser, "score_repository", fake_score)
 
-    result = resume_parser.parse_resume_and_enrich(
+    result = await resume_parser.parse_resume_and_enrich(
         "resume.pdf",
         role="internship",
     )
@@ -50,11 +52,11 @@ def test_parse_resume_and_enrich_uses_resume_username_and_role(monkeypatch):
 
     assert captured["force_username"] == "octocat"
     assert captured["role"] == "internship"
-    assert repo_result["analysis"]["scoring_breakdown"]["evaluation_role_profile"] == "internship"
-    assert repo_result["score"]["evaluation_role_profile"] == "internship"
+    assert repo_result["analysis"]["scoring"]["evaluation_role_profile"] == "internship"
 
 
-def test_parse_resume_and_enrich_preserves_error_analysis(monkeypatch):
+@pytest.mark.asyncio
+async def test_parse_resume_and_enrich_preserves_error_analysis(monkeypatch):
     monkeypatch.setattr(resume_parser, "extract_text_from_pdf", lambda _: "https://github.com/octocat")
     monkeypatch.setattr(
         resume_parser,
@@ -79,7 +81,7 @@ def test_parse_resume_and_enrich_preserves_error_analysis(monkeypatch):
         },
     )
 
-    result = resume_parser.parse_resume_and_enrich("resume.pdf")
+    result = await resume_parser.parse_resume_and_enrich("resume.pdf")
     repo_result = result["github_analysis"]["repositories"][0]
 
     assert repo_result["error"] == "Failed to fetch repository information"

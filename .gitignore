@@ -7,6 +7,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
+backend/app/services/__pycache__/*.pyc
+backend/app/main__pycache__/*.pyc
+backend/app/db__pycache__/*.pyc
 
 # Virtual environments
 .venv/

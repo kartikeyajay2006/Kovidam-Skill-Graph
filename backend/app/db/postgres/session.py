@@ -4,6 +4,8 @@ from typing import Generator
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
+from app.models.schema import Base
+
 # Load database URL from environment variable, with a localhost default for development fallback
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/kovidam")
 
@@ -14,6 +16,16 @@ engine = create_engine(
     pool_size=10,
     max_overflow=20
 )
+
+from sqlalchemy import text
+
+# Create all tables if they don't exist
+print("[DB] Ensuring database schema and tables exist...")
+with engine.connect() as conn:
+    conn.execute(text("CREATE SCHEMA IF NOT EXISTS public;"))
+    conn.commit()
+
+Base.metadata.create_all(bind=engine)
 
 # Create a configured "Session" class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

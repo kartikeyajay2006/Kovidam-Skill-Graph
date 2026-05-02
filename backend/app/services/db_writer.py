@@ -98,6 +98,7 @@ def save_to_db(structured_data: Dict[str, Any], trace_id: str, resume_hash: str)
         job_id = str(uuid.uuid4())
         job_record = jobs(
             id=job_id,
+            candidate_id=candidate_id,
             company_name=job_data.get("company_name") or None,
             position_title=job_data.get("position_title") or None,
             role=job_data.get("role") or None,

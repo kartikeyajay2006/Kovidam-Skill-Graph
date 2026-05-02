@@ -22,6 +22,7 @@ load_environment()
 app = FastAPI(title="Kovidam Skill Graph API")
 logger = logging.getLogger("kovidam.shortlist")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logging.getLogger("pypdf._reader").setLevel(logging.ERROR)
 
 # Limit in-process resume parsing concurrency. Default: 2 at a time.
 RESUME_CONCURRENCY = max(1, int(os.getenv("RESUME_CONCURRENCY", "2")))
@@ -43,27 +44,6 @@ EXPERIENCE_KEYWORDS = [
     "work experience",
     "employment",
 ]
-COMPANY_SIGNAL_TIERS = {
-    # Tier-1 global product and high bar engineering orgs
-    1.00: [
-        "google", "microsoft", "amazon", "meta", "apple", "netflix", "nvidia", "openai",
-        "deepmind", "anthropic", "stripe", "databricks", "snowflake", "airbnb", "uber",
-    ],
-    # Tier-2 globally respected tech/product or strong platform orgs
-    0.78: [
-        "adobe", "oracle", "salesforce", "atlassian", "palantir", "twilio", "intuit",
-        "servicenow", "cloudflare", "shopify", "ibm", "intel", "sap", "linkedin",
-    ],
-    # Tier-3 strong regional or scaled engineering companies
-    0.62: [
-        "flipkart", "swiggy", "zomato", "razorpay", "phonepe", "paytm", "cred", "meesho",
-        "oyo", "freshworks", "zoho", "upstox", "groww", "postman",
-    ],
-    # Tier-4 large service-heavy orgs (still relevant, lower signal for product depth)
-    0.45: [
-        "infosys", "tcs", "wipro", "hcl", "accenture", "cognizant", "capgemini", "tech mahindra",
-    ],
-}
 LEADERSHIP_KEYWORDS = [
     "led", "owned", "mentored", "managed", "architected", "drove", "spearheaded",
     "designed end-to-end", "initiated", "coordinated",
@@ -80,6 +60,8 @@ INTERNSHIP_CREDIBILITY_KEYWORDS = [
     "internship", "intern", "research intern", "summer intern", "winter intern",
     "ppo", "pre-placement offer", "return offer",
 ]
+EXPERIENCE_AI_TIMEOUT_SECONDS = float(os.getenv("EXPERIENCE_AI_TIMEOUT_SECONDS", "2.2"))
+EXPERIENCE_AI_BLEND_WEIGHT = max(0.0, min(1.0, float(os.getenv("EXPERIENCE_AI_BLEND_WEIGHT", "0.55"))))
 
 
 @app.get("/")
@@ -109,21 +91,12 @@ async def _process_resume_file(file: UploadFile, role: str):
 
         saved_json_path = save_extracted_data_to_json(result, file.filename)
 
-        # Persist parsed data to PostgreSQL.
-        raw_for_transform = {
-            "filename": file.filename,
-            "data": result,
-        }
-        structured_data = transform_resume_data(raw_for_transform)
-        db_result = await asyncio.to_thread(save_to_db, structured_data, trace_id, resume_hash)
-
         return {
             "filename": file.filename,
             "extracted": result,
             "saved_json_path": saved_json_path,
             "trace_id": trace_id,
             "resume_hash": resume_hash,
-            "db_result": db_result,
         }
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -145,7 +118,9 @@ def _skill_match_score(required_skills: list[str], extracted: dict) -> tuple[flo
     if not required_skills:
         return 1.0, [], []
 
-    text = _normalize_text(extracted.get("raw_text_preview", ""))
+    # Anti-gaming policy:
+    # Do not trust plain resume text for required skill matching.
+    # Use stronger evidence from GitHub repo analysis only.
     repos = extracted.get("github_analysis", {}).get("repositories", [])
     tech_tokens = set()
     for repo in repos:
@@ -161,9 +136,8 @@ def _skill_match_score(required_skills: list[str], extracted: dict) -> tuple[flo
         s = _normalize_text(skill)
         if not s:
             continue
-        in_text = s in text
         in_tech = any(s == t or s in t or t in s for t in tech_tokens)
-        if in_text or in_tech:
+        if in_tech:
             matched.append(skill)
         else:
             missing.append(skill)
@@ -296,37 +270,54 @@ def _count_keyword_hits(text: str, keywords: list[str]) -> int:
     return sum(1 for k in keywords if k in text)
 
 
-def _company_signal(text: str) -> tuple[float, list[str], dict]:
-    hits: list[tuple[str, float]] = []
-    tier_counts: dict[str, int] = {}
-    for tier_score, companies in COMPANY_SIGNAL_TIERS.items():
-        label = f"{tier_score:.2f}"
-        count = 0
-        for company in companies:
-            if company in text:
-                hits.append((company, tier_score))
-                count += 1
-        if count:
-            tier_counts[label] = count
+def _ai_experience_quality_score(text: str, role_l: str) -> tuple[float | None, dict]:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None, {"ai_used": False, "ai_reason": "missing_openai_api_key"}
 
-    if not hits:
-        return 0.0, [], {"tier_counts": tier_counts, "max_tier_score": 0.0, "avg_tier_score": 0.0}
-
-    unique_hits = {}
-    for name, score in hits:
-        # If same company appears, keep highest tier score.
-        unique_hits[name] = max(score, unique_hits.get(name, 0.0))
-
-    scores = list(unique_hits.values())
-    max_score = max(scores)
-    avg_score = sum(scores) / len(scores)
-    blended = (max_score * 0.65) + (avg_score * 0.35)
-    mentions = sorted(unique_hits.keys())[:12]
-    return blended, mentions, {
-        "tier_counts": tier_counts,
-        "max_tier_score": round(max_score * 100.0, 3),
-        "avg_tier_score": round(avg_score * 100.0, 3),
-    }
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, timeout=EXPERIENCE_AI_TIMEOUT_SECONDS)
+        prompt_payload = {
+            "role_profile": role_l,
+            "resume_excerpt": text[:3500],
+            "task": (
+                "Score candidate experience quality from 0 to 100 only from evidence in text. "
+                "Prioritize ownership, impact, complexity, reliability signals, team collaboration, and progression. "
+                "Do not use hardcoded company prestige lists. Unknown companies are neutral."
+            ),
+            "required_json_schema": {
+                "experience_quality_score_100": "number",
+                "confidence_100": "number",
+                "reasoning": "string<=220",
+            },
+        }
+        resp = client.chat.completions.create(
+            model=os.getenv("EXPERIENCE_AI_MODEL", "gpt-4o-mini"),
+            temperature=0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a strict ATS evaluator. Return JSON only with required keys.",
+                },
+                {"role": "user", "content": json.dumps(prompt_payload)},
+            ],
+        )
+        content = (resp.choices[0].message.content or "").strip()
+        start, end = content.find("{"), content.rfind("}")
+        parsed = json.loads(content[start:end + 1]) if start != -1 and end != -1 else {}
+        score_100 = _to_float(parsed.get("experience_quality_score_100"), -1.0)
+        confidence_100 = _to_float(parsed.get("confidence_100"), 0.0)
+        reasoning = str(parsed.get("reasoning") or "").strip()[:220]
+        if score_100 < 0:
+            return None, {"ai_used": False, "ai_reason": "invalid_model_output"}
+        return max(0.0, min(1.0, score_100 / 100.0)), {
+            "ai_used": True,
+            "ai_confidence_100": round(max(0.0, min(100.0, confidence_100)), 3),
+            "ai_reasoning": reasoning,
+        }
+    except Exception as exc:
+        return None, {"ai_used": False, "ai_reason": f"ai_error:{type(exc).__name__}"}
 
 
 def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
@@ -334,7 +325,6 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
     years = _to_float(extracted.get("work_experience_years", "0"), 0.0)
     role_l = (role or "job").lower()
 
-    company_score, company_mentions, company_meta = _company_signal(text)
     keyword_hits = _count_keyword_hits(text, EXPERIENCE_KEYWORDS)
     keyword_score = min(keyword_hits / 5.0, 1.0)
 
@@ -363,38 +353,44 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
 
     if role_l == "job":
         years_score = min(years / 4.0, 1.0)
-        final = (
+        deterministic = (
             (years_score * 0.23)
-            + (company_score * 0.24)
-            + (leadership_score * 0.13)
-            + (impact_score * 0.12)
-            + (ownership_score * 0.11)
+            + (leadership_score * 0.20)
+            + (impact_score * 0.21)
+            + (ownership_score * 0.21)
             + (quant_score * 0.10)
-            + (keyword_score * 0.07)
+            + (keyword_score * 0.05)
         )
     else:
         years_score = min(years / 2.0, 1.0)
-        final = (
+        deterministic = (
             (years_score * 0.16)
-            + (company_score * 0.22)
             + (internship_score * 0.20)
-            + (impact_score * 0.13)
-            + (ownership_score * 0.11)
+            + (impact_score * 0.24)
+            + (ownership_score * 0.19)
             + (quant_score * 0.10)
-            + (keyword_score * 0.08)
+            + (keyword_score * 0.11)
         )
+
+    ai_score, ai_meta = _ai_experience_quality_score(text, role_l)
+    if ai_score is None:
+        final = deterministic
+    else:
+        final = ((1.0 - EXPERIENCE_AI_BLEND_WEIGHT) * deterministic) + (EXPERIENCE_AI_BLEND_WEIGHT * ai_score)
 
     return final, {
         "role_profile": role_l,
+        "scoring_mode": "ai_blended_experience_intelligence",
         "years_score_100": round(years_score * 100.0, 3),
         "keyword_score_100": round(keyword_score * 100.0, 3),
         "impact_signal_score_100": round(impact_score * 100.0, 3),
         "ownership_signal_score_100": round(ownership_score * 100.0, 3),
         "quantified_impact_score_100": round(quant_score * 100.0, 3),
         "internship_credibility_score_100": round(internship_score * 100.0, 3),
-        "company_signal_score_100": round(company_score * 100.0, 3),
-        "company_mentions": company_mentions,
-        "company_tier_meta": company_meta,
+        "deterministic_experience_quality_score_100": round(deterministic * 100.0, 3),
+        "ai_experience_quality_score_100": None if ai_score is None else round(ai_score * 100.0, 3),
+        "ai_blend_weight": EXPERIENCE_AI_BLEND_WEIGHT,
+        "ai_meta": ai_meta,
         "signal_hits": {
             "experience_keywords": keyword_hits,
             "leadership_keywords": leadership_hits,
@@ -566,7 +562,7 @@ def _generate_ai_notes_sync(role: str, fit: dict, extracted: dict) -> list[str]:
             "No praise/buttering. No extra keys. Data: " + json.dumps(payload)
         )
         resp = client.chat.completions.create(
-            model="gpt-5-mini",
+            model=os.getenv("NOTES_AI_MODEL", "gpt-4o-mini"),
             messages=[
                 {"role": "system", "content": "You are a strict hiring analyst. Output JSON only."},
                 {"role": "user", "content": prompt},
@@ -762,6 +758,25 @@ async def hiring_shortlist(
         )
         fit["ranking_decision_log"] = decision_log
 
+        raw_for_transform = {
+            "filename": outcome.get("filename") or file.filename,
+            "data": extracted,
+            "job": {
+                "company_name": company_name,
+                "position_title": position_title,
+                "role": role,
+                "required_skills": required_skills,
+                "min_experience_years": min_experience_years,
+            },
+            "fit": fit,
+        }
+        structured_data = transform_resume_data(raw_for_transform)
+        trace_id = outcome.get("trace_id")
+        resume_hash = outcome.get("resume_hash")
+        
+        # Persist parsed data to PostgreSQL now that we have job and fit context
+        db_result = await asyncio.to_thread(save_to_db, structured_data, trace_id, resume_hash)
+
         candidates.append({
             "filename": outcome.get("filename") or file.filename,
             "ok": True,
@@ -772,6 +787,7 @@ async def hiring_shortlist(
             "profiles": extracted.get("profiles", {}),
             "github_summary": extracted.get("github_analysis", {}).get("summary", {}),
             "platform_stats": extracted.get("platform_stats", {}),
+            "db_result": db_result,
         })
 
     ranked = sorted(

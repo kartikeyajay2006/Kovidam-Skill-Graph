@@ -132,12 +132,59 @@ docker exec -it kovidam-db psql -U postgres
 ```
 
 ### 2. Environment Variables
-Copy `.env.example` to `.env` inside the `backend` directory and configure your keys:
-- `GITHUB_PAT`: Your GitHub Personal Access Token
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `DATABASE_URL`: Connection string for Postgres (default: `postgresql://postgres:postgres@localhost:5432/kovidam`)
-- `RESUME_CONCURRENCY`: (optional, default `2`)
-- `GITHUB_REPO_CONCURRENCY`: (optional, default `3`)
+Create `backend/.env` and configure:
+
+```env
+# Core keys
+GITHUB_PAT=your_github_pat
+OPENAI_API_KEY=your_openai_api_key
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/kovidam
+
+# Concurrency
+RESUME_CONCURRENCY=2
+GITHUB_REPO_CONCURRENCY=3
+
+# API/Scoring/Policy version tags
+SHORTLIST_API_VERSION=v1.0.0
+SHORTLIST_SCORING_VERSION=v1.1.0
+SHORTLIST_POLICY_VERSION=v1.1.0
+
+# Response shape
+SHORTLIST_INCLUDE_LEGACY_KEYS=true
+
+# AI models/config
+EXPERIENCE_AI_MODEL=gpt-4o-mini
+NOTES_AI_MODEL=gpt-4o-mini
+EXPERIENCE_AI_TIMEOUT_SECONDS=2.2
+EXPERIENCE_AI_BLEND_WEIGHT=0.55
+NOTES_AI_TIMEOUT_SECONDS=1.8
+
+# Job thresholds
+JOB_MIN_SKILL_MATCH_PCT=55
+JOB_MIN_GITHUB_SCORE_100=35
+JOB_MIN_EXPERIENCE_QUALITY_SCORE_100=0
+
+# Internship weights
+INTERN_WEIGHT_SKILLS=0.34
+INTERN_WEIGHT_GITHUB=0.21
+INTERN_WEIGHT_EXPERIENCE=0.09
+INTERN_WEIGHT_PLATFORM=0.14
+INTERN_WEIGHT_PROJECTS=0.08
+INTERN_WEIGHT_PROFILE=0.02
+INTERN_WEIGHT_EXPERIENCE_QUALITY=0.12
+
+# Job weights
+JOB_WEIGHT_SKILLS=0.27
+JOB_WEIGHT_GITHUB=0.20
+JOB_WEIGHT_EXPERIENCE=0.19
+JOB_WEIGHT_PLATFORM=0.08
+JOB_WEIGHT_PROJECTS=0.04
+JOB_WEIGHT_PROFILE=0.02
+JOB_WEIGHT_EXPERIENCE_QUALITY=0.20
+
+# Logging
+LOG_LEVEL=INFO
+```
 
 ### 3. Installation & Run
 Open a terminal and navigate to the backend directory:
@@ -179,15 +226,6 @@ curl -X POST "http://localhost:8000/hiring/shortlist" \
   -F "files=@/absolute/path/resume3.pdf" \
   -F "files=@/absolute/path/resume4.pdf"
 ```
-
-## Environment Variables
-
-Create `backend/.env` with:
-- `GITHUB_PAT`
-- `OPENAI_API_KEY`
-- `DATABASE_URL`
-- `RESUME_CONCURRENCY` (optional, default `2`)
-- `GITHUB_REPO_CONCURRENCY` (optional, default `3`)
 
 ## Output Storage
 
