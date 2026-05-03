@@ -4,7 +4,6 @@ This backend parses PDF resumes, enriches coding-profile data, audits GitHub rep
 
 ## Architecture Documentary
 - Full technical documentary: [docs/PROJECT_DOCUMENTARY.md](docs/PROJECT_DOCUMENTARY.md)
-- 3D visual architecture showcase: [docs/showcase.html](docs/showcase.html)
 
 ## Implemented Modules (File-by-File)
 
