@@ -9,14 +9,12 @@ __pycache__/
 *.py[cod]
 **/*.py[cod]
 *$py.class
-backend/app/services/__pycache__/*.pyc
-backend/app/main__pycache__/*.pyc
-backend/app/db__pycache__/*.pyc
 
 # Virtual environments
 .venv/
 venv/
 env/
+backend/venv/
 
 # Test / tooling caches
 .pytest_cache/
@@ -29,6 +27,7 @@ htmlcov/
 .DS_Store
 .vscode/
 .idea/
+.python-version
 
 # Build artifacts
 build/
@@ -38,6 +37,7 @@ dist/
 # Runtime / temp files
 *.log
 *.tmp
+*.swp
 
 # App output data
 backend/data/extracted_resumes/*.json
@@ -54,7 +54,3 @@ backend/kaggle_session.json
 *.dll
 
 .codex
-
-# Python cache
-__pycache__/
-*.pyc

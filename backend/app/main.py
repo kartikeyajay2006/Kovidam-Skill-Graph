@@ -8,10 +8,12 @@ import uuid
 import time
 import logging
 from typing import Literal
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from app.config import load_environment
+from app.db.postgres.session import init_db
 from app.services.resume_parser import parse_resume_and_enrich, save_extracted_data_to_json
 from app.services.transformer import transform_resume_data
 from app.services.db_writer import save_to_db
@@ -19,8 +21,6 @@ from app.utils.hash_utils import generate_resume_hash
 from app.schemas.shortlist_response import ShortlistResponse
 
 load_environment()
-
-app = FastAPI(title="Kovidam Skill Graph API")
 logger = logging.getLogger("kovidam.shortlist")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
@@ -160,6 +160,19 @@ SKILL_IMPLICATIONS = {
 }
 
 
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    try:
+        init_db()
+    except Exception:
+        logger.exception("database_initialization_failed")
+        raise
+    yield
+
+
+app = FastAPI(title="Kovidam Skill Graph API", lifespan=_lifespan)
+
+
 @app.get("/")
 async def root():
     return {
@@ -168,7 +181,7 @@ async def root():
     }
 
 
-async def _process_resume_file(file: UploadFile, role: str):
+async def _process_resume_file(file: UploadFile, role: str, force_reprocess: bool = False):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail=f"Only PDF files are supported: {file.filename}")
 
@@ -193,7 +206,13 @@ async def _process_resume_file(file: UploadFile, role: str):
             "data": result,
         }
         structured_data = transform_resume_data(raw_for_transform)
-        db_result = await asyncio.to_thread(save_to_db, structured_data, trace_id, resume_hash)
+        db_result = await asyncio.to_thread(
+            save_to_db,
+            structured_data,
+            trace_id,
+            resume_hash,
+            force_reprocess=force_reprocess,
+        )
 
         return {
             "filename": file.filename,
@@ -1482,9 +1501,10 @@ def _candidate_company_fit(
 async def extract_resume(
     file: UploadFile = File(...),
     role: Literal["job", "internship"] = Form(default="job"),
+    force_reprocess: bool = Form(default=False),
 ):
     try:
-        return await _process_resume_file(file, role)
+        return await _process_resume_file(file, role, force_reprocess=force_reprocess)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1495,11 +1515,15 @@ async def extract_resume(
 async def extract_resume_batch(
     files: list[UploadFile] = File(...),
     role: Literal["job", "internship"] = Form(default="job"),
+    force_reprocess: bool = Form(default=False),
 ):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
-    tasks = [asyncio.create_task(_process_resume_file(file, role)) for file in files]
+    tasks = [
+        asyncio.create_task(_process_resume_file(file, role, force_reprocess=force_reprocess))
+        for file in files
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     response_items = []
@@ -1533,6 +1557,7 @@ async def hiring_shortlist(
     required_skills_csv: str = Form(...),
     must_have_skills_csv: str = Form(default=""),
     min_experience_years: float = Form(default=0.0),
+    force_reprocess: bool = Form(default=False),
 ):
     started_at = time.time()
     if not files:
@@ -1542,7 +1567,10 @@ async def hiring_shortlist(
     must_have_skills = _parse_csv_list(must_have_skills_csv)
     thresholds = _role_thresholds(role, min_experience_years)
 
-    tasks = [asyncio.create_task(_process_resume_file(file, role)) for file in files]
+    tasks = [
+        asyncio.create_task(_process_resume_file(file, role, force_reprocess=force_reprocess))
+        for file in files
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     candidates = []

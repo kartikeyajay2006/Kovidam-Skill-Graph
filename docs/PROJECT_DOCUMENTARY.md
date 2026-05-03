@@ -2,6 +2,84 @@
 
 Detailed technical documentary of the implemented backend as of current code.
 
+## Recent Production Hardening Updates
+
+The backend was upgraded with reliability and production-readiness improvements:
+- DB initialization moved to explicit startup lifecycle (no import-time connection side effects).
+- ORM schema strengthened with indexes, uniqueness constraints, and timestamp fields.
+- Migration framework added via Alembic (`backend/alembic.ini`, `backend/alembic/`).
+- DB writer upgraded to structured logging and safer persistence flow.
+- Duplicate-resume handling now supports controlled bypass through `force_reprocess`.
+- Runtime tuning knobs added for structured extraction stability (`RESUME_STRUCTURED_*` envs).
+
+## Migration and Compatibility Notes
+
+Because this project already had live local databases before schema hardening, the following operational rule now applies:
+- ORM evolution and DB evolution must be synchronized.
+- If model fields are added (for example `created_at`), existing databases require migration before writes.
+
+Current migration assets:
+- `backend/alembic.ini`
+- `backend/alembic/env.py`
+- `backend/alembic/versions/20260503_01_baseline_schema.py`
+
+Recommended lifecycle:
+1. update models,
+2. create migration,
+3. apply migration in environment,
+4. then deploy/restart API.
+
+## Runtime and Failure Semantics
+
+### A. Structured extraction timeout path
+`resume_parser` includes timeout-guarded structured extraction.  
+If timeout occurs:
+- extraction path emits `structured_resume_extraction_timeout_or_error`,
+- pipeline falls back gracefully and continues,
+- API request may still complete with `200` if downstream scoring is viable.
+
+### B. DB persistence failure path
+`db_writer` is intentionally non-fatal to shortlist completion.
+- insert exceptions are logged (`db_insert_failed`),
+- shortlist response may still be returned for user-facing flow continuity,
+- DB write status in response/trace should be monitored for reliability SLOs.
+
+### C. Duplicate resume policy
+Duplicate detection uses SHA256 hash of uploaded bytes (`resume_hash`).
+- default behavior: duplicate returns `status=duplicate` for persistence path,
+- optional override: `force_reprocess=true` in endpoints to bypass duplicate short-circuit for recomputation/testing.
+
+## Operations Runbook
+
+### Signals that indicate healthy run
+- OpenAI calls return `HTTP 200`.
+- DB writer logs show:
+  - `db_session_created`
+  - `db_duplicate_check_start`
+  - `db_insert_start`
+  - `db_primary_records_flushed`
+  - `db_commit_success`
+- shortlist event logs show:
+  - `uploaded == ranked + rejected + failed`
+
+### Signals that indicate migration mismatch
+- SQL errors like:
+  - `UndefinedColumn`
+  - `column ... does not exist`
+- Typical cause:
+  - ORM schema ahead of database schema.
+
+### Signals that indicate degraded extraction quality
+- frequent structured timeout logs,
+- very low extracted skill/project evidence,
+- abnormally short processing duration compared to known baseline.
+
+## Security and Secrets Hygiene
+
+- `.env` must never be committed.
+- PAT/API keys must be rotated immediately if exposed in terminals, logs, screenshots, or chat transcripts.
+- Prefer short-lived credentials and scoped tokens wherever possible.
+
 ## Documentary Format Note
 
 This document is intentionally written in a technical documentary style:

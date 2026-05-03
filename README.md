@@ -11,6 +11,9 @@ This backend parses PDF resumes, enriches coding-profile data, audits GitHub rep
 - `backend/app/main.py`
 Purpose: FastAPI entrypoint and resume extraction endpoints.
 What it does: accepts PDF(s) + `role`, runs extraction pipeline, returns JSON, saves output file.
+New:
+- explicit DB initialization through FastAPI lifespan startup,
+- optional `force_reprocess` flag for bypassing duplicate-hash short-circuit.
 
 ### Configuration
 - `backend/app/config.py`
@@ -73,17 +76,38 @@ What it does:
 - OpenAI-based bounded adjustment,
 - outputs normalized + out-of-100 (`xx.xxx`) scores.
 
+### Database & Migrations
+- `backend/app/db/postgres/session.py`
+Purpose: SQLAlchemy engine/session factory and explicit DB bootstrap.
+What it does:
+- avoids import-time DB side effects,
+- initializes schema on app startup via `init_db()`.
+
+- `backend/app/models/schema.py`
+Purpose: ORM schema definitions.
+What it does:
+- production-grade constraints/indexes,
+- timestamp columns (`created_at`, `updated_at` where relevant),
+- backward-compatible aliases for existing imports.
+
+- `backend/alembic.ini`, `backend/alembic/`
+Purpose: migration framework.
+What it does:
+- in-place schema migration support for existing databases.
+
 ## API
 
 ### `POST /resume/extract`
 Form fields:
 - `file` (PDF, required)
 - `role` (`job` or `internship`, optional; default `job`)
+- `force_reprocess` (`true`/`false`, optional; default `false`)
 
 ### `POST /resume/extract/batch`
 Form fields:
 - `files` (multiple PDFs, required)
 - `role` (`job` or `internship`, optional; default `job`)
+- `force_reprocess` (`true`/`false`, optional; default `false`)
 
 Behavior:
 - all files are accepted in one request,
@@ -99,6 +123,7 @@ Form fields:
 - `role` (`job` or `internship`, optional; default `internship`)
 - `required_skills_csv` (required, comma-separated; e.g. `python,fastapi,sql,git`)
 - `min_experience_years` (optional; default `0.0`)
+- `force_reprocess` (`true`/`false`, optional; default `false`)
 
 Behavior:
 - extracts all resumes,
@@ -152,6 +177,15 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5434/kovidam
 # Concurrency
 RESUME_CONCURRENCY=2
 GITHUB_REPO_CONCURRENCY=3
+
+# Structured extraction runtime tuning
+RESUME_STRUCTURED_MODEL=gpt-5-mini
+RESUME_STRUCTURED_TIMEOUT_SECONDS=45
+RESUME_STRUCTURED_MAX_CHUNKS=6
+RESUME_STRUCTURED_RETRIES=2
+RESUME_STRUCTURED_MAX_CHUNK_CHARS=6000
+RESUME_OCR_MIN_ALPHA_CHARS_PER_PAGE=50
+RESUME_PARSER_MIN_ALPHA_CHARS=120
 
 # API/Scoring/Policy version tags
 SHORTLIST_API_VERSION=v1.0.0
@@ -240,3 +274,11 @@ curl -X POST "http://localhost:8000/hiring/shortlist" \
 ## Output Storage
 
 - Extracted responses: `backend/data/extracted_resumes/`
+
+## Migration Commands
+
+From `backend/`:
+```bash
+source venv/bin/activate
+alembic upgrade head
+```

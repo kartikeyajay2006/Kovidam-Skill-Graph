@@ -39,7 +39,13 @@ def _get_or_create_skill(session: Session, skill_name: str):
     return skill
 
 
-def save_to_db(structured_data: Dict[str, Any], trace_id: str, resume_hash: str) -> Optional[Dict[str, str]]:
+def save_to_db(
+    structured_data: Dict[str, Any],
+    trace_id: str,
+    resume_hash: str,
+    *,
+    force_reprocess: bool = False,
+) -> Optional[Dict[str, str]]:
     """
     Inserts structured resume data into PostgreSQL using SQLAlchemy.
     Uses a transaction to ensure all inserts succeed together.
@@ -48,32 +54,29 @@ def save_to_db(structured_data: Dict[str, Any], trace_id: str, resume_hash: str)
         raise Exception("SessionLocal is not initialized")
 
     if any(m is None for m in [candidates, jobs, candidate_job_scores, candidate_scores, candidate_skills, platform_stats, candidate_github_summary, candidate_github_commits, skills]):
-        print("[DB ERROR] ORM models are not loaded (NoneType). Skipping DB insert.")
+        logger.error("db_models_not_loaded")
         return None
 
     db = SessionLocal()
-    print("[DB] Session created")
+    logger.info("db_session_created")
 
-    print(f"[DB] Checking duplicate for hash={resume_hash}")
+    logger.info("db_duplicate_check_start")
     try:
         existing = db.query(candidates).filter(candidates.resume_hash == resume_hash).first()
-        if existing:
-            print("[DB] Duplicate resume detected")
+        if existing and not force_reprocess:
+            logger.info("db_duplicate_resume_detected")
             db.close()
             return {
                 "status": "duplicate",
                 "candidate_id": existing.id
             }
     except Exception as e:
-        print(f"[DB ERROR] Error querying for duplicate: {e}")
+        logger.exception("db_duplicate_check_failed")
         db.rollback()
-
-    print(type(structured_data))
-    print(structured_data)
 
     # Generate ONE candidate_id per resume to be used across all tables
     candidate_id = str(uuid.uuid4())
-    print(f"[DB] Inserting candidate_id={candidate_id}")
+    logger.info("db_insert_start", extra={"trace_id": trace_id, "candidate_id": candidate_id})
 
     try:
         # 1. candidates
@@ -108,8 +111,7 @@ def save_to_db(structured_data: Dict[str, Any], trace_id: str, resume_hash: str)
 
         # Flush primary records before dependent inserts
         db.flush()
-        print("[DB] Candidate inserted and flushed")
-        print("[DB] Inserting dependent records")
+        logger.info("db_primary_records_flushed", extra={"candidate_id": candidate_id})
 
         # 3. candidate_job_scores
         cjs_data = structured_data.get("candidate_job_score") or {}
@@ -188,8 +190,7 @@ def save_to_db(structured_data: Dict[str, Any], trace_id: str, resume_hash: str)
 
         # Commit the transaction safely
         db.commit()
-        print("[DB] New candidate inserted")
-        print("[DB] Commit successful")
+        logger.info("db_commit_success", extra={"candidate_id": candidate_id})
         return {
             "status": "inserted",
             "candidate_id": candidate_id
@@ -200,19 +201,19 @@ def save_to_db(structured_data: Dict[str, Any], trace_id: str, resume_hash: str)
         try:
             existing = db.query(candidates).filter(candidates.resume_hash == resume_hash).first()
             if existing:
-                print("[DB] Duplicate resume detected (caught via UNIQUE constraint)")
+                logger.info("db_duplicate_via_constraint")
                 return {
                     "status": "duplicate",
                     "candidate_id": existing.id
                 }
         except Exception:
             pass
-        print(f"[DB ERROR] Integrity error during DB persistence: {e}")
+        logger.exception("db_integrity_error")
         return None
 
     except Exception as e:
         db.rollback()
-        print("[DB ERROR]", str(e))
+        logger.exception("db_insert_failed")
         return None
         
     finally:
