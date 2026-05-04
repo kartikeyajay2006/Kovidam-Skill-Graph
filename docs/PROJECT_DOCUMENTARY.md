@@ -35,8 +35,14 @@ Recommended lifecycle:
 `resume_parser` includes timeout-guarded structured extraction.  
 If timeout occurs:
 - extraction path emits `structured_resume_extraction_timeout_or_error`,
-- pipeline falls back gracefully and continues,
+- pipeline falls back to deterministic text parsing (projects + skills) and continues,
 - API request may still complete with `200` if downstream scoring is viable.
+
+Current resilience behavior:
+- successful chunks are merged even if some chunks fail,
+- fallback extraction is used for full timeout/error paths (`timeout_or_error_with_fallback` / `error_with_fallback`),
+- outer timeout can be disabled with `RESUME_STRUCTURED_TIMEOUT_SECONDS=0`,
+- latency can be reduced with `RESUME_STRUCTURED_MAX_CHUNKS=3` and `RESUME_STRUCTURED_RETRIES=0`.
 
 ### B. DB persistence failure path
 `db_writer` is intentionally non-fatal to shortlist completion.

@@ -180,9 +180,10 @@ GITHUB_REPO_CONCURRENCY=3
 
 # Structured extraction runtime tuning
 RESUME_STRUCTURED_MODEL=gpt-5-mini
-RESUME_STRUCTURED_TIMEOUT_SECONDS=45
-RESUME_STRUCTURED_MAX_CHUNKS=6
-RESUME_STRUCTURED_RETRIES=2
+RESUME_STRUCTURED_TIMEOUT_SECONDS=0
+RESUME_STRUCTURED_CHUNK_TIMEOUT_SECONDS=18
+RESUME_STRUCTURED_MAX_CHUNKS=3
+RESUME_STRUCTURED_RETRIES=0
 RESUME_STRUCTURED_MAX_CHUNK_CHARS=6000
 RESUME_OCR_MIN_ALPHA_CHARS_PER_PAGE=50
 RESUME_PARSER_MIN_ALPHA_CHARS=120
@@ -242,8 +243,24 @@ playwright install chromium
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+Single command (safe startup: reuses existing DB container, creates DB if missing, starts backend):
+```bash
+cd /home/kartikeyayadav/Desktop/Kovidam-Skill-Graph && (docker start kovidam-db >/dev/null 2>&1 || docker run -d --name kovidam-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres ankane/pgvector >/dev/null) && (docker exec kovidam-db psql -U postgres -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='kovidam'" | grep -q 1 || docker exec kovidam-db psql -U postgres -d postgres -c "CREATE DATABASE kovidam;") && cd backend && ([ -d venv ] || python3 -m venv venv) && source venv/bin/activate && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python -m playwright install chromium && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
 Docs UI:
 - `http://localhost:8000/docs`
+
+### 4. Structured Extraction Reliability Notes
+- The parser first attempts OpenAI-based structured extraction (`skills`, `projects`) in chunks.
+- If one or more chunk calls fail, partial successful chunks are still merged.
+- If OpenAI extraction times out/errors completely, deterministic text fallback extracts projects and skills from raw resume text.
+- This ensures `skills_section` and `projects_section` are not empty in common failure scenarios.
+- `RESUME_STRUCTURED_TIMEOUT_SECONDS=0` disables outer cancellation and avoids premature timeout cutoffs.
+- Latency control knobs:
+  - lower `RESUME_STRUCTURED_MAX_CHUNKS` for fewer OpenAI calls,
+  - keep `RESUME_STRUCTURED_RETRIES=0` for minimum delay,
+  - adjust `RESUME_STRUCTURED_CHUNK_TIMEOUT_SECONDS` based on network stability.
 
 ## Quick Test (Batch)
 

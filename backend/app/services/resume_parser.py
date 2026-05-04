@@ -41,6 +41,9 @@ YEARS_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years|yrs)", re.IGNORECA
 GITHUB_REPO_CONCURRENCY = max(1, int(os.getenv("GITHUB_REPO_CONCURRENCY", "3")))
 STRUCTURED_EXTRACTION_MODEL = os.getenv("RESUME_STRUCTURED_MODEL", "gpt-5-mini")
 STRUCTURED_EXTRACTION_TIMEOUT_SECONDS = float(os.getenv("RESUME_STRUCTURED_TIMEOUT_SECONDS", "20.0"))
+STRUCTURED_EXTRACTION_CHUNK_TIMEOUT_SECONDS = float(
+    os.getenv("RESUME_STRUCTURED_CHUNK_TIMEOUT_SECONDS", "18.0")
+)
 STRUCTURED_EXTRACTION_MAX_CHUNK_CHARS = int(os.getenv("RESUME_STRUCTURED_MAX_CHUNK_CHARS", "6000"))
 STRUCTURED_EXTRACTION_MAX_CHUNKS = int(os.getenv("RESUME_STRUCTURED_MAX_CHUNKS", "6"))
 STRUCTURED_EXTRACTION_RETRIES = max(0, int(os.getenv("RESUME_STRUCTURED_RETRIES", "1")))
@@ -381,6 +384,7 @@ def _extract_structured_from_chunk(client: Any, chunk_text: str) -> Dict[str, An
     )
     resp = client.chat.completions.create(
         model=STRUCTURED_EXTRACTION_MODEL,
+        timeout=STRUCTURED_EXTRACTION_CHUNK_TIMEOUT_SECONDS,
         messages=[
             {"role": "system", "content": "You are a strict information extraction system. Output valid JSON only."},
             {"role": "user", "content": prompt},
@@ -407,12 +411,107 @@ def _merge_structured_results(parts: list[Dict[str, Any]]) -> Dict[str, Any]:
     return {"skills": skills, "projects": projects}
 
 
+def _extract_projects_from_text_fallback(text: str) -> list[Dict[str, Any]]:
+    lines = [ln.strip() for ln in text.splitlines()]
+    if not lines:
+        return []
+
+    heading_idx = -1
+    for i, ln in enumerate(lines):
+        if re.fullmatch(r"(?i)projects?", ln):
+            heading_idx = i
+            break
+    if heading_idx == -1:
+        return []
+
+    end_idx = len(lines)
+    for i in range(heading_idx + 1, len(lines)):
+        if re.fullmatch(r"(?i)(additional information|education|experience|technical skills?|skills?)", lines[i]):
+            end_idx = i
+            break
+
+    section = [ln for ln in lines[heading_idx + 1:end_idx] if ln]
+    if not section:
+        return []
+
+    projects: list[Dict[str, Any]] = []
+    i = 0
+    while i < len(section):
+        title = section[i]
+        if len(title) > 120:
+            i += 1
+            continue
+        next_ln = section[i + 1] if i + 1 < len(section) else ""
+        highlights: list[str] = []
+        j = i + 2
+        while j < len(section):
+            candidate = section[j]
+            if re.fullmatch(r"(?i)(additional information|education|experience|technical skills?|skills?)", candidate):
+                break
+            if j + 1 < len(section) and len(candidate) < 90 and not re.search(r"[.!?]$", candidate):
+                # Looks like next project title.
+                break
+            highlights.append(candidate)
+            j += 1
+
+        project = {
+            "title": title,
+            "description": f"{title}.",
+            "tech_stack": _clean_skill_list(re.split(r"[,()/]+", next_ln)) if next_ln else [],
+            "highlights": highlights[:8],
+        }
+        if project["highlights"]:
+            project["description"] = project["highlights"][0]
+        projects.append(project)
+        i = max(j, i + 1)
+
+    return _clean_projects(projects)
+
+
+def _extract_skills_from_text_fallback(text: str) -> list[str]:
+    lines = [ln.strip() for ln in text.splitlines()]
+    if not lines:
+        return []
+
+    heading_idx = -1
+    for i, ln in enumerate(lines):
+        if re.fullmatch(r"(?i)(technical skills?|skills?)", ln):
+            heading_idx = i
+            break
+
+    section_lines: list[str] = []
+    if heading_idx != -1:
+        for i in range(heading_idx + 1, len(lines)):
+            if re.fullmatch(r"(?i)(projects?|education|experience|additional information|certifications?)", lines[i]):
+                break
+            if lines[i]:
+                section_lines.append(lines[i])
+
+    section_text = "\n".join(section_lines) if section_lines else text
+    candidates = re.split(r"[\n,:/()\-]+", section_text)
+    cleaned: list[str] = []
+    for token in candidates:
+        skill = re.sub(r"\s+", " ", token.strip().lower())
+        if not skill:
+            continue
+        if len(skill) < 2 or len(skill) > 40:
+            continue
+        if not re.search(r"[a-z]", skill):
+            continue
+        if skill in {"technical skills", "skills", "strong", "proficient", "using", "and", "with"}:
+            continue
+        cleaned.append(skill)
+    return _clean_skill_list(cleaned)
+
+
 def _extract_structured_resume_sections_sync(text: str, pages: list[str]) -> Dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
+        fallback_projects = _extract_projects_from_text_fallback(text)
+        fallback_skills = _extract_skills_from_text_fallback(text)
         return {
-            "skills": [],
-            "projects": [],
+            "skills": fallback_skills,
+            "projects": fallback_projects,
             "meta": {"provider": "none", "status": "skipped_no_api_key"},
         }
     try:
@@ -435,6 +534,16 @@ def _extract_structured_resume_sections_sync(text: str, pages: list[str]) -> Dic
                 chunk_errors.append(last_err)
 
         merged = _merge_structured_results(part_results)
+        fallback_projects = _extract_projects_from_text_fallback(text)
+        if not merged["projects"] and fallback_projects:
+            merged["projects"] = fallback_projects
+
+        if fallback_projects:
+            merged["skills"] = _clean_skill_list(merged["skills"] + [
+                skill
+                for proj in fallback_projects
+                for skill in (proj.get("tech_stack") or [])
+            ])
         return {
             "skills": merged["skills"],
             "projects": merged["projects"],
@@ -449,35 +558,54 @@ def _extract_structured_resume_sections_sync(text: str, pages: list[str]) -> Dic
         }
     except Exception as exc:
         logger.exception("structured_resume_extraction_failed")
+        fallback_projects = _extract_projects_from_text_fallback(text)
+        fallback_skills = _extract_skills_from_text_fallback(text)
+        if fallback_projects:
+            fallback_skills = _clean_skill_list(
+                fallback_skills + [s for p in fallback_projects for s in (p.get("tech_stack") or [])]
+            )
         return {
-            "skills": [],
-            "projects": [],
+            "skills": fallback_skills,
+            "projects": fallback_projects,
             "meta": {
                 "provider": "openai",
                 "model": STRUCTURED_EXTRACTION_MODEL,
-                "status": "error",
+                "status": "error_with_fallback",
                 "error": str(exc),
             },
         }
 
 
 async def _extract_structured_resume_sections(text: str, pages: list[str]) -> Dict[str, Any]:
+    chunks = _chunk_text_by_headings_or_pages(text, pages)
+    estimated_total_timeout = max(
+        STRUCTURED_EXTRACTION_TIMEOUT_SECONDS,
+        (len(chunks) * (STRUCTURED_EXTRACTION_RETRIES + 1) * STRUCTURED_EXTRACTION_CHUNK_TIMEOUT_SECONDS) + 5.0,
+    )
     try:
+        if STRUCTURED_EXTRACTION_TIMEOUT_SECONDS <= 0:
+            return await asyncio.to_thread(_extract_structured_resume_sections_sync, text, pages)
         return await asyncio.wait_for(
             asyncio.to_thread(_extract_structured_resume_sections_sync, text, pages),
-            timeout=STRUCTURED_EXTRACTION_TIMEOUT_SECONDS,
+            timeout=estimated_total_timeout,
         )
     except Exception as exc:
         logger.exception("structured_resume_extraction_timeout_or_error")
+        fallback_projects = _extract_projects_from_text_fallback(text)
+        fallback_skills = _extract_skills_from_text_fallback(text)
+        if fallback_projects:
+            fallback_skills = _clean_skill_list(
+                fallback_skills + [s for p in fallback_projects for s in (p.get("tech_stack") or [])]
+            )
         return {
-            "skills": [],
-            "projects": [],
+            "skills": fallback_skills,
+            "projects": fallback_projects,
             "meta": {
                 "provider": "openai",
                 "model": STRUCTURED_EXTRACTION_MODEL,
-                "status": "timeout_or_error",
+                "status": "timeout_or_error_with_fallback",
                 "error": str(exc),
-                "timeout_seconds": STRUCTURED_EXTRACTION_TIMEOUT_SECONDS,
+                "timeout_seconds": estimated_total_timeout,
             },
         }
 
