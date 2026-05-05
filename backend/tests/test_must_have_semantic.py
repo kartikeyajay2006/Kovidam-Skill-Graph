@@ -114,3 +114,67 @@ def test_must_have_not_in_required():
     })
     assert elig is True
 
+
+def test_no_false_positive_golang_from_natural_language_go():
+    # "go" as a verb in prose must not be treated as Golang skill evidence.
+    extracted = _sample_extracted(["i love to go to hackathon events"])
+    score, matched, missing, evidence = _skill_match_score(
+        required_skills=[],
+        extracted=extracted,
+        must_have_skills=["golang"]
+    )
+    fit = {"skills": {"matched": matched}, "breakdown": {"skills_match_score_100": 80.0, "github_score_100": 80.0, "experience_quality_score_100": 80.0}, "experience": {"candidate_years": 2.0}}
+    elig, reasons, diff = _build_eligibility("job", fit, ["golang"], {
+        "min_skill_match_pct": 0, "min_github_score_100": 0, "min_experience_years": 0.0, "min_experience_quality_score_100": 0.0
+    })
+    assert elig is False
+    assert any("Missing must-have skills" in r for r in reasons)
+
+
+def test_golang_detected_from_explicit_go_lang_phrase():
+    extracted = _sample_extracted(["go lang", "distributed systems"])
+    score, matched, missing, evidence = _skill_match_score(
+        required_skills=[],
+        extracted=extracted,
+        must_have_skills=["golang"]
+    )
+    fit = {"skills": {"matched": matched}, "breakdown": {"skills_match_score_100": 80.0, "github_score_100": 80.0, "experience_quality_score_100": 80.0}, "experience": {"candidate_years": 2.0}}
+    elig, reasons, diff = _build_eligibility("job", fit, ["golang"], {
+        "min_skill_match_pct": 0, "min_github_score_100": 0, "min_experience_years": 0.0, "min_experience_quality_score_100": 0.0
+    })
+    assert elig is True
+
+
+def test_no_false_positive_c_from_plain_sentence():
+    extracted = {
+        "raw_text_preview": "i got selected in c block hostel",
+        "raw_text_full": "",
+        "work_experience_years": "0",
+        "github_analysis": {"repositories": []},
+        "skills_section": {"items": []},
+        "projects_section": {"items": []},
+    }
+    score, matched, missing, evidence = _skill_match_score(
+        required_skills=[],
+        extracted=extracted,
+        must_have_skills=["c"]
+    )
+    fit = {"skills": {"matched": matched}, "breakdown": {"skills_match_score_100": 80.0, "github_score_100": 80.0, "experience_quality_score_100": 80.0}, "experience": {"candidate_years": 2.0}}
+    elig, reasons, diff = _build_eligibility("job", fit, ["c"], {
+        "min_skill_match_pct": 0, "min_github_score_100": 0, "min_experience_years": 0.0, "min_experience_quality_score_100": 0.0
+    })
+    assert elig is False
+
+
+def test_c_detected_from_explicit_c_language_phrase():
+    extracted = _sample_extracted(["c language", "memory management"])
+    score, matched, missing, evidence = _skill_match_score(
+        required_skills=[],
+        extracted=extracted,
+        must_have_skills=["c"]
+    )
+    fit = {"skills": {"matched": matched}, "breakdown": {"skills_match_score_100": 80.0, "github_score_100": 80.0, "experience_quality_score_100": 80.0}, "experience": {"candidate_years": 2.0}}
+    elig, reasons, diff = _build_eligibility("job", fit, ["c"], {
+        "min_skill_match_pct": 0, "min_github_score_100": 0, "min_experience_years": 0.0, "min_experience_quality_score_100": 0.0
+    })
+    assert elig is True

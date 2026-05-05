@@ -6,6 +6,13 @@ import uuid
 from typing import Any
 
 from app.constants.skills_aliases import SKILL_ALIASES
+from app.constants.skills_constraints import (
+    SEMANTIC_GENERIC_TOKENS,
+    SKILL_SHORT_TOKEN_ALLOWLIST,
+    SKILL_STOPWORDS,
+    SKILL_TOKEN_MAX_LEN,
+    SKILL_TOKEN_MIN_LEN,
+)
 from app.constants.skills_implications import SKILL_IMPLICATIONS
 
 try:
@@ -24,6 +31,16 @@ def _normalize_text(value: str) -> str:
 
 def _canonical_skill(skill: str) -> str:
     norm = _normalize_text(skill)
+    norm = re.sub(r"[_|/]+", " ", norm)
+    norm = re.sub(r"\s+", " ", norm).strip(" ,;:.!?\"'`()[]{}")
+    if not norm:
+        return ""
+    if norm in SKILL_STOPWORDS:
+        return ""
+    if len(norm) < SKILL_TOKEN_MIN_LEN and norm not in SKILL_SHORT_TOKEN_ALLOWLIST:
+        return ""
+    if len(norm) > SKILL_TOKEN_MAX_LEN:
+        return ""
     return SKILL_ALIASES.get(norm, norm)
 
 
@@ -59,12 +76,10 @@ def _vectorize_skill_tokens(skill_tokens: list[str], dim: int) -> list[float]:
 
 
 def _is_clean_skill_token(token: str) -> bool:
-    t = _normalize_text(token)
+    t = _canonical_skill(token)
     if not t:
         return False
     if t.startswith("http://") or t.startswith("https://") or "." in t:
-        return False
-    if len(t) > 42:
         return False
     if re.search(r"\d{2,}", t):
         return False
@@ -138,7 +153,7 @@ class QdrantResumeIndex:
             if not canon:
                 continue
             normalized.update(_expand_skill_with_implications(canon))
-        return sorted(normalized)
+        return sorted(s for s in normalized if s not in SEMANTIC_GENERIC_TOKENS)
 
     def upsert_resume(
         self,
@@ -196,6 +211,7 @@ class QdrantResumeIndex:
         self,
         *,
         query_skills: list[str],
+        role: str | None = None,
         top_k: int = 20,
         min_score: float = 0.0,
     ) -> dict[str, Any]:
@@ -206,6 +222,16 @@ class QdrantResumeIndex:
         query_tokens = self.build_skill_tokens(query_skills)
         vector = _vectorize_skill_tokens(query_tokens, self.vector_dim)
         qfilter = None
+        role_norm = _normalize_text(role or "")
+        if role_norm:
+            qfilter = qmodels.Filter(
+                must=[
+                    qmodels.FieldCondition(
+                        key="role",
+                        match=qmodels.MatchValue(value=role_norm),
+                    )
+                ]
+            )
         limit = max(1, min(top_k, 200))
         score_threshold = min_score if min_score > 0 else None
         if hasattr(client, "search"):

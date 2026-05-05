@@ -46,6 +46,14 @@ from app.constants.keywords import (
 )
 from app.constants.roles_domains import ROLE_FAMILY_KEYWORDS, TARGET_DOMAIN_KEYWORDS
 from app.constants.skills_aliases import SKILL_ALIASES
+from app.constants.skills_constraints import (
+    AMBIGUOUS_SINGLE_CHAR_SKILLS,
+    SEMANTIC_GENERIC_TOKENS,
+    SKILL_SHORT_TOKEN_ALLOWLIST,
+    SKILL_STOPWORDS,
+    SKILL_TOKEN_MAX_LEN,
+    SKILL_TOKEN_MIN_LEN,
+)
 from app.constants.skills_implications import SKILL_IMPLICATIONS
 
 
@@ -139,8 +147,27 @@ def _normalize_text(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 
+def _sanitize_skill_token(skill: str) -> str:
+    token = _normalize_text(skill)
+    if not token:
+        return ""
+    token = re.sub(r"[_|/]+", " ", token)
+    token = re.sub(r"\s+", " ", token).strip(" ,;:.!?\"'`()[]{}")
+    if not token:
+        return ""
+    if token in SKILL_STOPWORDS:
+        return ""
+    if len(token) < SKILL_TOKEN_MIN_LEN and token not in SKILL_SHORT_TOKEN_ALLOWLIST:
+        return ""
+    if len(token) > SKILL_TOKEN_MAX_LEN:
+        return ""
+    return token
+
+
 def _canonical_skill(skill: str) -> str:
-    norm = _normalize_text(skill)
+    norm = _sanitize_skill_token(skill)
+    if not norm:
+        return ""
     return SKILL_ALIASES.get(norm, norm)
 
 
@@ -195,6 +222,11 @@ def _skill_in_text(text: str, skill: str) -> bool:
     for variant in _skill_token_variants(skill):
         if not variant:
             continue
+        if variant in AMBIGUOUS_SINGLE_CHAR_SKILLS:
+            explicit_pattern = rf"(?<![a-z0-9])({re.escape(variant)}\s+language|{re.escape(variant)}\s+programming|{re.escape(variant)}\s+lang)(?![a-z0-9])"
+            if re.search(explicit_pattern, text):
+                return True
+            continue
         pattern = rf"(?<![a-z0-9]){re.escape(variant)}(?![a-z0-9])"
         if re.search(pattern, text):
             return True
@@ -220,6 +252,10 @@ def _normalize_skills_list(skills: list[str]) -> list[str]:
             seen.add(c)
             out.append(c)
     return out
+
+
+def _filter_semantic_generic_tokens(skills: list[str]) -> list[str]:
+    return [s for s in skills if s and s not in SEMANTIC_GENERIC_TOKENS]
 
 
 def _collect_candidate_raw_skills(extracted: dict) -> list[str]:
@@ -1135,7 +1171,17 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
 
 
 def _parse_csv_list(value: str) -> list[str]:
-    return [s.strip() for s in (value or "").split(",") if s.strip()]
+    if not value:
+        return []
+    parts = re.split(r"[,;\n|]+", value)
+    out = []
+    seen = set()
+    for part in parts:
+        canon = _canonical_skill(part)
+        if canon and canon not in seen:
+            seen.add(canon)
+            out.append(canon)
+    return out
 
 
 def _normalize_skill_set(skills: list[str]) -> set[str]:
@@ -1569,7 +1615,9 @@ async def hiring_shortlist(
     required_skills = _parse_csv_list(required_skills_csv)
     must_have_skills = _parse_csv_list(must_have_skills_csv)
     jd_skills = _extract_skills_from_job_description(job_description)
-    semantic_query_skills = _normalize_skills_list(required_skills + must_have_skills + jd_skills)
+    semantic_query_skills = _filter_semantic_generic_tokens(
+        _normalize_skills_list(required_skills + must_have_skills + jd_skills)
+    )
     thresholds = _role_thresholds(role, min_experience_years)
 
     tasks = [

@@ -279,7 +279,7 @@ JOB_WEIGHT_EXPERIENCE_QUALITY=0.20
 LOG_LEVEL=INFO
 
 # Qdrant (optional semantic index)
-QDRANT_ENABLED=false
+QDRANT_ENABLED=true
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
 QDRANT_COLLECTION=resumes
@@ -301,9 +301,9 @@ playwright install chromium
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Single command (safe startup: reuses existing DB container, creates DB if missing, starts backend):
+Single command (safe startup: waits for DB readiness, reuses existing DB container, creates DB if missing, starts backend):
 ```bash
-cd /home/kartikeyayadav/Desktop/Kovidam-Skill-Graph && (docker start kovidam-db >/dev/null 2>&1 || docker run -d --name kovidam-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres ankane/pgvector >/dev/null) && (docker exec kovidam-db psql -U postgres -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='kovidam'" | grep -q 1 || docker exec kovidam-db psql -U postgres -d postgres -c "CREATE DATABASE kovidam;") && cd backend && ([ -d venv ] || python3 -m venv venv) && source venv/bin/activate && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python -m playwright install chromium && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+cd /home/kartikeyayadav/Desktop/Kovidam-Skill-Graph && (docker start kovidam-db >/dev/null 2>&1 || docker run -d --name kovidam-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres ankane/pgvector >/dev/null) && until docker exec kovidam-db pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done && (docker exec kovidam-db psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='kovidam'" | grep -q 1 || docker exec kovidam-db psql -U postgres -d postgres -c "CREATE DATABASE kovidam;") && (docker start kovidam-qdrant >/dev/null 2>&1 || docker run -d --name kovidam-qdrant -p 6333:6333 qdrant/qdrant >/dev/null) && cd backend && ([ -d venv ] || python3 -m venv venv) && source venv/bin/activate && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python -m playwright install chromium && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Docs UI:
@@ -314,10 +314,53 @@ Docs UI:
 - Resume extraction now attempts Qdrant upsert per resume (`resume_hash` as point id).
 - Index payload stores `filename`, `role`, and expanded semantic skill tokens.
 - If `QDRANT_ENABLED=false` or Qdrant is unavailable, core API continues without failure.
+- Startup now passes `role` to semantic search and applies role filtering at query time.
+- Generic semantic tokens are filtered before query/index to reduce noisy relevance boosts.
 
 Run local Qdrant:
 ```bash
 docker run -d --name kovidam-qdrant -p 6333:6333 qdrant/qdrant
+```
+
+Expected startup log signal:
+- `{"event":"qdrant_init","enabled":true,"ready":true,...}`
+
+## Skill Matching Hardening (New)
+
+The shortlist/matching engine now includes stricter normalization and ambiguity guards to reduce false positives from natural language.
+
+- New constraints file: `backend/app/constants/skills_constraints.py`
+- Added token guards:
+  - min/max token length,
+  - stopword filtering for generic resume prose (`developer`, `team`, `passionate`, etc.),
+  - single-character ambiguity control (`c`, `r`) for free-text detection.
+- Improved CSV parsing:
+  - supports `,`, `;`, `|`, newline separators,
+  - canonicalizes and deduplicates tokens before scoring.
+- Ambiguous alias cleanup:
+  - removed risky short aliases that produced noise (`go` was already removed earlier, plus `sh`, `es`, `wp`, `rb`, `rs`),
+  - explicit aliases remain supported (`go lang`, `node.js`, `next.js`, etc.).
+- Directional implication behavior retained:
+  - `fastapi` implies `python`,
+  - `nodejs` implies `javascript`,
+  - reverse direction is not assumed unless explicitly mapped.
+- Text false-positive guard examples:
+  - sentence like `I love to go to hackathon` no longer counts as Golang,
+  - plain `c` in prose no longer counts as C language unless explicit phrase is present (`c language`, `c programming`, `c lang`).
+
+### Tests Added/Updated
+
+- `backend/tests/test_must_have_semantic.py`
+  - must-have implication checks,
+  - ambiguity regression checks (`go`, `c`) with positive and negative cases.
+- `backend/tests/constants/test_skill_constants_quality.py`
+  - duplicate alias-key guard,
+  - typo canonicalization checks (`pyhon`, `fastap`, `nide`),
+  - risky short alias removal checks.
+
+Run targeted tests:
+```bash
+cd backend && source venv/bin/activate && pytest -q tests/constants/test_skill_constants_quality.py tests/test_must_have_semantic.py
 ```
 
 ### 4. Structured Extraction Reliability Notes

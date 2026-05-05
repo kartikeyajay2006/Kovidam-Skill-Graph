@@ -13,6 +13,146 @@ The backend was upgraded with reliability and production-readiness improvements:
 - Runtime tuning knobs added for structured extraction stability (`RESUME_STRUCTURED_*` envs).
 - Semantic must-have skill eligibility now follows the same alias/implication-aware matching path as required skills.
 
+## 2026 Semantic + Qdrant Enhancements (Detailed)
+
+This section documents the latest implementation wave focused on semantic search reliability, false-positive reduction, and production-safe skill normalization.
+
+### 1. Qdrant enablement and startup hardening
+
+What changed:
+- Qdrant integration was activated for runtime semantic shortlist enrichment.
+- Backend startup safety was improved to avoid DB race conditions during container boot.
+- Semantic query path now supports role-aware filtering during search.
+
+Implementation details:
+- `backend/app/integrations/qdrant/store.py`
+  - `search()` signature updated to accept `role`.
+  - Query filter added (`payload.role == request.role`) for role-scoped semantic retrieval.
+- Startup command path now includes PostgreSQL readiness wait (`pg_isready`) before DB operations.
+
+Why:
+- Prevented intermittent startup failures caused by `psql` running before PostgreSQL was fully ready.
+- Prevented semantic cross-role contamination (for example, internship query seeing job-only embeddings).
+
+### 2. Root bug fixed: method-signature mismatch causing `/hiring/shortlist` 500
+
+Observed production error:
+- `TypeError: QdrantResumeIndex.search() got an unexpected keyword argument 'role'`
+
+Root cause:
+- `main.py` passed `role=...` to Qdrant search, but store-layer method did not accept `role`.
+
+Fix:
+- Store-layer search signature and filtering were aligned with caller expectations.
+- This removed 500s in shortlist requests when Qdrant was enabled.
+
+### 3. Skill constraints system introduced (new constants layer)
+
+New file:
+- `backend/app/constants/skills_constraints.py`
+
+Purpose:
+- Central policy hub for token quality controls used by both shortlist scoring and Qdrant indexing.
+
+Current controls:
+- `SKILL_TOKEN_MIN_LEN`, `SKILL_TOKEN_MAX_LEN`
+- `SKILL_SHORT_TOKEN_ALLOWLIST` (for valid short skills)
+- `SKILL_STOPWORDS` (generic resume words filtered from skills)
+- `AMBIGUOUS_SINGLE_CHAR_SKILLS` (currently `c`, `r`)
+- `SEMANTIC_GENERIC_TOKENS` (broad tokens filtered for cleaner semantic ranking)
+
+Why:
+- Prevent low-quality tokens from entering canonical matching, implication expansion, and semantic vectors.
+- Keep quality rules consistent across runtime paths.
+
+### 4. Alias map hardening: typo recovery + ambiguity cleanup
+
+File:
+- `backend/app/constants/skills_aliases.py`
+
+Typos added:
+- `pyhon`, `pyhton`, `pthon`, `phyton` -> `python`
+- `fastap`, `fasapi`, `fast-api` -> `fastapi`
+- `nide`, `nodej`, `nodjs`, `node js` -> `nodejs`
+
+Conflict cleanup:
+- Removed duplicate-key collisions that previously caused silent override risk (`tf`, `sns` conflict class).
+
+Ambiguity cleanup:
+- Removed/replaced risky short aliases that can appear in normal prose:
+  - removed: `sh`, `es`, `wp`, `rb`, `rs`, and earlier `go`
+  - safer explicit forms retained (for example `go lang`, `node.js`, `next.js`, `nest.js`)
+
+Why:
+- These changes reduce false positives while preserving practical typo tolerance for recruiter input and extracted resume text.
+
+### 5. Text-detection safety guards for ambiguous single-letter skills
+
+File:
+- `backend/app/main.py`
+
+What changed:
+- `_skill_in_text()` now handles ambiguous single-char skills (`c`, `r`) with explicit-phrase gating.
+- Free-text match for these tokens requires patterns like:
+  - `c language`, `c programming`, `c lang`
+  - similarly for `r`
+
+Why:
+- Prevents plain prose from becoming fake skill evidence (for example sentence fragments containing standalone `c`).
+
+### 6. Semantic-noise reduction for Qdrant and shortlist query blending
+
+Files:
+- `backend/app/main.py`
+- `backend/app/integrations/qdrant/store.py`
+
+What changed:
+- Generic high-frequency semantic tokens (`api`, `cloud`, `database`, `web`, `mobile`, etc.) are filtered from:
+  - shortlist semantic query skill set,
+  - Qdrant indexed skill token set.
+
+Why:
+- Broad tokens can inflate relevance scores without meaningful hiring-skill specificity.
+- Filtering improves ranking precision and reduces accidental semantic boosts.
+
+### 7. CSV input normalization and dedup enhancement
+
+File:
+- `backend/app/main.py`
+
+What changed:
+- `_parse_csv_list()` now supports delimiters: `,`, `;`, `|`, newline.
+- Values are canonicalized through skill normalization and deduplicated before scoring.
+
+Why:
+- Recruiter input in real workflows is inconsistent; this ensures stable parsing and fewer user-side formatting errors.
+
+### 8. Regression test expansion (behavior locks)
+
+Updated tests:
+- `backend/tests/test_must_have_semantic.py`
+- `backend/tests/constants/test_skill_constants_quality.py`
+
+New/expanded coverage includes:
+- must-have implication directionality
+- false-positive prevention (`go` verb case, plain `c` sentence case)
+- explicit positive cases (`go lang`, `c language`)
+- duplicate alias-key guard
+- typo canonicalization checks
+- risky short-alias removal checks
+- parsing/constraint checks for mixed-delimiter skill input
+
+Validation status:
+- Targeted suites passed after changes (`17 passed` in latest local run).
+
+### 9. Behavioral summary after these changes
+
+Current semantics are intentionally conservative:
+- Framework implies parent language when policy defines it (e.g. `fastapi -> python`, `nodejs -> javascript`).
+- Reverse implication is not assumed by default.
+- Must-have remains a hard gate, but evaluated over canonical + implication-aware evidence.
+- Ambiguous natural-language fragments are less likely to pass as skill signals.
+
 ## Skill Constraints and Semantic Matching
 
 ### Constraints/Constants Source of Truth
