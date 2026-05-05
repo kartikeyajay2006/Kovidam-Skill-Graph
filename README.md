@@ -137,6 +137,7 @@ Form fields:
 - `role` (`job` or `internship`, optional; default `internship`)
 - `required_skills_csv` (required, comma-separated; e.g. `python,fastapi,sql,git`)
 - `must_have_skills_csv` (optional, comma-separated; hard gate, semantic matching enabled)
+- `job_description` (optional, plain text; used for Qdrant semantic JD-to-resume matching)
 - `min_experience_years` (optional; default `0.0`)
 - `force_reprocess` (`true`/`false`, optional; default `false`)
 
@@ -145,6 +146,7 @@ Behavior:
 - computes deterministic fit score per candidate,
 - performs semantic skill expansion using aliases + directional implications,
 - evaluates `must_have_skills_csv` using the same semantic matching engine as `required_skills_csv`,
+- if `job_description` is provided, blends Qdrant semantic proximity into final fit score,
 - sorts candidates by fit score descending,
 - returns ranked shortlist with transparent score breakdown.
 
@@ -153,6 +155,16 @@ Output includes:
 - `platform_stats`
 - `github_analysis.repositories[].analysis.scoring`
 - `github_analysis.summary`
+
+### `POST /hiring/semantic-search`
+Form fields:
+- `query_skills_csv` (required, comma-separated; e.g. `javascript,react`)
+- `top_k` (optional; default `20`)
+- `min_score` (optional; default `0.0`)
+
+Behavior:
+- queries Qdrant semantic index using skill-aware vectors,
+- returns nearest resumes with similarity score and indexed skill payload.
 
 ## Skill Matching Policy (Current Behavior)
 
@@ -265,6 +277,15 @@ JOB_WEIGHT_EXPERIENCE_QUALITY=0.20
 
 # Logging
 LOG_LEVEL=INFO
+
+# Qdrant (optional semantic index)
+QDRANT_ENABLED=false
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=
+QDRANT_COLLECTION=resumes
+QDRANT_VECTOR_SIZE=384
+QDRANT_DISTANCE=Cosine
+QDRANT_TIMEOUT_SECONDS=5.0
 ```
 
 ### 3. Installation & Run
@@ -287,6 +308,17 @@ cd /home/kartikeyayadav/Desktop/Kovidam-Skill-Graph && (docker start kovidam-db 
 
 Docs UI:
 - `http://localhost:8000/docs`
+
+## Qdrant Integration
+
+- Resume extraction now attempts Qdrant upsert per resume (`resume_hash` as point id).
+- Index payload stores `filename`, `role`, and expanded semantic skill tokens.
+- If `QDRANT_ENABLED=false` or Qdrant is unavailable, core API continues without failure.
+
+Run local Qdrant:
+```bash
+docker run -d --name kovidam-qdrant -p 6333:6333 qdrant/qdrant
+```
 
 ### 4. Structured Extraction Reliability Notes
 - The parser first attempts OpenAI-based structured extraction (`skills`, `projects`) in chunks.
@@ -335,4 +367,4 @@ From `backend/`:
 ```bash
 source venv/bin/activate
 alembic upgrade head
-```
+```  

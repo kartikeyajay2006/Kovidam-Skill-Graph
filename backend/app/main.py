@@ -19,6 +19,7 @@ from app.services.transformer import transform_resume_data
 from app.services.db_writer import save_to_db
 from app.utils.hash_utils import generate_resume_hash
 from app.schemas.shortlist_response import ShortlistResponse
+from app.integrations.qdrant import QdrantResumeIndex
 
 load_environment()
 logger = logging.getLogger("kovidam.shortlist")
@@ -32,6 +33,7 @@ API_VERSION = os.getenv("SHORTLIST_API_VERSION", "v1.0.0")
 SCORING_VERSION = os.getenv("SHORTLIST_SCORING_VERSION", "v1.2.0")
 POLICY_VERSION = os.getenv("SHORTLIST_POLICY_VERSION", "v1.1.0")
 SHORTLIST_INCLUDE_LEGACY_KEYS = os.getenv("SHORTLIST_INCLUDE_LEGACY_KEYS", "true").lower() == "true"
+qdrant_index = QdrantResumeIndex()
 from app.constants.companies import COMPANY_SIGNAL_TIERS
 from app.constants.keywords import (
     EXPERIENCE_KEYWORDS,
@@ -51,6 +53,8 @@ from app.constants.skills_implications import SKILL_IMPLICATIONS
 async def _lifespan(_: FastAPI):
     try:
         init_db()
+        qdrant_status = qdrant_index.init_collection()
+        _json_log("qdrant_init", qdrant_status)
     except Exception:
         logger.exception("database_initialization_failed")
         raise
@@ -100,6 +104,15 @@ async def _process_resume_file(file: UploadFile, role: str, force_reprocess: boo
             resume_hash,
             force_reprocess=force_reprocess,
         )
+        semantic_raw_skills = _collect_candidate_raw_skills(result)
+        qdrant_result = await asyncio.to_thread(
+            qdrant_index.upsert_resume,
+            point_id=resume_hash,
+            filename=file.filename,
+            role=role,
+            raw_skills=semantic_raw_skills,
+            payload_extra={"resume_hash": resume_hash, "trace_id": trace_id},
+        )
 
         return {
             "filename": file.filename,
@@ -108,6 +121,7 @@ async def _process_resume_file(file: UploadFile, role: str, force_reprocess: boo
             "trace_id": trace_id,
             "resume_hash": resume_hash,
             "db_result": db_result,
+            "qdrant_result": qdrant_result,
         }
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -206,6 +220,80 @@ def _normalize_skills_list(skills: list[str]) -> list[str]:
             seen.add(c)
             out.append(c)
     return out
+
+
+def _collect_candidate_raw_skills(extracted: dict) -> list[str]:
+    skills = []
+    skills.extend((extracted.get("skills_section", {}) or {}).get("items", []) or [])
+    projects = (extracted.get("projects_section", {}) or {}).get("items", []) or []
+    for project in projects:
+        if not isinstance(project, dict):
+            continue
+        skills.extend(project.get("tech_stack", []) or [])
+    return [str(s) for s in skills if str(s).strip()]
+
+
+def _job_skill_vocabulary() -> set[str]:
+    vocab = set()
+    for k, v in SKILL_ALIASES.items():
+        if k:
+            vocab.add(_normalize_text(k))
+        if v:
+            vocab.add(_normalize_text(v))
+    for k, vals in SKILL_IMPLICATIONS.items():
+        if k:
+            vocab.add(_normalize_text(k))
+        for val in vals:
+            vocab.add(_normalize_text(val))
+    return {v for v in vocab if v}
+
+
+def _extract_skills_from_job_description(job_description: str) -> list[str]:
+    text = _normalize_text(job_description or "")
+    if not text:
+        return []
+    matches = []
+    for token in _job_skill_vocabulary():
+        pattern = rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])"
+        if re.search(pattern, text):
+            matches.append(token)
+    return _normalize_skills_list(matches)
+
+
+async def _qdrant_jd_semantic_map(
+    *,
+    query_skills: list[str],
+    role: str,
+    candidates: list[dict],
+) -> dict[str, dict]:
+    if not query_skills:
+        return {}
+    candidate_ids = {str(c.get("resume_hash")) for c in candidates if c.get("resume_hash")}
+    if not candidate_ids:
+        return {}
+    # Pull more hits than candidate size to increase recall for small/mid batch shortlist requests.
+    top_k = max(20, min(400, len(candidate_ids) * 5))
+    result = await asyncio.to_thread(
+        qdrant_index.search,
+        query_skills=query_skills,
+        role=role,
+        top_k=top_k,
+        min_score=0.0,
+    )
+    if not result.get("enabled") or not result.get("ready"):
+        return {}
+    hit_map: dict[str, dict] = {}
+    for hit in result.get("hits", []):
+        resume_hash = str(hit.get("resume_hash") or "")
+        if not resume_hash or resume_hash not in candidate_ids:
+            continue
+        hit_map[resume_hash] = {
+            "score_100": _to_float(hit.get("score_100"), 0.0),
+            "matched_query_tokens": hit.get("matched_query_tokens", []),
+            "relevance_band": hit.get("relevance_band"),
+            "skills_preview": hit.get("skills_preview", []),
+        }
+    return hit_map
 
 
 def _extract_candidate_skill_sources(extracted: dict) -> dict:
@@ -1470,6 +1558,7 @@ async def hiring_shortlist(
     position_title: str = Form(...),
     required_skills_csv: str = Form(...),
     must_have_skills_csv: str = Form(default=""),
+    job_description: str = Form(default=""),
     min_experience_years: float = Form(default=0.0),
     force_reprocess: bool = Form(default=False),
 ):
@@ -1479,6 +1568,8 @@ async def hiring_shortlist(
 
     required_skills = _parse_csv_list(required_skills_csv)
     must_have_skills = _parse_csv_list(must_have_skills_csv)
+    jd_skills = _extract_skills_from_job_description(job_description)
+    semantic_query_skills = _normalize_skills_list(required_skills + must_have_skills + jd_skills)
     thresholds = _role_thresholds(role, min_experience_years)
 
     tasks = [
@@ -1520,6 +1611,7 @@ async def hiring_shortlist(
             "filename": outcome.get("filename") or file.filename,
             "ok": True,
             "saved_json_path": outcome.get("saved_json_path"),
+            "resume_hash": outcome.get("resume_hash"),
             "eligible": eligible,
             "rejection_reasons": rejection_reasons,
             "fit": fit,
@@ -1528,11 +1620,51 @@ async def hiring_shortlist(
             "platform_stats": extracted.get("platform_stats", {}),
         })
 
+    semantic_map = await _qdrant_jd_semantic_map(
+        query_skills=semantic_query_skills,
+        role=role,
+        candidates=[c for c in candidates if c.get("ok")],
+    )
+    for candidate in candidates:
+        if not candidate.get("ok"):
+            continue
+        fit = candidate.get("fit", {}) or {}
+        breakdown = fit.get("breakdown", {}) or {}
+        resume_hash = str(candidate.get("resume_hash") or "")
+        semantic = semantic_map.get(resume_hash, {})
+        semantic_score_100 = _to_float(semantic.get("score_100"), 0.0)
+        base_fit_100 = _to_float(fit.get("fit_score_100"), 0.0)
+        # Blend base score with JD semantic proximity from Qdrant.
+        semantic_boost_weight = _to_float(os.getenv("SHORTLIST_JD_SEMANTIC_WEIGHT", "0.12"), 0.12)
+        semantic_boost_weight = _clamp01(semantic_boost_weight)
+        adjusted_fit_100 = round(
+            _clamp01(
+                ((base_fit_100 / 100.0) * (1.0 - semantic_boost_weight))
+                + ((semantic_score_100 / 100.0) * semantic_boost_weight)
+            )
+            * 100.0,
+            3,
+        )
+        fit["fit_score_100"] = adjusted_fit_100
+        fit["fit_score_100_str"] = f"{adjusted_fit_100:.3f}"
+        breakdown["jd_semantic_score_100"] = round(semantic_score_100, 3)
+        fit["breakdown"] = breakdown
+        fit["jd_semantic_meta"] = {
+            "query_skills": semantic_query_skills,
+            "job_description_skills": jd_skills,
+            "matched_query_tokens": semantic.get("matched_query_tokens", []),
+            "relevance_band": semantic.get("relevance_band"),
+            "skills_preview": semantic.get("skills_preview", []),
+            "semantic_weight": semantic_boost_weight,
+        }
+        candidate["fit"] = fit
+
     ranked = sorted(
         [c for c in candidates if c.get("ok") and c.get("eligible")],
         key=lambda c: (
             c.get("fit", {}).get("fit_score_100", 0.0) or 0.0,
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("must_have_coverage_score_100", 0.0) or 0.0),
+            ((c.get("fit", {}).get("breakdown", {}) or {}).get("jd_semantic_score_100", 0.0) or 0.0),
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("target_alignment_score_100", 0.0) or 0.0),
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("confidence_score_100", 0.0) or 0.0),
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("skills_match_score_100", 0.0) or 0.0),
@@ -1567,6 +1699,9 @@ async def hiring_shortlist(
             "role": role,
             "required_skills": required_skills,
             "must_have_skills": must_have_skills,
+            "job_description": job_description,
+            "job_description_skills": jd_skills,
+            "semantic_query_skills": semantic_query_skills,
             "min_experience_years": min_experience_years,
             "applied_thresholds": thresholds,
         },
@@ -1607,6 +1742,24 @@ async def hiring_shortlist(
         },
     )
     return response_payload
+
+
+@app.post("/hiring/semantic-search")
+async def hiring_semantic_search(
+    query_skills_csv: str = Form(...),
+    top_k: int = Form(default=20),
+    min_score: float = Form(default=0.0),
+):
+    query_skills = _parse_csv_list(query_skills_csv)
+    if not query_skills:
+        raise HTTPException(status_code=400, detail="query_skills_csv must contain at least one skill")
+    result = await asyncio.to_thread(
+        qdrant_index.search,
+        query_skills=query_skills,
+        top_k=top_k,
+        min_score=min_score,
+    )
+    return result
 
 
 if __name__ == "__main__":
