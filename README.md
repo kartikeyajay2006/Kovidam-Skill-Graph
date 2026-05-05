@@ -7,6 +7,19 @@ This backend parses PDF resumes, enriches coding-profile data, audits GitHub rep
 
 ## Implemented Modules (File-by-File)
 
+### Skill Constraints / Constants Layer
+- `backend/app/constants/skills_aliases.py`
+Purpose: canonical alias normalization map for skill variants.
+What it does: maps equivalent tokens (e.g. `js`, `node.js`, `postgres`) to stable canonical skills.
+
+- `backend/app/constants/skills_implications.py`
+Purpose: directional skill implication graph.
+What it does: models parent/child inference rules (e.g. `react -> javascript`, `spring boot -> java`, `fastapi -> python`).
+
+- `backend/app/constants/keywords.py`, `backend/app/constants/roles_domains.py`, `backend/app/constants/companies.py`
+Purpose: reusable constraints/configuration for role inference, domain signals, and company signals.
+What it does: centralizes static policy tokens used by scoring and shortlist logic.
+
 ### API Layer
 - `backend/app/main.py`
 Purpose: FastAPI entrypoint and resume extraction endpoints.
@@ -14,6 +27,7 @@ What it does: accepts PDF(s) + `role`, runs extraction pipeline, returns JSON, s
 New:
 - explicit DB initialization through FastAPI lifespan startup,
 - optional `force_reprocess` flag for bypassing duplicate-hash short-circuit.
+- semantic must-have skill evaluation aligned with required-skill matching (alias + implication aware).
 
 ### Configuration
 - `backend/app/config.py`
@@ -122,12 +136,15 @@ Form fields:
 - `position_title` (required)
 - `role` (`job` or `internship`, optional; default `internship`)
 - `required_skills_csv` (required, comma-separated; e.g. `python,fastapi,sql,git`)
+- `must_have_skills_csv` (optional, comma-separated; hard gate, semantic matching enabled)
 - `min_experience_years` (optional; default `0.0`)
 - `force_reprocess` (`true`/`false`, optional; default `false`)
 
 Behavior:
 - extracts all resumes,
 - computes deterministic fit score per candidate,
+- performs semantic skill expansion using aliases + directional implications,
+- evaluates `must_have_skills_csv` using the same semantic matching engine as `required_skills_csv`,
 - sorts candidates by fit score descending,
 - returns ranked shortlist with transparent score breakdown.
 
@@ -136,6 +153,26 @@ Output includes:
 - `platform_stats`
 - `github_analysis.repositories[].analysis.scoring`
 - `github_analysis.summary`
+
+## Skill Matching Policy (Current Behavior)
+
+- Skill matching is canonicalized through the constants layer and supports alias resolution.
+- Directional implications are applied conservatively (`framework/tool -> parent skill` where valid).
+- Must-have checks are hard-gated but semantically evaluated, so candidates are not rejected only due to wording/variant differences.
+- Inference direction remains strict to avoid false positives (example: `react -> javascript` allowed, `javascript -> react` not allowed).
+
+Examples:
+- `must_have=javascript`, resume has `react` or `nodejs` -> pass.
+- `must_have=java`, resume has `spring boot` -> pass.
+- `must_have=python`, resume has `fastapi` -> pass.
+- `must_have=react`, resume has only `javascript` -> fail.
+
+## Regression Coverage
+
+- `backend/tests/test_must_have_semantic.py` validates semantic must-have behavior and directionality guardrails:
+  - framework -> language pass cases,
+  - reverse-direction fail cases,
+  - must-have-not-in-required scenarios.
 
 ## Setup
 

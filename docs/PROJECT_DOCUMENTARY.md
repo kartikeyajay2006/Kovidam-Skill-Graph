@@ -11,6 +11,33 @@ The backend was upgraded with reliability and production-readiness improvements:
 - DB writer upgraded to structured logging and safer persistence flow.
 - Duplicate-resume handling now supports controlled bypass through `force_reprocess`.
 - Runtime tuning knobs added for structured extraction stability (`RESUME_STRUCTURED_*` envs).
+- Semantic must-have skill eligibility now follows the same alias/implication-aware matching path as required skills.
+
+## Skill Constraints and Semantic Matching
+
+### Constraints/Constants Source of Truth
+- `backend/app/constants/skills_aliases.py`
+- `backend/app/constants/skills_implications.py`
+- `backend/app/constants/keywords.py`
+- `backend/app/constants/roles_domains.py`
+- `backend/app/constants/companies.py`
+
+These files act as policy constraints and vocabulary controls for shortlist scoring and eligibility.
+
+### Semantic Matching Intent
+- Avoid false rejection when resumes list framework/tool skills while jobs request parent language skills.
+- Keep inference directional and conservative to avoid false positives.
+
+Representative policy expectations:
+- `react`, `nodejs`, `nextjs` can satisfy `javascript`.
+- `spring boot` can satisfy `java`.
+- `fastapi`, `django`, `flask` can satisfy `python`.
+- Reverse direction does not auto-pass (`javascript` does not imply `react`).
+
+### Must-Have Hard Gate Behavior
+- Must-have remains a hard filter.
+- Hard filter is evaluated after semantic normalization/expansion, not raw lexical matching only.
+- Rejection reasons continue to report missing must-have skills when no valid semantic evidence is found.
 
 ## Migration and Compatibility Notes
 
@@ -128,8 +155,13 @@ backend/
   - Contains:
     - scoring orchestration,
     - policy gates,
+    - semantic skill evaluation (required + must-have),
     - response shaping,
     - shortlist audit logs.
+
+- `app/constants/`
+  - Centralized policy constraints for aliases, implications, and keyword/domain priors.
+  - Reduces hardcoded drift and keeps matching behavior maintainable.
 
 - `app/config.py`
   - Environment loader and path anchors.
@@ -252,6 +284,10 @@ backend/
 
 - `tests/scoring/test_engine_v2.py`
   - Scoring engine behavior checks for `app/scoring/engine.py`.
+
+- `tests/test_must_have_semantic.py`
+  - Regression suite for semantic must-have matching.
+  - Verifies framework-to-language implication passes and reverse-direction fail safety.
 
 ## 1. Product Purpose
 
