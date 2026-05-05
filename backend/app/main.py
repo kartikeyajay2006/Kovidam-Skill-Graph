@@ -32,132 +32,19 @@ API_VERSION = os.getenv("SHORTLIST_API_VERSION", "v1.0.0")
 SCORING_VERSION = os.getenv("SHORTLIST_SCORING_VERSION", "v1.2.0")
 POLICY_VERSION = os.getenv("SHORTLIST_POLICY_VERSION", "v1.1.0")
 SHORTLIST_INCLUDE_LEGACY_KEYS = os.getenv("SHORTLIST_INCLUDE_LEGACY_KEYS", "true").lower() == "true"
-EXPERIENCE_KEYWORDS = [
-    "intern",
-    "internship",
-    "software engineer",
-    "developer",
-    "full stack",
-    "backend",
-    "frontend",
-    "sde",
-    "work experience",
-    "employment",
-]
-COMPANY_SIGNAL_TIERS = {
-    # Tier-1 global product and high bar engineering orgs
-    1.00: [
-        "google", "microsoft", "amazon", "meta", "apple", "netflix", "nvidia", "openai",
-        "deepmind", "anthropic", "stripe", "databricks", "snowflake", "airbnb", "uber",
-    ],
-    # Tier-2 globally respected tech/product or strong platform orgs
-    0.78: [
-        "adobe", "oracle", "salesforce", "atlassian", "palantir", "twilio", "intuit",
-        "servicenow", "cloudflare", "shopify", "ibm", "intel", "sap", "linkedin",
-    ],
-    # Tier-3 strong regional or scaled engineering companies
-    0.62: [
-        "flipkart", "swiggy", "zomato", "razorpay", "phonepe", "paytm", "cred", "meesho",
-        "oyo", "freshworks", "zoho", "upstox", "groww", "postman",
-    ],
-    # Tier-4 large service-heavy orgs (still relevant, lower signal for product depth)
-    0.45: [
-        "infosys", "tcs", "wipro", "hcl", "accenture", "cognizant", "capgemini", "tech mahindra",
-    ],
-}
-LEADERSHIP_KEYWORDS = [
-    "led", "owned", "mentored", "managed", "architected", "drove", "spearheaded",
-    "designed end-to-end", "initiated", "coordinated",
-]
-IMPACT_KEYWORDS = [
-    "reduced", "improved", "increased", "optimized", "scaled", "decreased",
-    "latency", "throughput", "uptime", "reliability", "performance", "cost",
-]
-OWNERSHIP_KEYWORDS = [
-    "production", "deployed", "on-call", "sla", "slo", "microservices",
-    "ci/cd", "kubernetes", "distributed system", "monitoring", "observability",
-]
-INTERNSHIP_CREDIBILITY_KEYWORDS = [
-    "internship", "intern", "research intern", "summer intern", "winter intern",
-    "ppo", "pre-placement offer", "return offer",
-]
-ACHIEVEMENT_KEYWORDS = [
-    "google summer of code",
-    "gsoc",
-    "icpc",
-    "ieeextreme",
-    "hackathon winner",
-    "global rank",
-    "air ",
-    "kaggle master",
-    "kaggle grandmaster",
-    "open source program",
-]
-ROLE_FAMILY_KEYWORDS = {
-    "backend": {
-        "backend", "api", "microservice", "microservices", "distributed", "database", "sql",
-        "postgresql", "mysql", "fastapi", "django", "flask", "spring", "spring boot", "nodejs",
-    },
-    "frontend": {
-        "frontend", "ui", "ux", "react", "nextjs", "angular", "vue", "typescript", "javascript",
-        "web", "css", "html",
-    },
-    "data_ml": {
-        "ml", "machine learning", "deep learning", "llm", "nlp", "computer vision", "kaggle",
-        "tensorflow", "pytorch", "scikit", "xgboost", "rag", "genai", "ai",
-    },
-    "devops": {
-        "devops", "infra", "infrastructure", "kubernetes", "docker", "aws", "gcp", "azure",
-        "ci/cd", "terraform", "observability", "sre", "cloud",
-    },
-    "security": {
-        "security", "cyber", "threat", "vulnerability", "pentest", "soc", "incident",
-        "forensics", "iam", "siem",
-    },
-}
-PROJECT_COMPLEXITY_KEYWORDS = [
-    "scalable", "scale", "distributed", "multi-tenant", "multi agent", "orchestration",
-    "real-time", "streaming", "pipeline", "microservice", "microservices", "kubernetes",
-    "event-driven", "concurrency", "optimization", "low latency", "high throughput",
-]
-TARGET_DOMAIN_KEYWORDS = {
-    "fintech": {"payment", "payments", "banking", "risk", "trading", "fintech"},
-    "ai": {"ai", "ml", "llm", "genai", "rag", "machine learning"},
-    "data": {"data", "analytics", "pipeline", "warehouse", "bi"},
-    "security": {"security", "cyber", "threat", "vulnerability"},
-    "cloud": {"cloud", "aws", "gcp", "azure", "distributed"},
-}
-SKILL_ALIASES = {
-    "js": "javascript",
-    "node": "nodejs",
-    "node.js": "nodejs",
-    "express.js": "express",
-    "next.js": "nextjs",
-    "postgres": "postgresql",
-    "py": "python",
-    "tf": "tensorflow",
-}
-SKILL_IMPLICATIONS = {
-    "react": {"javascript"},
-    "reactjs": {"javascript"},
-    "nextjs": {"javascript", "react"},
-    "vue": {"javascript"},
-    "angular": {"javascript", "typescript"},
-    "nodejs": {"javascript"},
-    "express": {"javascript", "nodejs"},
-    "fastapi": {"python"},
-    "django": {"python"},
-    "flask": {"python"},
-    "pandas": {"python"},
-    "numpy": {"python"},
-    "pytorch": {"python"},
-    "tensorflow": {"python"},
-    "spring boot": {"java"},
-    "postgresql": {"sql"},
-    "mysql": {"sql"},
-    "mongodb": {"nosql"},
-    "redis": {"nosql"},
-}
+from app.constants.companies import COMPANY_SIGNAL_TIERS
+from app.constants.keywords import (
+    EXPERIENCE_KEYWORDS,
+    LEADERSHIP_KEYWORDS,
+    IMPACT_KEYWORDS,
+    OWNERSHIP_KEYWORDS,
+    INTERNSHIP_CREDIBILITY_KEYWORDS,
+    ACHIEVEMENT_KEYWORDS,
+    PROJECT_COMPLEXITY_KEYWORDS,
+)
+from app.constants.roles_domains import ROLE_FAMILY_KEYWORDS, TARGET_DOMAIN_KEYWORDS
+from app.constants.skills_aliases import SKILL_ALIASES
+from app.constants.skills_implications import SKILL_IMPLICATIONS
 
 
 @asynccontextmanager
@@ -411,7 +298,7 @@ def _skill_match_score(
     extracted: dict,
     must_have_skills: list[str] | None = None,
 ) -> tuple[float, list[str], list[str], dict]:
-    if not required_skills:
+    if not required_skills and not must_have_skills:
         return 1.0, [], [], {"skill_meta": {"coverage_required": 1.0, "coverage_must_have": 1.0}}
 
     must_have_skills = must_have_skills or []
@@ -431,12 +318,18 @@ def _skill_match_score(
     weighted_sum = 0.0
     weight_total = 0.0
     matched_required_norm = set()
+    matched_must_have_norm = set()
 
-    for skill in required_skills:
-        s = _canonical_skill(skill)
+    # Evaluate union of required and must-have to allow independent semantic evaluation
+    eval_skills_dict = {}
+    for sk in required_skills + must_have_skills:
+        if sk not in eval_skills_dict:
+            eval_skills_dict[sk] = _canonical_skill(sk)
+
+    for skill, s in eval_skills_dict.items():
         if not s:
             continue
-        required_equivalents = _expand_skill_with_implications(s)
+        required_equivalents = _skill_token_variants(s)
         matched_by_github = any(
             (req == t or req in t or t in req)
             for req in required_equivalents
@@ -465,9 +358,15 @@ def _skill_match_score(
             + (0.30 if matched_by_text else 0.0)
         )
         skill_score = _clamp01(confidence / 1.35)
-        skill_weight = 1.35 if s in must_have_norm else 1.0
-        weighted_sum += skill_score * skill_weight
-        weight_total += skill_weight
+        
+        is_required = skill in required_skills
+        is_must_have = s in must_have_norm
+
+        # Preserve scoring behavior: only required skills count toward the continuous score
+        if is_required:
+            skill_weight = 1.35 if is_must_have else 1.0
+            weighted_sum += skill_score * skill_weight
+            weight_total += skill_weight
 
         evidence[skill] = {
             "matched_by_github": matched_by_github,
@@ -475,17 +374,22 @@ def _skill_match_score(
             "matched_by_skills_section": matched_by_skill_section,
             "matched_by_project_text": matched_by_project_text,
             "matched_by_text": matched_by_text,
+            "is_required": is_required,
+            "is_must_have": is_must_have,
             "evidence_strength_100": round(skill_score * 100.0, 3),
         }
         if skill_score >= 0.40:
             matched.append(skill)
-            matched_required_norm.add(s)
+            if is_required:
+                matched_required_norm.add(s)
+            if is_must_have:
+                matched_must_have_norm.add(s)
         else:
             missing.append(skill)
 
     score = (weighted_sum / weight_total) if weight_total > 0 else 0.0
     must_have_total = len(must_have_norm)
-    must_have_matched = len(must_have_norm.intersection(matched_required_norm))
+    must_have_matched = len(matched_must_have_norm)
     must_have_coverage = (must_have_matched / must_have_total) if must_have_total > 0 else 1.0
     required_coverage = len(matched_required_norm) / max(1, len(required_norm))
 
@@ -1151,8 +1055,17 @@ def _normalize_skill_set(skills: list[str]) -> set[str]:
 
 
 def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresholds: dict) -> tuple[bool, list[str], dict]:
-    matched_norm = _normalize_skill_set(fit.get("skills", {}).get("matched", []))
-    missing_must_have = [s for s in must_have_skills if _normalize_text(s) not in matched_norm]
+    matched_norm = {_canonical_skill(s) for s in fit.get("skills", {}).get("matched", []) if _canonical_skill(s)}
+    
+    missing_must_have = []
+    matched_must_have = []
+    for s in must_have_skills:
+        sc = _canonical_skill(s)
+        if sc and sc not in matched_norm:
+            missing_must_have.append(s)
+        else:
+            matched_must_have.append(s)
+            
     rejection_reasons = []
 
     skill_match_score_100 = _to_float(fit.get("breakdown", {}).get("skills_match_score_100"), 0.0)
@@ -1161,7 +1074,8 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
     experience_quality_score_100 = _to_float(fit.get("breakdown", {}).get("experience_quality_score_100"), 0.0)
 
     if missing_must_have:
-        rejection_reasons.append(f"Missing must-have skills: {', '.join(missing_must_have)}")
+        rejection_reasons.append(f"Missing must-have skills: {', '.join(missing_must_have)} (failed semantic + alias match)")
+
 
     if role == "job":
         if skill_match_score_100 < thresholds["min_skill_match_pct"]:
