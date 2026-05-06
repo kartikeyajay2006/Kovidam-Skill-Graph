@@ -2,6 +2,184 @@
 
 Detailed technical documentary of the implemented backend as of current code.
 
+## 2026-05-07 Scoring Policy Redesign (Industry-Relevance Update)
+
+This section documents the shortlist scoring redesign implemented on May 7, 2026 to better align with real hiring behavior and reduce unfair rejection patterns.
+
+### Why this redesign was done
+
+Observed issues in previous scoring behavior:
+- Candidates could be penalized heavily (or effectively filtered) when GitHub evidence was missing.
+- High-signal achievements such as GSoC and elite contest performance were underweighted.
+- Job-role weighting over-indexed on GitHub and under-indexed on practical project signal.
+
+Design goals:
+- Reward strong demonstrable outcomes (projects, platform strength, recognized achievements).
+- Avoid brittle rejection for missing profile links.
+- Preserve must-have hard gate and role-aware thresholding.
+
+### Files changed in this redesign
+
+- `backend/app/main.py`
+- `backend/.env`
+- `backend/.env.example`
+- `README.md`
+
+### 1. New Achievement Score added to core fit computation
+
+New function:
+- `backend/app/main.py` -> `_achievement_score(...)`
+
+The new achievement signal produces `achievement_score_100` from:
+- explicit GSoC signal (`"google summer of code"` / `"gsoc"`),
+- platform achievement meta already computed from coding profiles,
+- elite platform rating band checks (Codeforces/LeetCode/CodeChef/AtCoder),
+- rank/award keyword evidence (`icpc`, `winner`, `finalist`, `global rank`, `air`, etc.).
+
+This score is now:
+- included in final weighted fit score,
+- exposed in response `breakdown`,
+- included in `ranking_decision_log.candidate_metrics`,
+- used in ranking tie-breakers.
+
+### 2. Weight model redesign (job + internship)
+
+#### Job weights before redesign
+- skills: `0.27`
+- github: `0.20`
+- experience: `0.19`
+- platform: `0.08`
+- projects: `0.04`
+- profile: `0.02`
+- experience_quality: `0.20`
+- achievements: not present
+
+#### Job weights after redesign (current)
+- skills: `0.28`
+- github: `0.12`
+- experience: `0.19`
+- platform: `0.14`
+- projects: `0.10`
+- profile: `0.02`
+- experience_quality: `0.20`
+- achievements: `0.06`
+
+Impact:
+- GitHub dependence is reduced.
+- Platform strength and project signal carry more weight.
+- Achievements are explicitly represented without dominating the score.
+
+#### Internship weights before redesign
+- skills: `0.34`
+- github: `0.21`
+- experience: `0.09`
+- platform: `0.14`
+- projects: `0.08`
+- profile: `0.02`
+- experience_quality: `0.12`
+- achievements: not present
+
+#### Internship weights after redesign (current)
+- skills: `0.30`
+- github: `0.10`
+- experience: `0.08`
+- platform: `0.20`
+- projects: `0.18`
+- profile: `0.02`
+- experience_quality: `0.00`
+- achievements: `0.12`
+
+Impact:
+- Internship scoring is now aligned to early-career reality:
+  coding strength + projects + achievements over corporate-tenure style signals.
+
+### 3. GitHub threshold brittleness removed
+
+Previous behavior:
+- `JOB_MIN_GITHUB_SCORE_100=35` could reject candidates with weak/missing GitHub extraction.
+
+Current behavior:
+- default threshold changed to `JOB_MIN_GITHUB_SCORE_100=0`.
+- even if threshold is configured above `0`, GitHub threshold is enforced only when GitHub data is available.
+
+Implementation:
+- `backend/app/main.py` -> `_build_eligibility(...)`
+- gating now checks `github_data_available_score_100` before applying GitHub minimum.
+
+Result:
+- Missing GitHub links no longer cause unfair rejection in job shortlisting by default.
+
+### 4. Missing-signal-aware weight redistribution
+
+Previous behavior:
+- Missing GitHub data often yielded near-zero GitHub component while still consuming configured weight share.
+
+Current behavior:
+- role weights are redistributed at runtime across available signals when GitHub data is absent.
+- system stores both:
+  - configured weights (`criteria_used.weights`)
+  - effective post-availability weights (`criteria_used.effective_weights`)
+- response includes a redistribution marker:
+  - `criteria_used.weight_redistribution.redistributed_due_to_missing_signals`
+
+Result:
+- candidates are scored on available evidence, not penalized for extraction/link absence.
+
+### 5. Final score flow after redesign
+
+High-level order:
+1. build component scores (skills, github, experience, platform, projects, profile, experience_quality, achievements),
+2. derive effective weights based on signal availability,
+3. compute weighted fit,
+4. apply target-alignment and must-have multipliers,
+5. apply optional JD semantic blend (`SHORTLIST_JD_SEMANTIC_WEIGHT`, default `0.12`),
+6. run eligibility filters,
+7. rank eligible candidates.
+
+### 6. Ranking tie-break order update
+
+Current tie-break priority after `fit_score_100`:
+1. must-have coverage
+2. achievement score
+3. JD semantic score
+4. target alignment
+5. confidence
+6. skills match
+
+This change ensures high-signal achievements influence close-ranking scenarios.
+
+### 7. Config/documentation synchronization
+
+To avoid policy drift, the same scoring values were updated in:
+- runtime env (`backend/.env`),
+- environment template (`backend/.env.example`),
+- public setup docs (`README.md`).
+
+Added env keys:
+- `INTERN_WEIGHT_ACHIEVEMENTS`
+- `JOB_WEIGHT_ACHIEVEMENTS`
+
+Updated job threshold default:
+- `JOB_MIN_GITHUB_SCORE_100=0`
+
+### 8. Behavior difference summary (before vs now)
+
+For a candidate with:
+- strong skills/projects/platform performance,
+- weak or missing GitHub links.
+
+Before:
+- could be directly rejected in job flow due to GitHub threshold,
+- could be under-ranked due to non-redistributed GitHub weight drag.
+
+Now:
+- no default GitHub hard rejection,
+- missing GitHub weight redistributed across available signals,
+- project/platform/achievement evidence contributes more materially.
+
+Net effect:
+- stronger fairness and better alignment with industry screening practices while preserving strict must-have checks.
+
 ## Recent Production Hardening Updates
 
 The backend was upgraded with reliability and production-readiness improvements:
