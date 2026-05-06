@@ -961,6 +961,56 @@ def _confidence_score(extracted: dict, fit_breakdown: dict) -> tuple[float, dict
     }
 
 
+def _achievement_score(extracted: dict, platform_achievement: dict) -> tuple[float, dict]:
+    text = _normalize_text(extracted.get("raw_text") or extracted.get("raw_text_preview", ""))
+    platform_stats = extracted.get("platform_stats", {}) or {}
+
+    gsoc_signal = 1.0 if ("google summer of code" in text or "gsoc" in text) else 0.0
+    achievement_keywords = [
+        "icpc", "hackercup", "meta hacker cup", "winner", "finalist", "medal",
+        "gold medal", "silver medal", "bronze medal", "global rank", "air",
+        "kaggle master", "kaggle grandmaster",
+    ]
+    keyword_hits = sum(1 for kw in achievement_keywords if kw in text)
+    keyword_score = _clamp01(keyword_hits / 5.0)
+    rank_signal_hits = len(re.findall(r"\b(global rank|air|rank)\s*(?:[:#]?\s*)\d{1,5}\b", text))
+    rank_signal = _clamp01(rank_signal_hits / 3.0)
+
+    cf_rating = _to_float((platform_stats.get("codeforces") or {}).get("max_rating"), 0.0)
+    lc_rating = _to_float((platform_stats.get("leetcode") or {}).get("rating"), 0.0)
+    cc_rating = _to_float((platform_stats.get("codechef") or {}).get("highest_rating"), 0.0)
+    ac_rating = _to_float((platform_stats.get("atcoder") or {}).get("highest_rating"), 0.0)
+    elite_platform_points = 0.0
+    if cf_rating >= 2200:
+        elite_platform_points += 1.0
+    elif cf_rating >= 2000:
+        elite_platform_points += 0.8
+    if lc_rating >= 2400:
+        elite_platform_points += 1.0
+    elif lc_rating >= 2200:
+        elite_platform_points += 0.8
+    if cc_rating >= 2200:
+        elite_platform_points += 0.6
+    if ac_rating >= 2000:
+        elite_platform_points += 0.6
+    elite_platform_score = _clamp01(elite_platform_points / 2.2)
+    platform_achievement_score = _to_float(platform_achievement.get("score"), 0.0)
+
+    score = _clamp01(
+        (gsoc_signal * 0.38)
+        + (platform_achievement_score * 0.34)
+        + (elite_platform_score * 0.18)
+        + (_clamp01((keyword_score * 0.6) + (rank_signal * 0.4)) * 0.10)
+    )
+    return score, {
+        "gsoc_signal_score_100": round(gsoc_signal * 100.0, 3),
+        "platform_achievement_score_100": round(platform_achievement_score * 100.0, 3),
+        "elite_platform_score_100": round(elite_platform_score * 100.0, 3),
+        "achievement_keyword_score_100": round(keyword_score * 100.0, 3),
+        "rank_signal_score_100": round(rank_signal * 100.0, 3),
+    }
+
+
 def _json_log(event: str, payload: dict) -> None:
     logger.info(json.dumps({"event": event, **payload}, ensure_ascii=False))
 
@@ -972,12 +1022,13 @@ def _policy_config(role: str) -> dict:
         return {
             "weights": {
                 "skills": _to_float(os.getenv("INTERN_WEIGHT_SKILLS", "0.30"), 0.30),
-                "github": _to_float(os.getenv("INTERN_WEIGHT_GITHUB", "0.22"), 0.22),
-                "experience": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE", "0.10"), 0.10),
-                "platform": _to_float(os.getenv("INTERN_WEIGHT_PLATFORM", "0.13"), 0.13),
-                "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.09"), 0.09),
+                "github": _to_float(os.getenv("INTERN_WEIGHT_GITHUB", "0.10"), 0.10),
+                "experience": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE", "0.08"), 0.08),
+                "platform": _to_float(os.getenv("INTERN_WEIGHT_PLATFORM", "0.20"), 0.20),
+                "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.18"), 0.18),
                 "profile": _to_float(os.getenv("INTERN_WEIGHT_PROFILE", "0.02"), 0.02),
-                "experience_quality": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_QUALITY", "0.14"), 0.14),
+                "experience_quality": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_QUALITY", "0.00"), 0.00),
+                "achievements": _to_float(os.getenv("INTERN_WEIGHT_ACHIEVEMENTS", "0.12"), 0.12),
             },
             "thresholds": {
                 "min_skill_match_pct": 0.0,
@@ -987,17 +1038,18 @@ def _policy_config(role: str) -> dict:
         }
     return {
         "weights": {
-            "skills": _to_float(os.getenv("JOB_WEIGHT_SKILLS", "0.20"), 0.20),
-            "github": _to_float(os.getenv("JOB_WEIGHT_GITHUB", "0.18"), 0.18),
-            "experience": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE", "0.22"), 0.22),
-            "platform": _to_float(os.getenv("JOB_WEIGHT_PLATFORM", "0.07"), 0.07),
-            "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.07"), 0.07),
-            "profile": _to_float(os.getenv("JOB_WEIGHT_PROFILE", "0.01"), 0.01),
-            "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.25"), 0.25),
+            "skills": _to_float(os.getenv("JOB_WEIGHT_SKILLS", "0.28"), 0.28),
+            "github": _to_float(os.getenv("JOB_WEIGHT_GITHUB", "0.12"), 0.12),
+            "experience": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE", "0.19"), 0.19),
+            "platform": _to_float(os.getenv("JOB_WEIGHT_PLATFORM", "0.14"), 0.14),
+            "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.10"), 0.10),
+            "profile": _to_float(os.getenv("JOB_WEIGHT_PROFILE", "0.02"), 0.02),
+            "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.20"), 0.20),
+            "achievements": _to_float(os.getenv("JOB_WEIGHT_ACHIEVEMENTS", "0.06"), 0.06),
         },
         "thresholds": {
             "min_skill_match_pct": _to_float(os.getenv("JOB_MIN_SKILL_MATCH_PCT", "55"), 55.0),
-            "min_github_score_100": _to_float(os.getenv("JOB_MIN_GITHUB_SCORE_100", "35"), 35.0),
+            "min_github_score_100": _to_float(os.getenv("JOB_MIN_GITHUB_SCORE_100", "0"), 0.0),
             "min_experience_quality_score_100": job_min_exp_quality,
         },
     }
@@ -1216,9 +1268,13 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
             rejection_reasons.append(
                 f"Skill match {skill_match_score_100:.3f} below minimum {thresholds['min_skill_match_pct']:.3f}"
             )
-        if github_score_100 < thresholds["min_github_score_100"]:
+        min_github = _to_float(thresholds.get("min_github_score_100"), 0.0)
+        github_data_available = _to_float(
+            fit.get("breakdown", {}).get("github_data_available_score_100"), 0.0
+        ) > 0.0
+        if min_github > 0.0 and github_data_available and github_score_100 < min_github:
             rejection_reasons.append(
-                f"GitHub score {github_score_100:.3f} below minimum {thresholds['min_github_score_100']:.3f}"
+                f"GitHub score {github_score_100:.3f} below minimum {min_github:.3f}"
             )
         if experience_years < thresholds["min_experience_years"]:
             rejection_reasons.append(
@@ -1259,6 +1315,9 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
             ),
             "confidence_score_100": _to_float(
                 fit.get("breakdown", {}).get("confidence_score_100"), 0.0
+            ),
+            "achievement_score_100": _to_float(
+                fit.get("breakdown", {}).get("achievement_score_100"), 0.0
             ),
         },
     }
@@ -1442,6 +1501,7 @@ def _candidate_company_fit(
     platform_score_raw = _to_float(platform_details.get("score"), 0.0)
     platform_achievement_details = _platform_achievement_details(extracted.get("platform_stats", {}) or {})
     platform_achievement_score = _to_float(platform_achievement_details.get("score"), 0.0)
+    achievement_score, achievement_meta = _achievement_score(extracted, platform_achievement_details)
 
     profile_score = _profile_completeness_score(extracted)
     project_evidence_base = _project_evidence_score(extracted)
@@ -1460,17 +1520,37 @@ def _candidate_company_fit(
     if platform_score >= 0.75 and github_score < 0.45 and project_relevance < 0.45 and experience_quality < 0.45:
         platform_score = platform_score * 0.68
     weights = _role_weights(role)
+    github_data_available = _safe_int(github_summary.get("repo_count"), 0) > 0
+    availability = {
+        "skills": True,
+        "github": github_data_available,
+        "experience": True,
+        "platform": True,
+        "projects": True,
+        "profile": True,
+        "experience_quality": True,
+        "achievements": True,
+    }
+    available_weights = {
+        k: _to_float(v, 0.0) for k, v in weights.items() if availability.get(k, True)
+    }
+    effective_weight_total = sum(available_weights.values()) or 1.0
+    eff_weights = {
+        k: (_to_float(v, 0.0) / effective_weight_total) if availability.get(k, True) else 0.0
+        for k, v in weights.items()
+    }
     weight_total = sum(_to_float(v, 0.0) for v in weights.values()) or 1.0
     norm_weights = {k: _to_float(v, 0.0) / weight_total for k, v in weights.items()}
 
     final = (
-        (skill_score * norm_weights["skills"])
-        + (github_score * norm_weights["github"])
-        + (exp_score * norm_weights["experience"])
-        + (platform_score * norm_weights["platform"])
-        + (project_evidence * norm_weights["projects"])
-        + (profile_score * norm_weights["profile"])
-        + (experience_quality * norm_weights["experience_quality"])
+        (skill_score * eff_weights.get("skills", 0.0))
+        + (github_score * eff_weights.get("github", 0.0))
+        + (exp_score * eff_weights.get("experience", 0.0))
+        + (platform_score * eff_weights.get("platform", 0.0))
+        + (project_evidence * eff_weights.get("projects", 0.0))
+        + (profile_score * eff_weights.get("profile", 0.0))
+        + (experience_quality * eff_weights.get("experience_quality", 0.0))
+        + (achievement_score * eff_weights.get("achievements", 0.0))
     )
     # Target role/company alignment and must-have depth adjust final fit score.
     target_multiplier = 0.90 + (target_alignment * 0.12)
@@ -1499,10 +1579,12 @@ def _candidate_company_fit(
             "platform_strength_raw_score_100": round(platform_score_raw * 100.0, 3),
             "platform_peak_score_100": round(_to_float(platform_details.get("peak_score"), 0.0) * 100.0, 3),
             "platform_achievement_score_100": round(platform_achievement_score * 100.0, 3),
+            "achievement_score_100": round(achievement_score * 100.0, 3),
             "project_evidence_score_100": round(project_evidence * 100.0, 3),
             "project_relevance_score_100": round(project_relevance * 100.0, 3),
             "profile_completeness_score_100": round(profile_score * 100.0, 3),
             "experience_quality_score_100": round(experience_quality * 100.0, 3),
+            "github_data_available_score_100": 100.0 if github_data_available else 0.0,
             "target_alignment_score_100": round(target_alignment * 100.0, 3),
             "confidence_score_100": round(confidence * 100.0, 3),
         },
@@ -1511,6 +1593,11 @@ def _candidate_company_fit(
             "company_name": company_name,
             "position_title": position_title,
             "weights": norm_weights,
+            "effective_weights": eff_weights,
+            "weight_redistribution": {
+                "github_data_available": github_data_available,
+                "redistributed_due_to_missing_signals": not github_data_available,
+            },
             "notes": [],
             "role_context": role_context,
         },
@@ -1530,6 +1617,7 @@ def _candidate_company_fit(
         "platform_meta": {
             "strength": platform_details,
             "achievement": platform_achievement_details,
+            "overall_achievements": achievement_meta,
         },
         "project_meta": project_relevance_meta,
         "target_alignment_meta": target_alignment_meta,
@@ -1540,6 +1628,7 @@ def _candidate_company_fit(
             f"GitHub {round(github_score * 100.0, 1)}, "
             f"Experience {round(exp, 2)} years, "
             f"Platform {round(platform_score * 100.0, 1)}, "
+            f"Achievements {round(achievement_score * 100.0, 1)}, "
             f"Target alignment {round(target_alignment * 100.0, 1)}."
         ),
     }
@@ -1712,6 +1801,7 @@ async def hiring_shortlist(
         key=lambda c: (
             c.get("fit", {}).get("fit_score_100", 0.0) or 0.0,
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("must_have_coverage_score_100", 0.0) or 0.0),
+            ((c.get("fit", {}).get("breakdown", {}) or {}).get("achievement_score_100", 0.0) or 0.0),
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("jd_semantic_score_100", 0.0) or 0.0),
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("target_alignment_score_100", 0.0) or 0.0),
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("confidence_score_100", 0.0) or 0.0),
