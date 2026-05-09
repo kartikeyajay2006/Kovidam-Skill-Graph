@@ -2,6 +2,104 @@
 
 Detailed technical documentary of the implemented backend as of current code.
 
+## 2026-05-09 Frontend Authentication Integration (Firebase)
+
+This section documents the frontend authentication implementation completed on May 9, 2026.
+
+### Scope completed
+
+Authentication was integrated into existing frontend screens without structural UI/layout rewrites:
+- Email/password login via Firebase Auth.
+- Email/password signup via Firebase Auth.
+- Google popup auth (`Continue with Google`) on both login and signup pages.
+- Firebase config moved from hardcoded source values to frontend environment variables.
+
+### Files changed
+
+- `frontend/src/firebase.js`
+- `frontend/src/pages/Login.jsx`
+- `frontend/src/pages/Signup.jsx`
+- `frontend/.env.example`
+- `frontend/.env` (local, untracked secret file)
+
+### Implementation details
+
+#### 1. Firebase bootstrap module
+
+File:
+- `frontend/src/firebase.js`
+
+What it now does:
+- initializes Firebase app using `import.meta.env.VITE_*` config values,
+- exports:
+  - `auth` (`getAuth(app)`),
+  - `googleProvider` (`new GoogleAuthProvider()`),
+- initializes analytics only when supported by runtime (`isSupported()` guard), preventing unsupported-environment errors.
+
+#### 2. Login flow conversion (mock -> real auth)
+
+File:
+- `frontend/src/pages/Login.jsx`
+
+What changed:
+- previous mock submit redirect was replaced with Firebase login call:
+  - `signInWithEmailAndPassword(auth, email, password)`,
+- added Google login path:
+  - `signInWithPopup(auth, googleProvider)`,
+- success behavior retained:
+  - navigate to `/dashboard`,
+- added minimal UX state:
+  - `isLoading` to avoid duplicate submissions,
+  - inline error message rendering from Firebase errors.
+
+#### 3. Signup flow conversion (mock -> real auth)
+
+File:
+- `frontend/src/pages/Signup.jsx`
+
+What changed:
+- previous mock submit redirect was replaced with Firebase signup call:
+  - `createUserWithEmailAndPassword(auth, email, password)`,
+- after account creation:
+  - `updateProfile(..., { displayName })` using entered full name,
+- added Google signup path:
+  - `signInWithPopup(auth, googleProvider)`,
+- success behavior retained:
+  - navigate to `/dashboard`,
+- added loading + inline error handling parallel to login.
+
+#### 4. Secret handling and GitHub safety
+
+What changed:
+- Firebase credentials removed from hardcoded JS config.
+- Credentials moved to:
+  - `frontend/.env` (local runtime secret),
+  - `frontend/.env.example` (committable template placeholders).
+
+Why:
+- prevents accidental credential exposure in tracked source files,
+- standard Vite pattern (`VITE_*`) keeps local setup predictable for collaborators.
+
+Repository safety status:
+- root `.gitignore` already ignores `**/.env` and `**/.env.*`,
+- therefore `frontend/.env` is not committed by default.
+
+### Runtime prerequisites
+
+In Firebase Console, the following sign-in providers must be enabled:
+1. Email/Password
+2. Google
+
+Also ensure allowed domains include:
+- local domain used in development (for example `localhost`),
+- deployed production domain.
+
+### Verification status
+
+Frontend build was executed after integration and passed:
+- command: `npm run build` (from `frontend/`)
+- result: successful production build generation.
+
 ## 2026-05-07 Scoring Policy Redesign (Industry-Relevance Update)
 
 This section documents the shortlist scoring redesign implemented on May 7, 2026 to better align with real hiring behavior and reduce unfair rejection patterns.

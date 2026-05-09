@@ -320,6 +320,48 @@ npm run dev
 ```
 The frontend will start and automatically proxy backend API requests to `http://localhost:8000`.
 
+### 5. Frontend Firebase Auth Setup (Login, Signup, Google)
+
+Firebase auth is integrated in frontend for:
+- email/password login,
+- email/password signup,
+- Google sign-in (`Continue with Google`) from both login and signup screens.
+
+Files involved:
+- `frontend/src/firebase.js`
+- `frontend/src/pages/Login.jsx`
+- `frontend/src/pages/Signup.jsx`
+
+Create `frontend/.env` (do not commit) with:
+```env
+VITE_FIREBASE_API_KEY=your_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your_project_id
+VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+VITE_FIREBASE_APP_ID=your_app_id
+VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
+```
+
+Safe template file:
+- `frontend/.env.example` (tracked, no secrets)
+
+Security notes:
+- root `.gitignore` already ignores all `.env` files via `**/.env` and `**/.env.*`,
+- never hardcode Firebase keys in source files when pushing to GitHub,
+- if keys were previously committed, rotate/reissue credentials in Firebase Console.
+
+Firebase Console requirements:
+1. Go to `Authentication -> Sign-in method`.
+2. Enable `Email/Password`.
+3. Enable `Google`.
+4. Add allowed auth domain(s) used by your app (localhost + production domain).
+
+Current auth flow behavior:
+- on successful login/signup/google popup auth, frontend navigates to `/dashboard`,
+- inline error text is shown for auth failures,
+- submit/google buttons use loading state to prevent duplicate auth calls.
+
 ## Qdrant Integration
 
 - Resume extraction now attempts Qdrant upsert per resume (`resume_hash` as point id).

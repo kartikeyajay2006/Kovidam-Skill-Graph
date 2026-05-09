@@ -1,15 +1,49 @@
 import React from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
+import { createUserWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth'
+import { auth, googleProvider } from '../firebase'
 import './Auth.css'
 
 export default function Signup() {
   const navigate = useNavigate()
+  const [fullName, setFullName] = useState('')
+  const [companyName, setCompanyName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
 
-  const handleSignup = (e) => {
+  const handleSignup = async (e) => {
     e.preventDefault()
-    // Simulate auth, then redirect to ATS dashboard
-    navigate('/dashboard')
+    setError('')
+    setIsLoading(true)
+
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password)
+      if (fullName.trim()) {
+        await updateProfile(cred.user, { displayName: fullName.trim() })
+      }
+      navigate('/dashboard')
+    } catch (err) {
+      setError(err.message || 'Signup failed. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleGoogleSignup = async () => {
+    setError('')
+    setIsLoading(true)
+    try {
+      await signInWithPopup(auth, googleProvider)
+      navigate('/dashboard')
+    } catch (err) {
+      setError(err.message || 'Google sign-up failed. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -32,26 +66,64 @@ export default function Signup() {
         <form className="auth-form" onSubmit={handleSignup}>
           <div className="auth-input-group">
             <label>Full Name</label>
-            <input type="text" className="auth-input" placeholder="Alex Recruiter" required />
+            <input
+              type="text"
+              className="auth-input"
+              placeholder="Alex Recruiter"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+            />
           </div>
 
           <div className="auth-input-group">
             <label>Company Name</label>
-            <input type="text" className="auth-input" placeholder="Tech Innovations Inc." required />
+            <input
+              type="text"
+              className="auth-input"
+              placeholder="Tech Innovations Inc."
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              required
+            />
           </div>
 
           <div className="auth-input-group">
             <label>Work Email</label>
-            <input type="email" className="auth-input" placeholder="alex@company.com" required />
+            <input
+              type="email"
+              className="auth-input"
+              placeholder="alex@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
           </div>
           
           <div className="auth-input-group">
             <label>Password</label>
-            <input type="password" className="auth-input" placeholder="••••••••" required />
+            <input
+              type="password"
+              className="auth-input"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
           </div>
+          {error ? <p style={{ color: '#ff6b6b', margin: 0 }}>{error}</p> : null}
 
-          <button type="submit" className="btn-premium btn-primary auth-button">
-            Start Hiring Now
+          <button type="submit" className="btn-premium btn-primary auth-button" disabled={isLoading}>
+            {isLoading ? 'Creating Account...' : 'Start Hiring Now'}
+          </button>
+          <button
+            type="button"
+            className="btn-premium auth-button"
+            onClick={handleGoogleSignup}
+            disabled={isLoading}
+            style={{ marginTop: '0.65rem', background: '#fff', color: '#1f2937', border: '1px solid #d1d5db' }}
+          >
+            Continue with Google
           </button>
         </form>
 
