@@ -8,7 +8,6 @@ import Signup from './pages/Signup'
 import PlaceholderPage from './pages/PlaceholderPage'
 import ShortlistPage from './pages/ShortlistPage'
 import SemanticSearchPage from './pages/SemanticSearchPage'
-import ResumeExtractPage from './pages/ResumeExtractPage'
 import './App.css'
 
 function App() {
@@ -32,7 +31,6 @@ function App() {
       <Route path="/dashboard" element={<DashboardLayout />}>
         <Route index element={<PlaceholderPage title="Dashboard Hub" />} />
         <Route path="shortlist" element={<ShortlistPage />} />
-        <Route path="upload" element={<ResumeExtractPage />} />
         <Route path="search" element={<SemanticSearchPage />} />
         <Route path="candidate/:id" element={<PlaceholderPage title="Candidate Profile" />} />
         <Route path="settings" element={<PlaceholderPage title="Settings & Configuration" />} />

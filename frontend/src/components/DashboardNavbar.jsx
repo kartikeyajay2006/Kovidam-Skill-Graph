@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LayoutDashboard, Briefcase, Upload, Search, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Briefcase, Search, Settings, LogOut } from 'lucide-react'
 import './Navbar.css'
 
 export default function DashboardNavbar() {
@@ -12,7 +12,6 @@ export default function DashboardNavbar() {
   const navItems = [
     { name: 'Hub', icon: LayoutDashboard, path: '/dashboard' },
     { name: 'Shortlist', icon: Briefcase, path: '/dashboard/shortlist' },
-    { name: 'Upload', icon: Upload, path: '/dashboard/upload' },
     { name: 'Search', icon: Search, path: '/dashboard/search' },
     { name: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ]
@@ -21,7 +20,7 @@ export default function DashboardNavbar() {
     <header className="top-header">
       <div className="header-logo" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>
         <img src="/src/assets/logo-cropped-tight.png" alt="Kovidam Logo" className="brand-logo" />
-        <span className="brand-text">ATS<span className="sanskrit" style={{ fontSize: '1rem', marginLeft: '8px' }}>Dashboard</span></span>
+        <span className="brand-text">KOVI<span className="sanskrit">दम्</span><span style={{ fontSize: '1.2rem', marginLeft: '10px', fontWeight: 500, color: '#e2e8f0', letterSpacing: '1px' }}>Medha</span></span>
       </div>
       
       <motion.nav 

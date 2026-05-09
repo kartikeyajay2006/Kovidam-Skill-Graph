@@ -18,7 +18,8 @@ import {
   RotateCcw,
   FilePlus,
   Files,
-  Users
+  Users,
+  Mail
 } from 'lucide-react';
 import TagInput from '../components/TagInput';
 
@@ -40,6 +41,7 @@ export default function ShortlistPage() {
   const [error, setError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedCandidateIndex, setSelectedCandidateIndex] = useState(null);
+  const [autoSendEmails, setAutoSendEmails] = useState(false);
   
   const fileInputRef = useRef(null);
 
@@ -85,6 +87,7 @@ export default function ShortlistPage() {
     }
     data.append('required_skills_csv', requiredSkills.join(','));
     data.append('must_have_skills_csv', mustHaveSkills.join(','));
+    data.append('send_shortlist_emails', autoSendEmails);
     
     files.forEach((file) => {
       data.append('files', file);
@@ -115,6 +118,7 @@ export default function ShortlistPage() {
     setError(null);
     setStep(1);
     setSelectedCandidateIndex(null);
+    setAutoSendEmails(false);
   };
 
   // Animation Variants
@@ -482,6 +486,43 @@ export default function ShortlistPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', marginTop: '0.5rem' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Mail size={16} color="#818cf8" /> Auto-Email AI Interviews
+                    </h4>
+                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>Send interview invites to top shortlisted candidates automatically.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAutoSendEmails(!autoSendEmails)}
+                    style={{
+                      width: '44px',
+                      height: '24px',
+                      borderRadius: '12px',
+                      background: autoSendEmails ? '#4f46e5' : 'rgba(255,255,255,0.1)',
+                      border: 'none',
+                      position: 'relative',
+                      cursor: 'pointer',
+                      transition: 'background 0.3s'
+                    }}
+                  >
+                    <motion.div
+                      initial={false}
+                      animate={{ x: autoSendEmails ? 20 : 2 }}
+                      style={{
+                        width: '20px',
+                        height: '20px',
+                        borderRadius: '50%',
+                        background: 'white',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                        position: 'absolute',
+                        top: '2px'
+                      }}
+                    />
+                  </button>
+                </div>
 
                 <motion.button 
                   whileHover={{ scale: 1.02 }}
