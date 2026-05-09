@@ -33,7 +33,13 @@ def transform_resume_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
         job = {
             "company_name": job_raw.get("company_name") or None,
             "position_title": job_raw.get("position_title") or None,
-            "role": job_raw.get("role") or None,
+            # jobs.role is NOT NULL in DB schema; keep a safe fallback.
+            "role": (
+                job_raw.get("role")
+                or raw_data.get("role")
+                or raw_data.get("data", {}).get("github_analysis", {}).get("selected_role_profile")
+                or "internship"
+            ),
             "required_skills": job_raw.get("required_skills") or [],
             "min_experience_years": _safe_float(job_raw.get("min_experience_years")),
         }

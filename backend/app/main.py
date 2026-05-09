@@ -17,6 +17,7 @@ from app.db.postgres.session import init_db
 from app.services.resume_parser import parse_resume_and_enrich, save_extracted_data_to_json
 from app.services.transformer import transform_resume_data
 from app.services.db_writer import save_to_db
+from app.services.shortlist_notifier import send_shortlist_notifications
 from app.utils.hash_utils import generate_resume_hash
 from app.schemas.shortlist_response import ShortlistResponse
 from app.integrations.qdrant import QdrantResumeIndex
@@ -33,6 +34,7 @@ API_VERSION = os.getenv("SHORTLIST_API_VERSION", "v1.0.0")
 SCORING_VERSION = os.getenv("SHORTLIST_SCORING_VERSION", "v1.2.0")
 POLICY_VERSION = os.getenv("SHORTLIST_POLICY_VERSION", "v1.1.0")
 SHORTLIST_INCLUDE_LEGACY_KEYS = os.getenv("SHORTLIST_INCLUDE_LEGACY_KEYS", "true").lower() == "true"
+SHORTLIST_AUTO_SEND_EMAILS = os.getenv("SHORTLIST_AUTO_SEND_EMAILS", "false").lower() == "true"
 qdrant_index = QdrantResumeIndex()
 from app.constants.companies import COMPANY_SIGNAL_TIERS
 from app.constants.keywords import (
@@ -1697,6 +1699,8 @@ async def hiring_shortlist(
     job_description: str = Form(default=""),
     min_experience_years: float = Form(default=0.0),
     force_reprocess: bool = Form(default=False),
+    send_shortlist_emails: bool = Form(default=False),
+    interview_base_url: str = Form(default=""),
 ):
     started_at = time.time()
     if not files:
@@ -1750,6 +1754,7 @@ async def hiring_shortlist(
             "ok": True,
             "saved_json_path": outcome.get("saved_json_path"),
             "resume_hash": outcome.get("resume_hash"),
+            "extracted": extracted,
             "eligible": eligible,
             "rejection_reasons": rejection_reasons,
             "fit": fit,
@@ -1854,6 +1859,13 @@ async def hiring_shortlist(
         "rejected": rejected_table,
         "failed": failed_table,
         "top_3_insights_from_ranking_decision_log": top_3_insights,
+        "shortlist_notifications": {
+            "enabled": False,
+            "reason": "Email notifications not requested",
+            "sent": 0,
+            "failed": 0,
+            "results": [],
+        },
     }
     if SHORTLIST_INCLUDE_LEGACY_KEYS:
         response_payload["ranked_candidates"] = ranked
@@ -1863,6 +1875,27 @@ async def hiring_shortlist(
         response_payload["ranked_candidates"] = []
         response_payload["rejected_candidates"] = []
         response_payload["failed_candidates"] = []
+
+    should_send_mail = send_shortlist_emails or SHORTLIST_AUTO_SEND_EMAILS
+    _json_log(
+        "shortlist_notify_decision",
+        {
+            "should_send_mail": should_send_mail,
+            "send_shortlist_emails_form": send_shortlist_emails,
+            "shortlist_auto_send_env": SHORTLIST_AUTO_SEND_EMAILS,
+            "shortlisted_count": len(ranked),
+        },
+    )
+    if should_send_mail:
+        notify_payload = send_shortlist_notifications(
+            shortlisted=ranked,
+            role=role,
+            company_name=company_name,
+            position_title=position_title,
+            interview_base_url=interview_base_url or os.getenv("SHORTLIST_INTERVIEW_BASE_URL", ""),
+        )
+        response_payload["shortlist_notifications"] = notify_payload
+        _json_log("shortlist_notify_result", notify_payload)
 
     _json_log(
         "shortlist_completed",
