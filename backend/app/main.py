@@ -1352,13 +1352,13 @@ def _top_ranking_insights(shortlisted: list[dict], rejected: list[dict]) -> list
     if eligible_pool:
         top = eligible_pool[0]
         top_fit = top.get("fit_score_100", 0.0) or 0.0
-        top_file = top.get("filename", "unknown")
+        top_file = top.get("filename", "unknown").split('.')[0]
         top_skills = (
             ((top.get("ranking_decision_log", {}) or {}).get("candidate_metrics", {}) or {})
             .get("skills_match_score_100", 0.0)
         )
         insights.append(
-            f"Top ranked candidate is {top_file} with fit_score_100={top_fit:.3f} and skills_match_score_100={top_skills:.3f}."
+            f"The top ranked candidate is {top_file} with a fit score of {top_fit:.1f}% and a skills match of {top_skills:.1f}%."
         )
     else:
         insights.append("No candidate passed eligibility filters, so no ranked shortlist was produced.")
@@ -1373,7 +1373,7 @@ def _top_ranking_insights(shortlisted: list[dict], rejected: list[dict]) -> list
             if any("below minimum" in r for r in reasons):
                 threshold_failures += 1
         insights.append(
-            f"Hard-filter impact: must-have skill mismatches caused {must_have_failures} rejections; threshold checks caused {threshold_failures} rejections."
+            f"Hard-filter impact: Missing must-have skills caused {must_have_failures} rejections, and failure to meet minimum thresholds caused {threshold_failures} rejections."
         )
     else:
         insights.append("No candidates were processed in this run.")
@@ -1382,7 +1382,7 @@ def _top_ranking_insights(shortlisted: list[dict], rejected: list[dict]) -> list
         avg_fit = sum((c.get("fit_score_100") or 0.0) for c in shortlisted) / len(shortlisted)
         avg_exp = sum((c.get("experience", {}).get("candidate_years") or 0.0) for c in shortlisted) / len(shortlisted)
         insights.append(
-            f"Shortlisted cohort averages: fit_score_100={avg_fit:.3f}, experience_years={avg_exp:.3f}."
+            f"The shortlisted cohort averages a fit score of {avg_fit:.1f}% and {avg_exp:.1f} years of experience."
         )
     else:
         insights.append("Shortlisted cohort averages are unavailable because zero candidates were eligible.")

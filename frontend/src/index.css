@@ -78,3 +78,74 @@ body {
   border: 1px solid var(--border-glass);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
+
+/* Hide Number Input Arrows */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Premium Inputs */
+.premium-input {
+  width: 100%;
+  padding: 0.85rem 1rem 0.85rem 2.8rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  outline: none;
+  transition: all 0.3s ease;
+  font-size: 0.95rem;
+}
+
+.premium-input:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.premium-input:focus {
+  background: rgba(79, 70, 229, 0.05);
+  border-color: rgba(79, 70, 229, 0.5);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.premium-input::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.premium-input-group {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.premium-input-icon {
+  position: absolute;
+  left: 1rem;
+  top: 2.3rem;
+  color: #64748b;
+  width: 18px;
+  height: 18px;
+  transition: color 0.3s ease;
+  pointer-events: none;
+}
+
+.premium-input-group:focus-within .premium-input-icon {
+  color: #818cf8;
+}
+
+/* Custom Scrollbar for Textarea */
+.premium-input::-webkit-scrollbar {
+  width: 8px;
+}
+.premium-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+.premium-input::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+}
