@@ -1,0 +1,42 @@
+.neural-node-wrapper {
+  pointer-events: auto;
+}
+
+.skill-pill {
+  position: relative;
+  padding: 12px 24px;
+  background: rgba(12, 12, 18, 0.55);
+  border: 1px solid rgba(79, 70, 229, 0.3);
+  border-radius: 100px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 0 15px rgba(79, 70, 229, 0.1);
+  overflow: hidden;
+  cursor: crosshair;
+  transition: border-color 0.3s ease;
+}
+
+.pill-glow {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transform: skewX(-20deg);
+  animation: shine 6s infinite;
+}
+
+.pill-text {
+  position: relative;
+  z-index: 2;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #e2e8f0;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+@keyframes shine {
+  0% { left: -100%; }
+  20% { left: 200%; }
+  100% { left: 200%; }
+}

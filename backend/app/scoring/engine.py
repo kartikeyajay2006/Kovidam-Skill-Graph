@@ -153,8 +153,15 @@ def score_candidate_v2(extracted: dict[str, Any], role: str, required_weighted: 
     except Exception:
         expy = 0.0
 
-    # min_exp=0 should neutralize component
-    exp_component = 50.0 if min_experience_years == 0 else min(100.0, (expy / max(min_experience_years, 0.1)) * 100.0)
+    if role == "internship":
+        exp_component = 100.0
+    else:
+        if expy == 0.0:
+            exp_component = 0.0
+        elif min_experience_years == 0:
+            exp_component = min(300.0, 50.0 + (expy * 20.0))
+        else:
+            exp_component = min(300.0, (expy / max(min_experience_years, 0.1)) * 100.0)
 
     conf = min(100.0, 0.45 * skill_pct + 0.35 * gh + 0.20 * exp_component)
     missing_must = [canonical_skill(s) for s in must_have if canonical_skill(s) not in set(matched)]

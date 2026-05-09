@@ -1,0 +1,104 @@
+.top-header {
+  width: 100%;
+  padding: 35px 50px 20px 50px; /* Increased top padding to prevent dolphin from clipping */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.top-header > * {
+  pointer-events: auto;
+}
+
+.header-logo {
+  display: flex;
+  align-items: flex-end;
+  position: relative;
+  height: 60px;
+  padding-left: 20px; /* Room for the tail */
+}
+
+.brand-logo {
+  position: absolute;
+  height: 70px;
+  left: -20px; /* Shifted slightly more left */
+  bottom: 12px;
+  transform: rotate(-15deg);
+  filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.4));
+  z-index: 2;
+  pointer-events: none;
+}
+
+.brand-text {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #ffffff;
+  display: flex;
+  align-items: baseline;
+  z-index: 1;
+  padding-left: 20px; /* Increased padding to add more space before the 'K' */
+}
+
+.brand-text .sanskrit {
+  color: var(--accent-indigo);
+  margin-left: 6px;
+  font-size: 2.3rem;
+  font-weight: 600;
+}
+
+.glass-nav {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 100px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid var(--border-glass);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-nav:hover {
+  background: rgba(18, 18, 24, 0.6);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.nav-links {
+  display: flex;
+  list-style: none;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 10px 14px;
+  border-radius: 100px;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: color 0.2s ease;
+  overflow: hidden;
+}
+
+.nav-item:hover {
+  color: var(--text-primary);
+}
+
+.nav-text {
+  white-space: nowrap;
+}
+
+.btn-sm {
+  padding: 12px 24px;
+  font-size: 0.95rem;
+}

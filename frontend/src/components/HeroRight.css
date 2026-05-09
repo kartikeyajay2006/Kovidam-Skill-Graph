@@ -1,0 +1,117 @@
+.hero-right {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+}
+
+.neural-system {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.neural-lines-svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 600px;
+  height: 600px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.animated-neural-line {
+  stroke-dasharray: 10 10;
+  animation: march 20s linear infinite;
+}
+
+@keyframes march {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 1000; }
+}
+
+.orb-center {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.halo-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px dashed rgba(79, 70, 229, 0.4);
+}
+
+.halo-outer {
+  width: 280px;
+  height: 280px;
+  border: 1px solid rgba(79, 70, 229, 0.1);
+  border-top-color: rgba(79, 70, 229, 0.6);
+  box-shadow: 0 0 30px rgba(79, 70, 229, 0.1);
+}
+
+.halo-inner {
+  width: 210px;
+  height: 210px;
+  border: 1px dotted rgba(124, 58, 237, 0.5);
+  box-shadow: inset 0 0 20px rgba(124, 58, 237, 0.1);
+}
+
+.glass-orb {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: rgba(12, 12, 18, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 40px rgba(79, 70, 229, 0.3), inset 0 0 30px rgba(79, 70, 229, 0.2);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.orb-inner-reflection {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.15) 0%, transparent 60%);
+  z-index: 1;
+}
+
+.orb-dolphin {
+  width: 110px;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.3));
+  z-index: 2;
+  transform: rotate(5deg) scale(1.1);
+}
+
+.nodes-container {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  pointer-events: none;
+}
+
+@media (max-width: 1000px) {
+  .neural-system {
+    transform: scale(0.7);
+  }
+}

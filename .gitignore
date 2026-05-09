@@ -54,3 +54,9 @@ backend/kaggle_session.json
 *.dll
 
 .codex
+
+# Frontend / Node
+node_modules/
+dist/
+dist-ssr/
+*.local

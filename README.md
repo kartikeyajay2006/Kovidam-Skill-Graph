@@ -290,7 +290,7 @@ QDRANT_DISTANCE=Cosine
 QDRANT_TIMEOUT_SECONDS=5.0
 ```
 
-### 3. Installation & Run
+### 3. Installation & Run (Backend)
 Open a terminal and navigate to the backend directory:
 ```bash
 cd backend
@@ -310,6 +310,15 @@ cd /home/kartikeyayadav/Desktop/Kovidam-Skill-Graph && (docker start kovidam-db 
 
 Docs UI:
 - `http://localhost:8000/docs`
+
+### 4. Installation & Run (Frontend)
+Open a new terminal and navigate to the frontend directory:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+The frontend will start and automatically proxy backend API requests to `http://localhost:8000`.
 
 ## Qdrant Integration
 
