@@ -1426,8 +1426,9 @@ def _generate_ai_notes_sync(role: str, fit: dict, extracted: dict) -> list[str]:
             "Notes must be factual, concise, non-generic, and based only on the provided data. "
             "No praise/buttering. No extra keys. Data: " + json.dumps(payload)
         )
+        model_name = os.getenv("NOTES_AI_MODEL", "gpt-4o-mini")
         resp = client.chat.completions.create(
-            model="gpt-5-mini",
+            model=model_name,
             messages=[
                 {"role": "system", "content": "You are a strict hiring analyst. Output JSON only."},
                 {"role": "user", "content": prompt},

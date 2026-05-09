@@ -124,17 +124,18 @@ def _ai_adjustment(analysis_data: dict, role: str) -> Dict[str, object]:
             f"Role profile: {role}. Data: {json.dumps(compact)}"
         )
         text = ""
+        model_name = os.getenv("GITHUB_AI_MODEL", "gpt-4o-mini")
         # Newer SDK path
         if hasattr(client, "responses"):
             resp = client.responses.create(
-                model="gpt-4o-mini",
+                model=model_name,
                 input=prompt,
             )
             text = getattr(resp, "output_text", "") or ""
         # Backward-compatible path for openai==1.13.x
         else:
             completion = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model_name,
                 messages=[
                     {
                         "role": "system",
@@ -158,7 +159,7 @@ def _ai_adjustment(analysis_data: dict, role: str) -> Dict[str, object]:
             "adjustment": adj,
             "confidence": float(parsed.get("confidence", 0.0)),
             "rationale": str(parsed.get("rationale", ""))[:240],
-            "model": "gpt-4o-mini",
+            "model": model_name,
         }
     except Exception as exc:
         return {"enabled": False, "reason": f"ai_error: {exc}", "adjustment": 0.0}

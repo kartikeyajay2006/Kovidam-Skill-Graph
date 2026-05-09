@@ -39,7 +39,7 @@ logger = logging.getLogger("kovidam.resume_parser")
 URL_PATTERN = re.compile(r"https?://[^\s)>,]+")
 YEARS_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years|yrs)", re.IGNORECASE)
 GITHUB_REPO_CONCURRENCY = max(1, int(os.getenv("GITHUB_REPO_CONCURRENCY", "3")))
-STRUCTURED_EXTRACTION_MODEL = os.getenv("RESUME_STRUCTURED_MODEL", "gpt-5-mini")
+STRUCTURED_EXTRACTION_MODEL = os.getenv("RESUME_STRUCTURED_MODEL", "gpt-4o-mini")
 STRUCTURED_EXTRACTION_TIMEOUT_SECONDS = float(os.getenv("RESUME_STRUCTURED_TIMEOUT_SECONDS", "20.0"))
 STRUCTURED_EXTRACTION_CHUNK_TIMEOUT_SECONDS = float(
     os.getenv("RESUME_STRUCTURED_CHUNK_TIMEOUT_SECONDS", "18.0")

@@ -17,7 +17,8 @@ import {
   ArrowLeft,
   RotateCcw,
   FilePlus,
-  Files
+  Files,
+  Users
 } from 'lucide-react';
 import TagInput from '../components/TagInput';
 
@@ -29,6 +30,7 @@ export default function ShortlistPage() {
     position_title: 'Software Engineer',
     job_description: '',
     min_experience_years: 0,
+    target_headcount: 3,
   });
   const [requiredSkills, setRequiredSkills] = useState(['python', 'react', 'javascript']);
   const [mustHaveSkills, setMustHaveSkills] = useState([]);
@@ -340,10 +342,10 @@ export default function ShortlistPage() {
             transition={{ duration: 0.4 }}
             style={{ width: '100%', maxWidth: '1200px', margin: '0 auto', zIndex: 10, display: 'flex', flexDirection: 'column', height: '100%' }}
           >
-            <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '2rem', height: '100%' }}>
+            <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '1.5rem', height: '100%' }}>
               
               {/* Left Sidebar: Role Profile */}
-              <div className="glass-panel" style={{ padding: '2rem', borderRadius: '24px', display: 'flex', flexDirection: 'column', gap: '1.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: '24px', display: 'flex', flexDirection: 'column', gap: '1rem', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
                     <Briefcase size={20} color="#818cf8" />
@@ -366,6 +368,15 @@ export default function ShortlistPage() {
                   <Award className="premium-input-icon" />
                   <input type="number" step="0.1" min="0" name="min_experience_years" value={formData.min_experience_years} onChange={(e) => {
                     if (parseFloat(e.target.value) < 0) e.target.value = 0;
+                    handleInputChange(e);
+                  }} className="premium-input" />
+                </div>
+
+                <div className="premium-input-group">
+                  <label style={labelStyle}>Target Headcount</label>
+                  <Users className="premium-input-icon" />
+                  <input type="number" step="1" min="1" name="target_headcount" value={formData.target_headcount} onChange={(e) => {
+                    if (parseInt(e.target.value) < 1) e.target.value = 1;
                     handleInputChange(e);
                   }} className="premium-input" />
                 </div>
@@ -415,7 +426,7 @@ export default function ShortlistPage() {
               </div>
 
               {/* Right Main Area: Skills & Requirements */}
-              <div className="glass-panel" style={{ padding: '2rem', borderRadius: '24px', display: 'flex', flexDirection: 'column', gap: '1.5rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: '24px', display: 'flex', flexDirection: 'column', gap: '1.25rem', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <h3 style={{ margin: 0, fontSize: '1.5rem', color: '#f8fafc', marginBottom: '0.5rem' }}>
@@ -455,7 +466,7 @@ export default function ShortlistPage() {
                 <div className="premium-input-group" style={{ flex: 1 }}>
                   <label style={labelStyle}>Job Description <span style={{ textTransform: 'none', color: '#64748b', fontWeight: '400' }}>(Optional)</span></label>
                   <FileText className="premium-input-icon" style={{ top: '2.1rem' }} />
-                  <textarea name="job_description" value={formData.job_description} onChange={handleInputChange} className="premium-input" style={{ resize: 'none', flex: 1, minHeight: '120px' }} placeholder="Paste JD context here to improve semantic matching..." />
+                  <textarea name="job_description" value={formData.job_description} onChange={handleInputChange} className="premium-input" style={{ resize: 'none', flex: 1, minHeight: '80px' }} placeholder="Paste JD context here to improve semantic matching..." />
                 </div>
 
                 <AnimatePresence>
@@ -564,7 +575,25 @@ export default function ShortlistPage() {
                   
                   {results.shortlisted?.length > 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      {results.shortlisted.map((c, idx) => (
+                      
+                      {/* Top Candidates Section */}
+                      {(() => {
+                        const topCandidates = results.shortlisted.slice(0, formData.target_headcount);
+                        const otherCandidates = results.shortlisted.slice(formData.target_headcount);
+                        
+                        return (
+                          <>
+                            {topCandidates.length > 0 && (
+                              <div style={{ padding: '2rem 2rem 1rem 2rem', background: 'rgba(79, 70, 229, 0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                <h4 style={{ margin: 0, color: '#facc15', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                  <Star size={20} fill="#facc15" />
+                                  Top {topCandidates.length} Candidates
+                                </h4>
+                                <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem', color: '#94a3b8' }}>These candidates best match your target headcount requirement.</p>
+                              </div>
+                            )}
+
+                            {topCandidates.map((c, idx) => (
                         <React.Fragment key={idx}>
                           <motion.div 
                             initial={{ opacity: 0, y: 10 }}
@@ -658,6 +687,119 @@ export default function ShortlistPage() {
                           </AnimatePresence>
                         </React.Fragment>
                       ))}
+
+                      {/* Other Candidates Section */}
+                      {otherCandidates.length > 0 && (
+                        <>
+                          <div style={{ padding: '2rem 2rem 1rem 2rem', background: 'rgba(255,255,255,0.02)', borderTop: '2px dashed rgba(255,255,255,0.1)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <Users size={20} color="#818cf8" />
+                              Other Qualified Candidates ({otherCandidates.length})
+                            </h4>
+                            <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem', color: '#94a3b8' }}>These candidates met the requirements but fell outside the target headcount.</p>
+                          </div>
+
+                          {otherCandidates.map((c, idx) => {
+                            const realIdx = idx + parseInt(formData.target_headcount);
+                            return (
+                              <React.Fragment key={realIdx}>
+                                <motion.div 
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: 0.5 + (realIdx * 0.05) }}
+                                  whileHover={{ background: 'rgba(255,255,255,0.03)' }}
+                                  style={{ padding: '1.75rem 2rem', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'grid', gridTemplateColumns: '70px 2fr 1.5fr 1fr', gap: '2rem', alignItems: 'center', opacity: 0.8 }}
+                                >
+                                  <div style={{ fontSize: '1.75rem', fontWeight: '700', color: '#64748b' }}>
+                                    #{c.rank}
+                                  </div>
+                                  
+                                  <div style={{ minWidth: 0 }}>
+                                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.filename}>
+                                      {c.filename.replace(/\.[^/.]+$/, "")}
+                                    </h4>
+                                    <div style={{ fontSize: '0.95rem', color: '#94a3b8', display: 'flex', gap: '1.25rem' }}>
+                                      <span>{c.experience?.candidate_years?.toFixed(1) || 0} Years Exp</span>
+                                      {c.experience?.meets_min_experience && <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: '0.25rem' }}><CheckCircle2 size={14} /> Meets Exp</span>}
+                                    </div>
+                                  </div>
+                                  
+                                  <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '1rem' }}>
+                                      <span style={{ color: '#94a3b8' }}>Fit Score</span>
+                                      <span style={{ fontWeight: '600', color: '#f8fafc' }}>{c.fit_score_100?.toFixed(1)}%</span>
+                                    </div>
+                                    <div style={{ width: '100%', height: '10px', background: 'rgba(255,255,255,0.1)', borderRadius: '5px', overflow: 'hidden' }}>
+                                      <motion.div 
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${c.fit_score_100}%` }}
+                                        transition={{ duration: 1, delay: 0.8 + (realIdx * 0.1), ease: "easeOut" }}
+                                        style={{ 
+                                          height: '100%', 
+                                          background: 'linear-gradient(90deg, #64748b, #94a3b8)'
+                                        }} 
+                                      />
+                                    </div>
+                                  </div>
+                                  
+                                  <div style={{ textAlign: 'right' }}>
+                                    <button 
+                                      type="button"
+                                      onClick={() => setSelectedCandidateIndex(selectedCandidateIndex === realIdx ? null : realIdx)}
+                                      className="btn-premium" style={{ padding: '0.6rem 1.25rem', fontSize: '0.95rem' }}
+                                    >
+                                      {selectedCandidateIndex === realIdx ? 'Hide Details' : 'View Details'}
+                                    </button>
+                                  </div>
+                                </motion.div>
+
+                                <AnimatePresence>
+                                  {selectedCandidateIndex === realIdx && (
+                                    <motion.div
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: 'auto', opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      style={{ overflow: 'hidden', padding: '0 2rem' }}
+                                    >
+                                      <div style={{ padding: '2rem', background: 'rgba(0,0,0,0.25)', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', borderTop: 'none', marginBottom: '1.5rem' }}>
+                                        <h4 style={{ color: '#818cf8', marginBottom: '1.5rem', marginTop: 0, fontSize: '1.1rem' }}>Score Breakdown</h4>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', fontSize: '1rem' }}>
+                                          {c.ranking_decision_log?.role_profile && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+                                              <span style={{ color: '#94a3b8' }}>Role Profile</span>
+                                              <span style={{ color: '#e2e8f0', fontWeight: '500', textTransform: 'capitalize' }}>{c.ranking_decision_log.role_profile}</span>
+                                            </div>
+                                          )}
+                                          {c.ranking_decision_log?.candidate_metrics && Object.entries(c.ranking_decision_log.candidate_metrics).map(([key, value]) => {
+                                              if (typeof value !== 'number' && typeof value !== 'string') return null;
+                                              let formattedKey = key.replace('_score_100', '').replace('_100', '').split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                                              let displayValue = typeof value === 'number' ? value.toFixed(1) : String(value);
+                                              if (typeof value === 'number' && key.includes('score_100')) {
+                                                displayValue += '%';
+                                              } else if (key.includes('years')) {
+                                                displayValue += ' Yrs';
+                                              }
+                                              return (
+                                                <div key={key} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+                                                  <span style={{ color: '#94a3b8' }}>{formattedKey}</span>
+                                                  <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{displayValue}</span>
+                                                </div>
+                                              );
+                                          })}
+                                        </div>
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </React.Fragment>
+                            );
+                          })}
+                        </>
+                      )}
+                      
+                      </>
+                    );
+                  })()}
                     </div>
                   ) : (
                     <div style={{ padding: '5rem 2rem', textAlign: 'center', color: '#64748b', fontSize: '1.1rem' }}>
