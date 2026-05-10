@@ -13,6 +13,10 @@ export default defineConfig({
       '/resume': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+      },
+      '/chat': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
       }
     }
   }

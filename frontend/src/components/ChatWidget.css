@@ -1,7 +1,7 @@
 .chat-widget-container {
   position: fixed;
-  bottom: 40px;
-  right: 40px;
+  bottom: 28px;
+  right: 28px;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -53,8 +53,9 @@
   position: absolute;
   bottom: 80px;
   right: 0;
-  width: 360px;
-  height: 480px;
+  width: clamp(390px, 30vw, 460px);
+  height: clamp(540px, 68vh, 640px);
+  max-height: calc(100vh - 120px);
   display: flex;
   flex-direction: column;
   transform-origin: bottom right;
@@ -97,11 +98,11 @@
 }
 
 .chat-body {
-  padding: 24px;
+  padding: 20px;
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   overflow-y: auto;
 }
 
@@ -116,8 +117,53 @@
   box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
+.user-message {
+  align-self: flex-end;
+  background: rgba(79, 70, 229, 0.28);
+  border: 1px solid rgba(129, 140, 248, 0.45);
+  padding: 12px 16px;
+  border-radius: 16px 16px 4px 16px;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  line-height: 1.45;
+  max-width: 90%;
+}
+
+.quick-options {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 12px;
+  width: 100%;
+}
+
+.quick-option-btn {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.quick-option-btn:hover:enabled {
+  background: rgba(79, 70, 229, 0.2);
+  border-color: rgba(129, 140, 248, 0.6);
+}
+
+.quick-option-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .chat-input-area {
-  padding: 16px 20px;
+  padding: 14px 16px;
   border-top: 1px solid var(--border-glass);
   display: flex;
   gap: 12px;
@@ -160,4 +206,38 @@
 .chat-send-btn:hover {
   background: var(--accent-violet);
   transform: scale(1.05);
+}
+
+.chat-voice-btn {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--border-glass);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.chat-voice-btn.listening {
+  background: rgba(34, 197, 94, 0.28);
+  border-color: rgba(74, 222, 128, 0.7);
+}
+
+@media (max-width: 768px) {
+  .chat-widget-container {
+    right: 14px;
+    bottom: 14px;
+  }
+
+  .chat-window {
+    right: 0;
+    width: min(92vw, 420px);
+    height: min(70vh, 620px);
+    max-height: calc(100vh - 90px);
+  }
 }

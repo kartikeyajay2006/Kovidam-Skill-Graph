@@ -1058,3 +1058,123 @@ These cover:
 ---
 
 This document now reflects the current implemented backend behavior, shortlist policy, and production-oriented response model.
+
+## 2026-05-11 Kovidam AI Chatbot Upgrade (Backend + Frontend)
+
+This section documents the chatbot implementation and quality upgrades completed up to now.
+
+### Scope completed
+
+- Added a real chatbot API endpoint in backend (`/chat/respond`).
+- Connected frontend chat widget to backend (no longer static-only chat text).
+- Added guided quick-option flow + free text fallback.
+- Added browser voice input support (speech-to-text) in widget.
+- Added solved/unsolved conversation flow with explicit closure path.
+- Reset chat history on close/reopen so each session starts fresh.
+- Improved response quality with OpenAI prompt upgrades.
+- Enforced English-only simple-language replies.
+- Added product-specific startup context so chatbot answers align with Kovidam’s actual mission.
+- Increased chatbot panel size and fixed clipping/cut UI issues.
+
+### Files changed
+
+- `backend/app/main.py`
+- `frontend/src/components/ChatWidget.jsx`
+- `frontend/src/components/ChatWidget.css`
+- `frontend/vite.config.js`
+
+### Backend implementation details
+
+#### 1. New chatbot request/response contract
+
+Added typed models in `backend/app/main.py`:
+- `ChatRequest`
+- `ChatResponse`
+
+This formalized:
+- incoming message text,
+- selected quick option handling,
+- outgoing reply + next quick options.
+
+#### 2. New endpoint: `POST /chat/respond`
+
+Behavior implemented:
+- Handles greeting intent (`hi`, `hello`, etc.).
+- Handles quick-option selection.
+- Falls back to OpenAI-generated response for custom user doubts.
+- Returns context-aware follow-up options instead of static repeated menu.
+
+#### 3. Conversation UX logic in backend
+
+Added state-like flow prompts via options:
+- `I have another doubt`
+- `Not solved yet`
+- `Solved, thanks`
+- `Start new chat`
+
+Added solved-intent handling for free text:
+- `solved`, `done`, `fixed`, etc. -> polite closure + fresh-start option.
+
+#### 4. Product-aware assistant grounding
+
+Added `CHATBOT_PRODUCT_CONTEXT` in backend to strongly anchor model behavior:
+- Kovidam as AI-native technical hiring intelligence platform,
+- capability-over-keyword philosophy,
+- multi-signal scoring (resume + GitHub + coding platforms + achievements),
+- role-aware shortlist scoring.
+
+Also added direct intent path for:
+- “What does Kovidam do?” style queries,
+to avoid generic/wrong job-board answers.
+
+#### 5. OpenAI response-quality prompt upgrade
+
+System prompt upgraded for:
+- human tone,
+- concise practical help,
+- step-by-step resolution for issues/errors,
+- reduced robotic repetition.
+
+Then updated to:
+- English-only output,
+- easy words / simple sentences.
+
+### Frontend implementation details
+
+#### 1. Chat widget became fully interactive
+
+`frontend/src/components/ChatWidget.jsx` now supports:
+- full message list rendering (user + bot),
+- backend API calls,
+- option-click sending,
+- enter-to-send,
+- loading state (`Typing...`),
+- voice input via Web Speech API,
+- reset-to-initial greeting on widget close/reopen.
+
+#### 2. UI sizing and readability fixes
+
+`frontend/src/components/ChatWidget.css` updates:
+- larger window dimensions,
+- better body/input spacing,
+- stacked full-width quick-option buttons,
+- wrapped option text to avoid clipping,
+- responsive mobile constraints.
+
+Result:
+- panel content no longer gets cut,
+- clearer readability and interaction.
+
+#### 3. Dev proxy route added
+
+`frontend/vite.config.js` updated:
+- added `/chat` proxy to backend (`localhost:8000`) for local development.
+
+### Validation status
+
+Commands executed and passed:
+- `python -m py_compile backend/app/main.py`
+- `npm run build` (frontend)
+
+Build note:
+- Vite chunk-size warning remains non-blocking and unrelated to chatbot behavior.

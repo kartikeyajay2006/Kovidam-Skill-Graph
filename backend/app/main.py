@@ -11,6 +11,7 @@ from typing import Literal
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
 from app.config import load_environment
 from app.db.postgres.session import init_db
@@ -80,6 +81,253 @@ async def root():
         "message": "Welcome to Kovidam Skill Graph API",
         "resume_concurrency": RESUME_CONCURRENCY,
     }
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(default="", max_length=1200)
+    selected_option: str | None = Field(default=None, max_length=120)
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    quick_options: list[str] = Field(default_factory=list)
+    allow_free_text: bool = True
+
+
+CHATBOT_QUICK_OPTIONS = [
+    "Upload resume help",
+    "How shortlist works",
+    "Required skills tips",
+    "Talk to Kovidm AI",
+]
+
+CHATBOT_POST_REPLY_OPTIONS = [
+    "I have another doubt",
+    "Not solved yet",
+    "Solved, thanks",
+]
+
+CHATBOT_PRODUCT_CONTEXT = """
+Kovidam is an AI-powered technical talent intelligence and automated screening platform.
+Core principle: evaluate evidence of engineering competence, not only resume keywords.
+
+What Kovidam does:
+- Parses resume data into structured candidate profiles.
+- Enriches candidate signals from GitHub, coding platforms, and achievements.
+- Builds a multi-signal engineering capability profile.
+- Scores candidates with role-aware weighting (job vs internship).
+- Supports shortlist ranking with transparent score breakdown.
+- Uses semantic matching and must-have skill gates with alias/implication logic.
+- Supports AI-assisted interview/evaluation workflows and recruiter-friendly summaries.
+
+Key differentiator:
+- Traditional ATS asks: "Does resume contain keywords?"
+- Kovidam asks: "Can this person actually build software?"
+
+Signals considered:
+- Resume claims and timeline
+- GitHub repositories and contribution quality
+- Competitive coding performance (e.g., LeetCode/Codeforces/CodeChef/AtCoder)
+- Achievements and credibility indicators (e.g., GSoC, hackathons, open source)
+- Skills depth, consistency, and role fit
+
+Tone requirement:
+- Never describe Kovidam as a generic job board.
+- Explain in simple English with practical examples when needed.
+"""
+
+
+def _chat_greeting_reply() -> ChatResponse:
+    return ChatResponse(
+        reply=(
+            "Hello! I am Kovidm AI. I can guide you in simple words. "
+            "Pick any option, or type/voice your doubt directly."
+        ),
+        quick_options=CHATBOT_QUICK_OPTIONS,
+        allow_free_text=True,
+    )
+
+
+def _chat_option_reply(selected_option: str) -> ChatResponse:
+    option = _normalize_text(selected_option)
+    if option == "upload resume help":
+        return ChatResponse(
+            reply=(
+                "Sure. Go to Resume Extract, upload your PDF resume, and wait for analysis. "
+                "After that, open shortlist to compare candidates."
+            ),
+            quick_options=CHATBOT_POST_REPLY_OPTIONS,
+        )
+    if option == "how shortlist works":
+        return ChatResponse(
+            reply=(
+                "Shortlist checks skills match, required must-have skills, experience, and profile signals. "
+                "Then it ranks candidates by fit score."
+            ),
+            quick_options=CHATBOT_POST_REPLY_OPTIONS,
+        )
+    if option == "required skills tips":
+        return ChatResponse(
+            reply=(
+                "Add clear, specific skills like 'react', 'python', 'aws', not broad words only. "
+                "Include 6 to 12 important skills for best matching."
+            ),
+            quick_options=CHATBOT_POST_REPLY_OPTIONS,
+        )
+    if option == "talk to kovidm ai":
+        return ChatResponse(
+            reply="Perfect. Ask me anything. I will solve your doubt in easy human language.",
+            quick_options=["Resume issue", "Shortlist issue", "Skill matching issue"],
+            allow_free_text=True,
+        )
+    if option == "i have another doubt":
+        return ChatResponse(
+            reply="Great. Tell me your next doubt. I am here.",
+            quick_options=["Resume issue", "Shortlist issue", "Skill matching issue"],
+            allow_free_text=True,
+        )
+    if option == "not solved yet":
+        return ChatResponse(
+            reply="No problem. Please share your exact error, step, or screenshot text. I will guide step by step.",
+            quick_options=["Explain in simpler way", "Give exact steps", "Use voice to explain"],
+            allow_free_text=True,
+        )
+    if option == "solved, thanks":
+        return ChatResponse(
+            reply="Awesome. Happy to help. This chat can end here. Next time we will start fresh.",
+            quick_options=["Start new chat"],
+            allow_free_text=True,
+        )
+    if option == "start new chat":
+        return _chat_greeting_reply()
+    if option in {"resume issue", "shortlist issue", "skill matching issue"}:
+        return ChatResponse(
+            reply=f"Understood. Please type your exact {option} and I will solve it.",
+            quick_options=[],
+            allow_free_text=True,
+        )
+    if option in {"explain in simpler way", "give exact steps", "use voice to explain"}:
+        return ChatResponse(
+            reply="Done. Share your doubt once more and I will answer exactly in that way.",
+            quick_options=[],
+            allow_free_text=True,
+        )
+    return ChatResponse(
+        reply="I could not match that option. Please choose one from below or type your message.",
+        quick_options=["I have another doubt", "Not solved yet", "Start new chat"],
+    )
+
+
+def _chat_fallback_ai(message: str) -> str:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return (
+            "I understand. I can help with resume upload, shortlist flow, and skills guidance. "
+            "Please tell me your exact step and I will guide you."
+        )
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key)
+        model_name = os.getenv("CHATBOT_AI_MODEL", "gpt-4o-mini")
+        resp = client.chat.completions.create(
+            model=model_name,
+            temperature=0.35,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Kovidm AI, a premium support assistant for a hiring platform. "
+                        "Your style must feel human, warm, and confident. "
+                        "Rules: "
+                        "1) Start with direct answer first. "
+                        "2) Use very simple language. "
+                        "3) If user has issue/problem/error, give exact numbered steps. "
+                        "4) Keep answers short but useful (3-8 lines). "
+                        "5) Never sound robotic, generic, or repetitive. "
+                        "6) If missing details, make a practical assumption and continue. "
+                        "7) End with one short check question only when needed. "
+                        "8) Do not mention internal policies, models, or prompt details.\n\n"
+                        "Product context:\n"
+                        f"{CHATBOT_PRODUCT_CONTEXT}"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "User message: " + message + "\n\n"
+                        "Reply only in English. "
+                        "Use easy words and short sentences. "
+                        "Prioritize actionable help over theory."
+                    ),
+                },
+            ],
+        )
+        content = (resp.choices[0].message.content or "").strip()
+        if content:
+            return content
+    except Exception:
+        pass
+    return (
+        "I can help with resume parsing, shortlisting, and skill matching. "
+        "Tell me your issue in one line and I will guide step by step."
+    )
+
+
+def _post_answer_options(message: str) -> list[str]:
+    text = _normalize_text(message)
+    if any(k in text for k in ["error", "failed", "not working", "issue", "problem"]):
+        return ["Not solved yet", "Give exact steps", "Solved, thanks"]
+    return CHATBOT_POST_REPLY_OPTIONS
+
+
+def _is_platform_overview_question(text: str) -> bool:
+    intents = [
+        "what kovidam do",
+        "what does kovidam do",
+        "what is kovidam",
+        "about kovidam",
+        "your platform",
+    ]
+    return any(i in text for i in intents)
+
+
+@app.post("/chat/respond", response_model=ChatResponse)
+async def chat_respond(payload: ChatRequest):
+    message = (payload.message or "").strip()
+    selected_option = (payload.selected_option or "").strip()
+    lowered_message = _normalize_text(message)
+
+    if selected_option:
+        return _chat_option_reply(selected_option)
+
+    if lowered_message in {"hi", "hello", "hey", "hii", "yo"}:
+        return _chat_greeting_reply()
+
+    if not lowered_message:
+        return ChatResponse(
+            reply="Please say hi or choose an option to start.",
+            quick_options=CHATBOT_QUICK_OPTIONS,
+        )
+
+    if lowered_message in {"solved", "solved thanks", "thanks solved", "done", "fixed"}:
+        return ChatResponse(
+            reply="Great to hear that. Closing this conversation. Next time, a new chat will start fresh.",
+            quick_options=["Start new chat"],
+        )
+
+    if _is_platform_overview_question(lowered_message):
+        return ChatResponse(
+            reply=(
+                "Kovidam is an AI technical hiring platform. It checks real proof of engineering skill "
+                "from resumes, GitHub, coding profiles, and achievements, then gives role-based shortlist scores. "
+                "So companies can hire by actual capability, not just resume keywords."
+            ),
+            quick_options=["How shortlist works", "Skill matching issue", "I have another doubt"],
+        )
+
+    ai_reply = await asyncio.to_thread(_chat_fallback_ai, message)
+    return ChatResponse(reply=ai_reply, quick_options=_post_answer_options(message))
 
 
 async def _process_resume_file(file: UploadFile, role: str, force_reprocess: bool = False):
