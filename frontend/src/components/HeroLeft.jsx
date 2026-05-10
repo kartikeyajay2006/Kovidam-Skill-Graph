@@ -3,49 +3,89 @@ import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import './HeroLeft.css'
 
-export default function HeroLeft() {
+export default function HeroLeft({ 
+  heroOpacity, 
+  heroY, 
+  heroBlur,
+  videoHeaderOpacity, 
+  videoHeaderY,
+  videoHeaderBlur
+}) {
   const navigate = useNavigate()
 
   return (
-    <section className="hero-left">
-      <motion.h1 
-        className="hero-title"
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-      >
-        <span className="font-light">Smarter Shortlists.</span><br/>
-        <span className="gradient-text font-bold">Right Talent. Faster.</span>
-      </motion.h1>
+    <section className="hero-left" style={{ display: 'grid', gridTemplateColumns: '1fr', gridTemplateRows: '1fr', alignItems: 'center' }}>
       
-      <motion.p 
-        className="hero-subtitle"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      >
-        Kovidam maps real skills, GitHub analysis, and behavioral intelligence, helping companies hire top-tier candidates based on absolute capability rather than keyword matching.
-      </motion.p>
-      
+      {/* Original Hero Text - Fades out and moves left */}
       <motion.div 
-        className="hero-ctas"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 1, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        style={{ 
+          gridColumn: 1, 
+          gridRow: 1,
+          opacity: heroOpacity, 
+          y: heroY,
+          filter: heroBlur
+        }}
       >
-        <button 
-          className="btn-premium btn-primary"
-          onClick={() => navigate('/signup')}
+        <motion.h1 
+          className="hero-title"
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
         >
-          Start Hiring Now
-        </button>
-        <button 
-          className="btn-premium btn-secondary"
-          onClick={() => navigate('/product')}
+          <span className="font-light">Smarter Shortlists.</span><br/>
+          <span className="gradient-text font-bold">Right Talent. Faster.</span>
+        </motion.h1>
+        
+        <motion.p 
+          className="hero-subtitle"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
         >
-          Explore Platform
-        </button>
+          Kovidam maps real skills, GitHub analysis, and behavioral intelligence, helping companies hire top-tier candidates based on absolute capability rather than keyword matching.
+        </motion.p>
+        
+        <motion.div 
+          className="hero-ctas"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <button 
+            className="btn-premium btn-primary"
+            onClick={() => navigate('/signup')}
+          >
+            Start Hiring Now
+          </button>
+          <button 
+            className="btn-premium btn-secondary"
+            onClick={() => navigate('/product')}
+          >
+            Explore Platform
+          </button>
+        </motion.div>
       </motion.div>
+
+      {/* Video Showcase Header - Fades in and shifts to final position */}
+      <motion.div
+        style={{
+          gridColumn: 1, 
+          gridRow: 1,
+          opacity: videoHeaderOpacity,
+          y: videoHeaderY,
+          filter: videoHeaderBlur,
+          pointerEvents: videoHeaderOpacity === 0 ? 'none' : 'auto'
+        }}
+      >
+        <div className="section-header" style={{ textAlign: 'left', marginBottom: 0 }}>
+          <h2 className="section-title">See Kovidam in Action</h2>
+          <p className="section-subtitle">
+            A quick 90-second overview of how we evaluate real skills<br/>
+            and deliver smarter shortlists.
+          </p>
+        </div>
+      </motion.div>
+
     </section>
   )
 }

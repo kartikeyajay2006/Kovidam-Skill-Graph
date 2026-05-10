@@ -1,9 +1,20 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
+import { Play, Pause } from 'lucide-react'
 import SkillNode from './SkillNode'
 import './HeroRight.css'
 
-export default function HeroRight() {
+export default function HeroRight({ 
+  mouseX, 
+  mouseY,
+  morphWidth,
+  morphHeight,
+  morphBorderRadius,
+  logoOpacity,
+  videoContentOpacity,
+  neuralLinesOpacity
+}) {
+  const [isPlaying, setIsPlaying] = useState(false)
   const radius = 240
   const skillLabels = [
     "Skill Graph AI",
@@ -26,11 +37,22 @@ export default function HeroRight() {
   }, [])
 
   return (
-    <section className="hero-right">
-      <div className="neural-system">
-        
+    <section className="hero-right" style={{ position: 'relative' }}>
+      
+      {/* 1. Background Neural System - Fades out */}
+      <motion.div 
+        className="neural-system"
+        style={{ 
+          opacity: neuralLinesOpacity,
+          position: 'absolute',
+          inset: 0
+        }}
+      >
         {/* SVG Connection Lines */}
-        <svg className="neural-lines-svg" viewBox="-300 -300 600 600">
+        <svg 
+          className="neural-lines-svg" 
+          viewBox="-300 -300 600 600"
+        >
           <defs>
             <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="rgba(79, 70, 229, 0.8)" />
@@ -46,10 +68,8 @@ export default function HeroRight() {
           </defs>
           
           {nodes.map((node, idx) => {
-            // Curve control point for smooth neural aesthetic
             const cx = node.x * 0.4 - node.y * 0.2
             const cy = node.y * 0.4 + node.x * 0.2
-            
             return (
               <motion.path 
                 key={`line-${idx}`}
@@ -67,7 +87,7 @@ export default function HeroRight() {
           })}
         </svg>
 
-        {/* Central Orb */}
+        {/* Rotating Halos */}
         <div className="orb-center">
           <motion.div 
             className="halo-ring halo-outer"
@@ -79,19 +99,10 @@ export default function HeroRight() {
             animate={{ rotate: -360, scale: [1, 1.05, 1] }}
             transition={{ rotate: { duration: 15, repeat: Infinity, ease: "linear" }, scale: { duration: 4, repeat: Infinity } }}
           />
-          <motion.div 
-            className="glass-orb"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <div className="orb-inner-reflection" />
-            <img src="/src/assets/logo.png" alt="Kovidam AI" className="orb-dolphin" />
-          </motion.div>
         </div>
 
         {/* Neural Nodes */}
-        <div className="nodes-container">
+        <div className="nodes-container" style={{ pointerEvents: 'auto' }}>
           {nodes.map((node, idx) => (
             <SkillNode 
               key={`node-${idx}`} 
@@ -102,8 +113,75 @@ export default function HeroRight() {
             />
           ))}
         </div>
+      </motion.div>
 
-      </div>
+      {/* 2. Seamless Morphing Container (Orb -> Video Player) */}
+      <motion.div 
+        className="video-container"
+        style={{ 
+          width: morphWidth,
+          height: morphHeight,
+          borderRadius: morphBorderRadius,
+          background: 'var(--bg-glass)',
+          border: '1px solid var(--border-glass)',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)',
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          x: '-50%',
+          y: '-50%',
+          overflow: 'hidden',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center'
+        }}
+      >
+        {/* Initial Logo Content */}
+        <motion.div 
+          style={{ 
+            opacity: logoOpacity, 
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            pointerEvents: 'none'
+          }}
+        >
+          <div className="orb-inner-reflection" />
+          <img src="/src/assets/logo.png" alt="Kovidam AI" className="orb-dolphin" style={{ width: '120px', height: '120px' }} />
+        </motion.div>
+
+        {/* Final Video Content */}
+        <motion.div
+          style={{
+            opacity: videoContentOpacity,
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            pointerEvents: videoContentOpacity === 0 ? 'none' : 'auto'
+          }}
+        >
+          <button 
+            className="play-btn"
+            onClick={() => setIsPlaying(!isPlaying)}
+          >
+            {isPlaying ? <Pause size={32} /> : <Play size={32} />}
+          </button>
+          <div className="video-controls" style={{ position: 'absolute', bottom: 0, width: '100%', padding: '20px', display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+            <span>{isPlaying ? '▶ 0:12 / 1:30' : '▶ 0:00 / 1:30'}</span>
+            <div className="controls-right" style={{ display: 'flex', gap: '15px' }}>
+              <span>⚙</span>
+              <span>⛶</span>
+            </div>
+          </div>
+        </motion.div>
+
+      </motion.div>
+
     </section>
   )
 }
