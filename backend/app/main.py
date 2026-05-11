@@ -115,12 +115,61 @@ async def dashboard_metrics():
         
         recent_shortlists = []
         for r in recent_query:
+            candidate_rows = (
+                db.query(Candidate, CandidateJobScore, CandidateScore)
+                .join(Job, Candidate.id == Job.candidate_id)
+                .outerjoin(CandidateJobScore, Job.id == CandidateJobScore.job_id)
+                .outerjoin(CandidateScore, Candidate.id == CandidateScore.candidate_id)
+                .filter(Job.trace_id == r.trace_id)
+                .order_by((CandidateJobScore.fit_score).desc().nullslast(), Candidate.filename.asc())
+                .all()
+            )
+            shortlisted = []
+            rejected = []
+            for c, cjs, cs in candidate_rows:
+                fit_score = float((cjs.fit_score if cjs and cjs.fit_score is not None else 0.0) or 0.0)
+                metrics = {
+                    "github_score_100": float((cs.github_score if cs and cs.github_score is not None else 0.0) or 0.0),
+                    "skills_match_score_100": float((cs.skills_match_score if cs and cs.skills_match_score is not None else 0.0) or 0.0),
+                    "experience_score_100": float((cs.experience_score if cs and cs.experience_score is not None else 0.0) or 0.0),
+                    "platform_strength_score_100": float((cs.platform_strength_score if cs and cs.platform_strength_score is not None else 0.0) or 0.0),
+                    "project_evidence_score_100": float((cs.project_evidence_score if cs and cs.project_evidence_score is not None else 0.0) or 0.0),
+                    "profile_completeness_score_100": float((cs.profile_completeness_score if cs and cs.profile_completeness_score is not None else 0.0) or 0.0),
+                }
+                candidate_summary = {
+                    "filename": c.filename or "Unknown",
+                    "rank": 0,
+                    "eligible": True,
+                    "fit_score_100": round(fit_score, 4),
+                    "rejection_reasons": [],
+                    "ranking_decision_log": {
+                        "role_profile": r.role or "job",
+                        "candidate_metrics": metrics,
+                    },
+                    "experience": {
+                        "candidate_years": float((c.work_experience_years if c.work_experience_years is not None else 0.0) or 0.0),
+                    },
+                }
+                if fit_score > 0:
+                    shortlisted.append(candidate_summary)
+                else:
+                    candidate_summary["eligible"] = False
+                    candidate_summary["rejection_reasons"] = ["Insufficient score/evidence"]
+                    rejected.append(candidate_summary)
+
+            shortlisted.sort(key=lambda x: x.get("fit_score_100") or 0.0, reverse=True)
+            for idx, item in enumerate(shortlisted, start=1):
+                item["rank"] = idx
+
             recent_shortlists.append({
                 "id": r.trace_id,
                 "role": r.role or "Unknown Role",
                 "date": r.created_at.isoformat(timespec='milliseconds') if r.created_at else None,
                 "matches": r.matches,
-                "status": "completed"
+                "status": "completed",
+                "top_candidates": shortlisted[:3],
+                "shortlisted": shortlisted,
+                "rejected": rejected,
             })
             
         return {

@@ -128,30 +128,33 @@ export default function DashboardHub() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {recentShortlists.map((role) => (
-                <div key={role.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.03)' }}>
-                  <div style={{ flex: '1 1 200px' }}>
+                <div key={role.id} style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ flex: '1 1 200px' }}>
                     <h4 style={{ margin: '0 0 0.25rem 0', color: '#e2e8f0', fontSize: '1.1rem' }}>{role.role}</h4>
                     <span style={{ color: '#64748b', fontSize: '0.85rem' }}>
                       {role.date && role.date !== "Recently" ? new Date(role.date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : role.date || 'Recently'}
                     </span>
-                  </div>
+                    </div>
                   
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '120px' }}>
-                    <Users size={16} color="#94a3b8" />
-                    <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{role.matches} Matches</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '120px' }}>
+                      <Users size={16} color="#94a3b8" />
+                      <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{role.matches} Matches</span>
+                    </div>
+
+                    <div style={{ width: '100px' }}>
+                      {role.status === 'completed' ? (
+                        <span style={{ padding: '0.25rem 0.75rem', background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', borderRadius: '100px', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase' }}>Completed</span>
+                      ) : (
+                        <span style={{ padding: '0.25rem 0.75rem', background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24', borderRadius: '100px', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase' }}>In Process</span>
+                      )}
+                    </div>
+
+                    <button className="btn-premium" style={{ width: '40px', height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }} onClick={() => navigate('/dashboard/history/' + role.id)}>
+                      <ArrowRight size={18} />
+                    </button>
                   </div>
 
-                  <div style={{ width: '100px' }}>
-                    {role.status === 'completed' ? (
-                      <span style={{ padding: '0.25rem 0.75rem', background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', borderRadius: '100px', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase' }}>Completed</span>
-                    ) : (
-                      <span style={{ padding: '0.25rem 0.75rem', background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24', borderRadius: '100px', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase' }}>In Process</span>
-                    )}
-                  </div>
-
-                  <button className="btn-premium" style={{ width: '40px', height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }} onClick={() => navigate('/dashboard/history/' + role.id)}>
-                    <ArrowRight size={18} />
-                  </button>
                 </div>
               ))}
             </div>

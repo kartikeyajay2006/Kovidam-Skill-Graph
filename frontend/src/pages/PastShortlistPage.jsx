@@ -167,7 +167,7 @@ export default function PastShortlistPage() {
                             <div>
                               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '1rem' }}>
                                 <span style={{ color: '#94a3b8' }}>Fit Score</span>
-                                <span style={{ fontWeight: '600', color: '#f8fafc' }}>{c.fit_score_100?.toFixed(1)}%</span>
+                                <span style={{ fontWeight: '600', color: '#f8fafc' }}>{c.fit_score_100?.toFixed(2)}%</span>
                               </div>
                               <div style={{ width: '100%', height: '10px', background: 'rgba(255,255,255,0.1)', borderRadius: '5px', overflow: 'hidden' }}>
                                 <motion.div 
@@ -211,7 +211,7 @@ export default function PastShortlistPage() {
                                         return (
                                           <div key={key} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
                                             <span style={{ color: '#94a3b8' }}>{formattedKey}</span>
-                                            <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{value.toFixed(1)}%</span>
+                                            <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{value.toFixed(2)}%</span>
                                           </div>
                                         );
                                     })}
@@ -256,7 +256,7 @@ export default function PastShortlistPage() {
                                   <div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '1rem' }}>
                                       <span style={{ color: '#94a3b8' }}>Fit Score</span>
-                                      <span style={{ fontWeight: '600', color: '#f8fafc' }}>{c.fit_score_100?.toFixed(1)}%</span>
+                                      <span style={{ fontWeight: '600', color: '#f8fafc' }}>{c.fit_score_100?.toFixed(2)}%</span>
                                     </div>
                                     <div style={{ width: '100%', height: '10px', background: 'rgba(255,255,255,0.1)', borderRadius: '5px', overflow: 'hidden' }}>
                                       <motion.div 
@@ -295,7 +295,7 @@ export default function PastShortlistPage() {
                                               return (
                                                 <div key={key} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
                                                   <span style={{ color: '#94a3b8' }}>{formattedKey}</span>
-                                                  <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{value.toFixed(1)}%</span>
+                                                  <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{value.toFixed(2)}%</span>
                                                 </div>
                                               );
                                           })}
@@ -357,7 +357,7 @@ export default function PastShortlistPage() {
                         <div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '1rem' }}>
                             <span style={{ color: '#94a3b8' }}>Fit Score</span>
-                            <span style={{ fontWeight: '600', color: '#fca5a5' }}>{c.fit_score_100?.toFixed(1)}%</span>
+                            <span style={{ fontWeight: '600', color: '#fca5a5' }}>{c.fit_score_100?.toFixed(2)}%</span>
                           </div>
                           <div style={{ width: '100%', height: '10px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '5px', overflow: 'hidden' }}>
                             <motion.div 
@@ -393,7 +393,7 @@ export default function PastShortlistPage() {
                                 {c.ranking_decision_log?.candidate_metrics && Object.entries(c.ranking_decision_log.candidate_metrics).map(([key, value]) => {
                                     if (typeof value !== 'number' && typeof value !== 'string') return null;
                                     let formattedKey = key.replace('_score_100', '').replace('_100', '').split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                                    let displayValue = typeof value === 'number' ? value.toFixed(1) : String(value);
+                                    let displayValue = typeof value === 'number' ? value.toFixed(2) : String(value);
                                     if (typeof value === 'number' && key.includes('score_100')) {
                                       displayValue += '%';
                                     } else if (key.includes('years')) {
