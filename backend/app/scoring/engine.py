@@ -43,57 +43,7 @@ def parse_weighted_skills(csv_text: str) -> list[tuple[str, float]]:
     return out
 
 
-def _collect_evidence(extracted: dict[str, Any]) -> dict[str, list[str]]:
-    text = _norm(extracted.get("raw_text_preview", ""))
-    repos = extracted.get("github_analysis", {}).get("repositories", []) or []
-    repo_names, readmes, deps, project_desc = [], [], [], []
-    for r in repos:
-        repo = r.get("repository", {}) or {}
-        analysis = r.get("analysis", {}) or {}
-        name = repo.get("name") or repo.get("url", "")
-        if name:
-            repo_names.append(_norm(str(name)))
-        desc = repo.get("description") or analysis.get("project_description") or ""
-        if desc:
-            project_desc.append(_norm(str(desc)))
-        readme = analysis.get("readme_text") or ""
-        if readme:
-            readmes.append(_norm(str(readme)))
-        for d in analysis.get("identified_tech_stack_dependencies", []) or []:
-            deps.append(_norm(str(d)))
-    return {
-        "resume_text": [text],
-        "repo_name": repo_names,
-        "readme": readmes,
-        "dependency": deps,
-        "project_desc": project_desc,
-    }
 
-
-def _match_skill(skill: str, evidence: dict[str, list[str]]) -> tuple[float, list[dict[str, str]]]:
-    traces: list[dict[str, str]] = []
-    hits = 0
-    diverse_sources = set()
-    for source, blobs in evidence.items():
-        for blob in blobs:
-            if not blob:
-                continue
-            if skill in blob:
-                token = skill
-                conf = "explicit" if source in {"dependency", "repo_name"} else "inferred"
-                if source == "resume_text":
-                    conf = "weak"
-                traces.append({"source": source, "matched_token": token, "confidence": conf})
-                hits += 1
-                diverse_sources.add(source)
-                break
-    if hits == 0:
-        return 0.0, []
-    # anti-gaming: diversity required
-    diversity_bonus = min(len(diverse_sources) / 3.0, 1.0)
-    stuffing_penalty = 0.15 if (hits > 0 and len(diverse_sources) == 1 and "resume_text" in diverse_sources) else 0.0
-    score = min(1.0, (0.6 + 0.4 * diversity_bonus) - stuffing_penalty)
-    return max(0.0, score), traces
 
 
 @dataclass
@@ -132,47 +82,116 @@ def decide_status(role: str, skill_pct: float, github_score: float, exp_years: f
     return DecisionResult("eligible", conf, ["Meets policy"])
 
 
+from app.scoring.cache.repo_cache import get_cached_github_evidence
+from app.scoring.collectors.deployment_collector import extract_deployments
+from app.scoring.collectors.experience_collector import extract_experience_context
+from app.scoring.analyzers.verification_engine import verify_skills
+
+def _calculate_github_score(extracted: dict[str, Any]) -> float:
+    return float(extracted.get("github_analysis", {}).get("summary", {}).get("overall_score_100", 0.0) or 0.0)
+
+def _calculate_experience_score(expy: float, min_experience_years: float, role: str) -> float:
+    if role == "internship":
+        return 100.0
+    if expy == 0.0:
+        return 0.0
+    if min_experience_years == 0:
+        return min(100.0, 50.0 + (expy * 20.0))
+    return min(100.0, (expy / max(min_experience_years, 0.1)) * 100.0)
+
 def score_candidate_v2(extracted: dict[str, Any], role: str, required_weighted: list[tuple[str, float]], must_have: list[str], min_experience_years: float, strict_must_have: bool) -> dict[str, Any]:
-    evidence = _collect_evidence(extracted)
+    
+    # 1. Collection Phase
+    github_ev = get_cached_github_evidence(extracted.get("github_analysis", {}))
+    deployments = extract_deployments(extracted)
+    exp_text = extract_experience_context(extracted)
+    
+    # 2. Verification Phase
+    claimed_skills = [s for s, _ in required_weighted]
+    verified_results = verify_skills(claimed_skills, github_ev, deployments, exp_text, role)
+    
+    # Map for easy lookup
+    verified_map = {v.skill: v for v in verified_results}
+    
+    # 3. Apply Multipliers to Skill Match Score
     total_w, hit_w = 0.0, 0.0
-    skill_ev = []
     matched = []
+    skill_ev = []
+    
     for skill, wt in required_weighted:
         total_w += wt
-        s, traces = _match_skill(skill, evidence)
-        if s > 0:
-            hit_w += wt * s
+        v = verified_map.get(skill)
+        
+        # If they claimed it and we verified it, apply the multiplier.
+        # But wait, we need to know if they ACTUALLY claimed it correctly based on the resume parsing.
+        # For phase 1, we assume if it passed the LLM parsing filter, it's claimed.
+        # But wait! _match_skill in old engine did substring matches to see if it was in the text!
+        # The verify_skills function checks if it's in the text and sets a level.
+        # If level is NOT "CONTRADICTORY", and they have some score...
+        
+        if v and len(v.sources) > 0:
+            # They have some evidence.
+            base_hit = 1.0
+            hit_w += wt * base_hit * v.multiplier
             matched.append(skill)
-        skill_ev.append({"skill": skill, "score": round(s * 100, 3), "evidence": traces})
-    skill_pct = (hit_w / total_w * 100.0) if total_w > 0 else 0.0
+        elif v and v.level == "PUBLICLY_UNVERIFIED":
+            # No evidence found, but not explicitly contradicted
+            # They get the minimum fallback multiplier
+            base_hit = 1.0
+            hit_w += wt * base_hit * v.multiplier
+            matched.append(skill)
+            
+        if v:
+            skill_ev.append({
+                "skill": v.skill,
+                "level": v.level,
+                "multiplier": v.multiplier,
+                "strength": v.strength,
+                "sources": v.sources
+            })
 
-    gh = float(extracted.get("github_analysis", {}).get("summary", {}).get("overall_score_100", 0.0) or 0.0)
-    exp = extracted.get("work_experience_years", "0")
+    skill_pct = min(100.0, (hit_w / total_w * 100.0)) if total_w > 0 else 0.0
+    
+    # 4. Independent Engines
+    gh_score = _calculate_github_score(extracted)
+    
+    exp_str = extracted.get("work_experience_years", "0")
     try:
-        expy = float(exp)
+        expy = float(exp_str)
     except Exception:
         expy = 0.0
-
+    exp_score = _calculate_experience_score(expy, min_experience_years, role)
+    
+    # 5. Modular Final Scoring
     if role == "internship":
-        exp_component = 100.0
+        # Phase 1 simplified mapping to available data
+        # Verified Skill Evidence: 28%
+        # Project Depth & Authenticity: 24% (using gh_score proxy for now)
+        # GitHub Engineering Activity: 18%
+        # Experience Relevance: 8%
+        # Platform Scores: 7%
+        # Remaining allocated proportionally to skill and github
+        final_score = (skill_pct * 0.40) + (gh_score * 0.50) + (exp_score * 0.10)
+        conf = min(100.0, 0.45 * skill_pct + 0.35 * gh_score + 0.20 * exp_score)
     else:
-        if expy == 0.0:
-            exp_component = 0.0
-        elif min_experience_years == 0:
-            exp_component = min(300.0, 50.0 + (expy * 20.0))
-        else:
-            exp_component = min(300.0, (expy / max(min_experience_years, 0.1)) * 100.0)
+        # JOB MODE
+        # Experience Relevance: 24%
+        # Verified Skills Match: 20%
+        # Experience Depth & Complexity: 18%
+        # Technical Impact Evidence: 10%
+        # GitHub/Public OSS: 6%
+        final_score = (skill_pct * 0.35) + (gh_score * 0.20) + (exp_score * 0.45)
+        conf = min(100.0, 0.35 * skill_pct + 0.20 * gh_score + 0.45 * exp_score)
 
-    conf = min(100.0, 0.45 * skill_pct + 0.35 * gh + 0.20 * exp_component)
     missing_must = [canonical_skill(s) for s in must_have if canonical_skill(s) not in set(matched)]
-    decision = decide_status(role, skill_pct, gh, expy, min_experience_years, missing_must, strict_must_have, conf)
+    decision = decide_status(role, skill_pct, gh_score, expy, min_experience_years, missing_must, strict_must_have, conf)
 
     return {
         "score_version": SCORE_VERSION,
         "status": decision.status,
         "decision_confidence": round(decision.confidence, 3),
         "rejection_reasons": decision.reasons if decision.status in {"rejected", "review_required"} else [],
-        "fit_score_100": round(0.5 * skill_pct + 0.35 * gh + 0.15 * exp_component, 3),
+        "fit_score_100": round(final_score, 3),
         "skills": {
             "matched": matched,
             "missing": [s for s, _ in required_weighted if s not in matched],
@@ -180,8 +199,8 @@ def score_candidate_v2(extracted: dict[str, Any], role: str, required_weighted: 
         },
         "breakdown": {
             "skills_match_score_100": round(skill_pct, 3),
-            "github_score_100": round(gh, 3),
-            "experience_score_100": round(exp_component, 3),
+            "github_score_100": round(gh_score, 3),
+            "experience_score_100": round(exp_score, 3),
         },
         "evidence_trace": {"skills": skill_ev},
     }

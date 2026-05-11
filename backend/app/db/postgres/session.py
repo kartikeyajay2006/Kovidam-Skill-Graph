@@ -31,7 +31,28 @@ def init_db() -> None:
     with engine.connect() as conn:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS public;"))
         conn.commit()
+        
+        # Check if alembic_version table exists
+        alembic_exists = conn.execute(
+            text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'alembic_version');")
+        ).scalar()
+
     Base.metadata.create_all(bind=engine)
+    
+    if not alembic_exists:
+        try:
+            print("[DB] First run detected. Stamping alembic head...")
+            from alembic.config import Config
+            from alembic import command
+            alembic_cfg_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../alembic.ini"))
+            if os.path.exists(alembic_cfg_path):
+                alembic_cfg = Config(alembic_cfg_path)
+                # Need to set sqlalchemy.url so alembic knows which db to stamp
+                alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+                command.stamp(alembic_cfg, "head")
+                print("[DB] Alembic head stamped successfully.")
+        except Exception as e:
+            print(f"[DB] Could not stamp alembic head: {e}")
 
 
 def get_db() -> Generator[Session, None, None]:

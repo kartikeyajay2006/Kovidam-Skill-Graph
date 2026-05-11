@@ -396,16 +396,18 @@ def _extract_structured_from_chunk(client: Any, chunk_text: str) -> Dict[str, An
         "{"
         "\"skills\":[\"...\"],"
         "\"projects\":[{\"title\":\"...\",\"description\":\"...\",\"tech_stack\":[\"...\"],\"highlights\":[\"...\"]}],"
-        "\"experience\":[{\"position\":\"...\",\"company\":\"...\",\"duration\":\"...\",\"description\":\"...\",\"tech_stack\":[\"...\"]}]"
+        "\"experience\":[{\"position\":\"...\",\"company\":\"...\",\"duration\":\"...\",\"description\":\"...\",\"tech_stack\":[\"...\"]}],"
+        "\"achievements\":[{\"description\":\"...\",\"impact_score_1_to_10\": 8}]"
         "}\n"
         "Rules:\n"
         "1) Skills must be canonicalized and deduplicated. Treat equivalent variants as the same skill "
         "(example: reactjs and react should collapse to one canonical label).\n"
-        "2) Do not invent skills, projects, or experience not supported by text.\n"
+        "2) Do not invent skills, projects, experience, or achievements not supported by text.\n"
         "3) Keep project and experience descriptions concise and factual.\n"
         "4) tech_stack should only contain skills/tools mentioned for that project or role.\n"
         "5) For experience, extract position (e.g. 'Software Engineer', 'Intern'), company, duration (e.g. '2023-2024' or 'June 2023 - Aug 2023'), and description.\n"
-        "6) Output JSON only, no markdown.\n"
+        "6) For achievements, extract the raw natural language string as description. Score the achievement's impact on a scale of 1-10 (e.g. global competition win = 9-10, minor local event = 3-4). Higher scores should be given to verifiable global hackathon wins and open-source contributions.\n"
+        "7) Output JSON only, no markdown.\n"
         "Text chunk:\n"
         + chunk_text
     )
@@ -425,6 +427,7 @@ def _extract_structured_from_chunk(client: Any, chunk_text: str) -> Dict[str, An
         "skills": _clean_skill_list(parsed.get("skills") or []),
         "projects": _clean_projects(parsed.get("projects") or []),
         "experience": _clean_experience(parsed.get("experience") or []),
+        "achievements": parsed.get("achievements") or [],
     }
 
 
@@ -432,14 +435,24 @@ def _merge_structured_results(parts: list[Dict[str, Any]]) -> Dict[str, Any]:
     all_skills: list[str] = []
     all_projects: list[Dict[str, Any]] = []
     all_experience: list[Dict[str, Any]] = []
+    all_achievements: list[Dict[str, Any]] = []
     for part in parts:
         all_skills.extend(part.get("skills") or [])
         all_projects.extend(part.get("projects") or [])
         all_experience.extend(part.get("experience") or [])
+        all_achievements.extend(part.get("achievements") or [])
     skills = _clean_skill_list(all_skills)
     projects = _clean_projects(all_projects)
     experience = _clean_experience(all_experience)
-    return {"skills": skills, "projects": projects, "experience": experience}
+    # Deduplicate achievements by description
+    seen_achievements = set()
+    achievements = []
+    for ach in all_achievements:
+        desc = str(ach.get("description", "")).strip()
+        if desc and desc not in seen_achievements:
+            seen_achievements.add(desc)
+            achievements.append(ach)
+    return {"skills": skills, "projects": projects, "experience": experience, "achievements": achievements}
 
 
 def _extract_projects_from_text_fallback(text: str) -> list[Dict[str, Any]]:
@@ -622,16 +635,49 @@ def _extract_experience_from_text_fallback(text: str) -> list[Dict[str, Any]]:
     return _clean_experience(experiences)
 
 
+def _extract_achievements_from_text_fallback(text: str) -> list[Dict[str, Any]]:
+    lines = [ln.strip() for ln in text.splitlines()]
+    if not lines:
+        return []
+
+    heading_idx = -1
+    for i, ln in enumerate(lines):
+        if re.fullmatch(r"(?i)achievements?", ln):
+            heading_idx = i
+            break
+    if heading_idx == -1:
+        return []
+
+    end_idx = len(lines)
+    for i in range(heading_idx + 1, len(lines)):
+        if re.fullmatch(r"(?i)(additional information|education|experience|technical skills?|skills?|projects?)", lines[i]):
+            end_idx = i
+            break
+
+    section = [ln for ln in lines[heading_idx + 1:end_idx] if ln]
+    
+    achievements = []
+    for ln in section:
+        clean_ln = ln.lstrip("•*- ").strip()
+        if clean_ln and len(clean_ln) > 10:
+            achievements.append({
+                "description": clean_ln,
+                "impact_score_1_to_10": 5  # Conservative fallback
+            })
+    return achievements
+
 def _extract_structured_resume_sections_sync(text: str, pages: list[str]) -> Dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         fallback_projects = _extract_projects_from_text_fallback(text)
         fallback_skills = _extract_skills_from_text_fallback(text)
         fallback_experience = _extract_experience_from_text_fallback(text)
+        fallback_achievements = _extract_achievements_from_text_fallback(text)
         return {
             "skills": fallback_skills,
             "projects": fallback_projects,
             "experience": fallback_experience,
+            "achievements": fallback_achievements,
             "meta": {"provider": "none", "status": "skipped_no_api_key"},
         }
     try:
@@ -668,6 +714,7 @@ def _extract_structured_resume_sections_sync(text: str, pages: list[str]) -> Dic
             "skills": merged["skills"],
             "projects": merged["projects"],
             "experience": merged["experience"],
+            "achievements": merged["achievements"],
             "meta": {
                 "provider": "openai",
                 "model": STRUCTURED_EXTRACTION_MODEL,
@@ -716,13 +763,19 @@ async def _extract_structured_resume_sections(text: str, pages: list[str]) -> Di
         logger.exception("structured_resume_extraction_timeout_or_error")
         fallback_projects = _extract_projects_from_text_fallback(text)
         fallback_skills = _extract_skills_from_text_fallback(text)
+        fallback_experience = _extract_experience_from_text_fallback(text)
+        fallback_achievements = _extract_achievements_from_text_fallback(text)
+        
         if fallback_projects:
             fallback_skills = _clean_skill_list(
                 fallback_skills + [s for p in fallback_projects for s in (p.get("tech_stack") or [])]
             )
+            
         return {
             "skills": fallback_skills,
             "projects": fallback_projects,
+            "experience": fallback_experience,
+            "achievements": fallback_achievements,
             "meta": {
                 "provider": "openai",
                 "model": STRUCTURED_EXTRACTION_MODEL,
@@ -819,6 +872,10 @@ async def parse_resume_and_enrich(
         "experience_section": {
             "items": structured_sections.get("experience", []),
             "count": len(structured_sections.get("experience", [])),
+        },
+        "achievements_section": {
+            "items": structured_sections.get("achievements", []),
+            "count": len(structured_sections.get("achievements", [])),
         },
         "structured_extraction_meta": structured_sections.get("meta", {}),
         "parser_meta": parser_meta,

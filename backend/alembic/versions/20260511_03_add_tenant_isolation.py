@@ -40,7 +40,8 @@ def upgrade() -> None:
     op.alter_column("jobs", "tenant_id", nullable=False)
 
     # Replace global resume_hash uniqueness with tenant-scoped uniqueness.
-    op.drop_constraint("candidates_resume_hash_key", "candidates", type_="unique")
+    op.drop_index("ix_candidates_resume_hash", table_name="candidates")
+    
     op.create_unique_constraint(
         "uq_candidates_tenant_resume_hash",
         "candidates",

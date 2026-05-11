@@ -1032,21 +1032,44 @@ def _infer_role_context(
     }
 
 
+from app.scoring.cache.repo_cache import get_cached_github_evidence
+from app.scoring.collectors.deployment_collector import extract_deployments
+from app.scoring.collectors.experience_collector import extract_experience_context
+from app.scoring.analyzers.verification_engine import verify_skills
+from app.scoring.analyzers.domain_detector import analyze_domains
+from app.scoring.github.depth_analysis.depth_aggregator import calculate_engineering_depth
+from app.scoring.authenticity.authenticity_engine import calculate_authenticity_factor
+from app.scoring.confidence.confidence_engine import calculate_confidence_metrics
+from app.scoring.gating.gating_engine import apply_scoring_gates
+
 def _skill_match_score(
     required_skills: list[str],
     extracted: dict,
     must_have_skills: list[str] | None = None,
+    role: str = "job",
 ) -> tuple[float, list[str], list[str], dict]:
     if not required_skills and not must_have_skills:
         return 1.0, [], [], {"skill_meta": {"coverage_required": 1.0, "coverage_must_have": 1.0}}
 
     must_have_skills = must_have_skills or []
-    sources = _extract_candidate_skill_sources(extracted)
-    github_tokens = sources["github_tokens"]
-    resume_skill_tokens = sources["resume_skill_tokens"]
-    project_stack_tokens = sources["project_stack_tokens"]
-    raw_text = sources["raw_text"]
-    project_text = sources["project_text"]
+    
+    # 1. Collection Phase (Cached where possible)
+    github_ev = get_cached_github_evidence(extracted.get("github_analysis", {}))
+    deployments = extract_deployments(extracted)
+    exp_text = extract_experience_context(extracted)
+    
+    eval_skills_dict = {}
+    for sk in required_skills + must_have_skills:
+        if sk not in eval_skills_dict:
+            eval_skills_dict[sk] = _canonical_skill(sk)
+
+    # 2. Verification Phase
+    claimed_skills = list(eval_skills_dict.keys())
+    verified_results = verify_skills(claimed_skills, github_ev, deployments, exp_text, role)
+    verified_map = {v.skill: v for v in verified_results}
+    
+    # 3. Domain Ecosystem Detection
+    domain_calibration = analyze_domains(verified_results)
 
     must_have_norm = {_canonical_skill(s) for s in must_have_skills if _canonical_skill(s)}
     required_norm = [_canonical_skill(s) for s in required_skills if _canonical_skill(s)]
@@ -1058,50 +1081,47 @@ def _skill_match_score(
     weight_total = 0.0
     matched_required_norm = set()
     matched_must_have_norm = set()
-
-    # Evaluate union of required and must-have to allow independent semantic evaluation
-    eval_skills_dict = {}
-    for sk in required_skills + must_have_skills:
-        if sk not in eval_skills_dict:
-            eval_skills_dict[sk] = _canonical_skill(sk)
+    
+    skill_evidences = []
 
     for skill, s in eval_skills_dict.items():
         if not s:
             continue
+            
+        v = verified_map.get(skill)
+        
+        # Original claim-based logic for base confidence
+        sources = _extract_candidate_skill_sources(extracted)
         required_equivalents = _skill_token_variants(s)
-        matched_by_github = any(
-            (req == t or req in t or t in req)
-            for req in required_equivalents
-            for t in github_tokens
-        )
-        matched_by_project_stack = any(
-            (req == t or req in t or t in req)
-            for req in required_equivalents
-            for t in project_stack_tokens
-        )
-        matched_by_skill_section = any(
-            (req == t or req in t or t in req)
-            for req in required_equivalents
-            for t in resume_skill_tokens
-        )
-        matched_by_project_text = _token_contains_any(project_text, required_equivalents)
-        matched_by_text = any(_skill_in_text(raw_text, req) for req in required_equivalents)
+        
+        matched_by_github = any((req == t or req in t or t in req) for req in required_equivalents for t in sources["github_tokens"])
+        matched_by_project_stack = any((req == t or req in t or t in req) for req in required_equivalents for t in sources["project_stack_tokens"])
+        matched_by_skill_section = any((req == t or req in t or t in req) for req in required_equivalents for t in sources["resume_skill_tokens"])
+        matched_by_project_text = _token_contains_any(sources["project_text"], required_equivalents)
+        matched_by_text = any(_skill_in_text(sources["raw_text"], req) for req in required_equivalents)
 
-        # Evidence confidence is intentionally source-weighted:
-        # GitHub deps > project stack > explicit skills section > project text > raw text.
-        confidence = (
+        base_confidence = (
             (1.0 if matched_by_github else 0.0)
             + (0.9 if matched_by_project_stack else 0.0)
             + (0.7 if matched_by_skill_section else 0.0)
             + (0.45 if matched_by_project_text else 0.0)
             + (0.30 if matched_by_text else 0.0)
         )
-        skill_score = _clamp01(confidence / 1.35)
+        base_score = _clamp01(base_confidence / 1.35)
         
+        # Apply VerifiedSkillEvidenceEngine Multipliers
+        multiplier = v.multiplier if v else 1.0
+        
+        if v and v.level == "CONTRADICTORY":
+            skill_score = _clamp01(base_score * multiplier)
+        elif base_score > 0.0:
+            skill_score = _clamp01(base_score * multiplier)
+        else:
+            skill_score = 0.0
+
         is_required = skill in required_skills
         is_must_have = s in must_have_norm
 
-        # Preserve scoring behavior: only required skills count toward the continuous score
         if is_required:
             skill_weight = 1.35 if is_must_have else 1.0
             weighted_sum += skill_score * skill_weight
@@ -1116,7 +1136,22 @@ def _skill_match_score(
             "is_required": is_required,
             "is_must_have": is_must_have,
             "evidence_strength_100": round(skill_score * 100.0, 3),
+            "verification_level": v.level if v else "UNKNOWN",
+            "verification_multiplier": multiplier,
+            "evidence_strength_score": v.strength_score if v else 0.0,
+            "verification_sources": v.sources if v else []
         }
+        
+        if v:
+            skill_evidences.append({
+                "skill": skill,
+                "level": v.level,
+                "multiplier": multiplier,
+                "strength": v.strength,
+                "strength_score": v.strength_score,
+                "sources": v.sources
+            })
+
         if skill_score >= 0.40:
             matched.append(skill)
             if is_required:
@@ -1132,19 +1167,27 @@ def _skill_match_score(
     must_have_coverage = (must_have_matched / must_have_total) if must_have_total > 0 else 1.0
     required_coverage = len(matched_required_norm) / max(1, len(required_norm))
 
-    # Must-have is a hard hiring signal. Soft-adjust score even before eligibility filtering.
     score = _clamp01((score * 0.82) + (must_have_coverage * 0.18))
+
+    # 4. Engineering Depth
+    engineering_depth = calculate_engineering_depth(extracted)
+    
+    # 5. Authenticity & Penalty Engine
+    authenticity_results = calculate_authenticity_factor(extracted, evidence, engineering_depth)
+    authenticity_factor = authenticity_results["factor"]
+    
+    # Apply gradual degradation to final score based on suspicious signals
+    score = score * authenticity_factor
 
     evidence["skill_meta"] = {
         "coverage_required": round(required_coverage, 4),
         "coverage_must_have": round(must_have_coverage, 4),
         "matched_must_have_count": must_have_matched,
         "total_must_have_count": must_have_total,
-        "source_counts": {
-            "github_tokens": len(github_tokens),
-            "project_stack_tokens": len(project_stack_tokens),
-            "skills_section_tokens": len(resume_skill_tokens),
-        },
+        "evidence_trace": skill_evidences,
+        "signal_calibration": domain_calibration,
+        "engineering_depth": engineering_depth,
+        "authenticity": authenticity_results
     }
     return score, matched, missing, evidence
 
@@ -1590,6 +1633,12 @@ def _achievement_score(extracted: dict, platform_achievement: dict) -> tuple[flo
     keyword_score = _clamp01(keyword_hits / 5.0)
     rank_signal_hits = len(re.findall(r"\b(global rank|air|rank)\s*(?:[:#]?\s*)\d{1,5}\b", text))
     rank_signal = _clamp01(rank_signal_hits / 3.0)
+    
+    # Phase 6: Native AI Achievement Scoring
+    ai_achievements = extracted.get("achievements_section", {}).get("items", [])
+    ai_impact_sum = sum(_to_float(a.get("impact_score_1_to_10"), 0.0) for a in ai_achievements)
+    # 20 points of impact maxes out the score (e.g. two 10/10 achievements)
+    ai_achievement_score = _clamp01(ai_impact_sum / 20.0)
 
     cf_rating = _to_float((platform_stats.get("codeforces") or {}).get("max_rating"), 0.0)
     lc_rating = _to_float((platform_stats.get("leetcode") or {}).get("rating"), 0.0)
@@ -1612,13 +1661,15 @@ def _achievement_score(extracted: dict, platform_achievement: dict) -> tuple[flo
     platform_achievement_score = _to_float(platform_achievement.get("score"), 0.0)
 
     score = _clamp01(
-        (gsoc_signal * 0.38)
-        + (platform_achievement_score * 0.34)
-        + (elite_platform_score * 0.18)
-        + (_clamp01((keyword_score * 0.6) + (rank_signal * 0.4)) * 0.10)
+        (gsoc_signal * 0.25)
+        + (ai_achievement_score * 0.40)
+        + (platform_achievement_score * 0.20)
+        + (elite_platform_score * 0.10)
+        + (_clamp01((keyword_score * 0.6) + (rank_signal * 0.4)) * 0.05)
     )
     return score, {
         "gsoc_signal_score_100": round(gsoc_signal * 100.0, 3),
+        "ai_achievement_score_100": round(ai_achievement_score * 100.0, 3),
         "platform_achievement_score_100": round(platform_achievement_score * 100.0, 3),
         "elite_platform_score_100": round(elite_platform_score * 100.0, 3),
         "achievement_keyword_score_100": round(keyword_score * 100.0, 3),
@@ -1636,15 +1687,15 @@ def _policy_config(role: str) -> dict:
     if role_l == "internship":
         return {
             "weights": {
-                "skills": _to_float(os.getenv("INTERN_WEIGHT_SKILLS", "0.38"), 0.38),
-                "github": _to_float(os.getenv("INTERN_WEIGHT_GITHUB", "0.08"), 0.08),
-                "experience": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE", "0.06"), 0.06),
-                "platform": _to_float(os.getenv("INTERN_WEIGHT_PLATFORM", "0.16"), 0.16),
-                "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.20"), 0.20),
-                "profile": _to_float(os.getenv("INTERN_WEIGHT_PROFILE", "0.02"), 0.02),
-                "experience_quality": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_QUALITY", "0.00"), 0.00),
-                "experience_relevance": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_RELEVANCE", "0.10"), 0.10),
-                "achievements": _to_float(os.getenv("INTERN_WEIGHT_ACHIEVEMENTS", "0.10"), 0.10),
+                "skills": _to_float(os.getenv("INTERN_WEIGHT_SKILLS", "0.28"), 0.28),
+                "github": _to_float(os.getenv("INTERN_WEIGHT_GITHUB", "0.18"), 0.18),
+                "experience": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE", "0.00"), 0.00),
+                "platform": _to_float(os.getenv("INTERN_WEIGHT_PLATFORM", "0.07"), 0.07),
+                "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.24"), 0.24),
+                "profile": _to_float(os.getenv("INTERN_WEIGHT_PROFILE", "0.05"), 0.05), # Learning Consistency
+                "experience_quality": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_QUALITY", "0.08"), 0.08), # Semantic JD Alignment
+                "experience_relevance": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_RELEVANCE", "0.08"), 0.08),
+                "achievements": _to_float(os.getenv("INTERN_WEIGHT_ACHIEVEMENTS", "0.02"), 0.02),
             },
             "thresholds": {
                 "min_skill_match_pct": _to_float(os.getenv("INTERN_MIN_SKILL_MATCH_PCT", "35"), 35.0),
@@ -1655,15 +1706,15 @@ def _policy_config(role: str) -> dict:
         }
     return {
         "weights": {
-            "skills": _to_float(os.getenv("JOB_WEIGHT_SKILLS", "0.30"), 0.30),
-            "github": _to_float(os.getenv("JOB_WEIGHT_GITHUB", "0.10"), 0.10),
-            "experience": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE", "0.16"), 0.16),
-            "platform": _to_float(os.getenv("JOB_WEIGHT_PLATFORM", "0.12"), 0.12),
-            "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.14"), 0.14),
-            "profile": _to_float(os.getenv("JOB_WEIGHT_PROFILE", "0.02"), 0.02),
-            "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.12"), 0.12),
-            "experience_relevance": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_RELEVANCE", "0.08"), 0.08),
-            "achievements": _to_float(os.getenv("JOB_WEIGHT_ACHIEVEMENTS", "0.04"), 0.04),
+            "skills": _to_float(os.getenv("JOB_WEIGHT_SKILLS", "0.20"), 0.20),
+            "github": _to_float(os.getenv("JOB_WEIGHT_GITHUB", "0.06"), 0.06),
+            "experience": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE", "0.18"), 0.18), # Experience Depth & Complexity
+            "platform": _to_float(os.getenv("JOB_WEIGHT_PLATFORM", "0.03"), 0.03),
+            "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.10"), 0.10), # Technical Impact Evidence
+            "profile": _to_float(os.getenv("JOB_WEIGHT_PROFILE", "0.08"), 0.08), # Career Consistency
+            "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.11"), 0.11), # Leadership + Semantic JD (5% + 6%)
+            "experience_relevance": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_RELEVANCE", "0.24"), 0.24),
+            "achievements": _to_float(os.getenv("JOB_WEIGHT_ACHIEVEMENTS", "0.00"), 0.00),
         },
         "thresholds": {
             "min_skill_match_pct": _to_float(os.getenv("JOB_MIN_SKILL_MATCH_PCT", "55"), 55.0),
@@ -2199,6 +2250,18 @@ def _candidate_company_fit(
 ) -> dict:
     exp_str = extracted.get("work_experience_years", "N/A")
     exp = _to_float(exp_str, 0.0)
+    
+    if exp == 0.0:
+        # Fallback to estimating based on experience entries
+        items = extracted.get("experience_section", {}).get("items", [])
+        if not items:
+            from app.services.resume_parser import _extract_experience_from_text_fallback
+            raw_text = extracted.get("raw_text_full", "")
+            if raw_text:
+                items = _extract_experience_from_text_fallback(raw_text)
+                
+        if len(items) > 0:
+            exp = len(items) * 0.5  # Simplistic baseline: 6 months per listed role
     role_context = _infer_role_context(
         role=role,
         position_title=position_title,
@@ -2220,6 +2283,7 @@ def _candidate_company_fit(
         required_skills=required_skills,
         extracted=extracted,
         must_have_skills=must_have_skills,
+        role=role,
     )
     skill_meta = skill_evidence.get("skill_meta", {}) if isinstance(skill_evidence, dict) else {}
     must_have_coverage = _to_float(skill_meta.get("coverage_must_have"), 1.0)
@@ -2306,9 +2370,30 @@ def _candidate_company_fit(
         },
     )
 
+    # Phase 4: Native Confidence Engine Metrics
+    skill_meta = skill_evidence.get("skill_meta", {}) if isinstance(skill_evidence, dict) else {}
+    eng_depth = skill_meta.get("engineering_depth", {})
+    confidence_metrics = calculate_confidence_metrics(extracted, skill_meta, eng_depth)
+
+    # Phase 5: Gated Ranking System
+    gated_results = apply_scoring_gates(
+        score=final, 
+        extracted=extracted, 
+        skill_meta=skill_meta, 
+        confidence_metrics=confidence_metrics,
+        role_profile=role,
+        target_alignment=target_alignment
+    )
+    final = gated_results["gated_score"]
+    final_100 = _rscore(final * 100.0)
+    
+    if isinstance(skill_evidence, dict) and "skill_meta" in skill_evidence:
+        skill_evidence["skill_meta"]["gating_adjustments"] = gated_results["applied_gates"]
+
     return {
         "fit_score_100": final_100,
         "fit_score_100_str": _fscore(final_100),
+        "confidence_metrics": confidence_metrics,
         "breakdown": {
             "skills_match_score_100": _rscore(skill_score * 100.0),
             "must_have_coverage_score_100": _rscore(must_have_coverage * 100.0),
