@@ -24,6 +24,37 @@ export default function DashboardHub() {
   const [recentShortlists, setRecentShortlists] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
 
+  const formatDate = (dateString) => {
+    if (!dateString || dateString === "Recently") return "Recently";
+    try {
+      // Normalize timezone format for Safari/legacy browser support
+      const safeString = typeof dateString === 'string' ? dateString.replace(/\+00:00$/, 'Z') : dateString;
+      const d = new Date(safeString);
+      
+      if (isNaN(d.getTime())) {
+        // Ultimate fallback if Date() still fails
+        if (typeof dateString === 'string' && dateString.includes('T')) {
+          const [datePart, timePart] = dateString.split('T');
+          return `${datePart} at ${timePart.substring(0, 5)}`;
+        }
+        return dateString;
+      }
+      
+      const today = new Date();
+      const isToday = d.getDate() === today.getDate() && 
+                      d.getMonth() === today.getMonth() && 
+                      d.getFullYear() === today.getFullYear();
+                      
+      const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      if (isToday) return `Today at ${timeStr}`;
+      
+      const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      return `${dateStr} at ${timeStr}`;
+    } catch (e) {
+      return dateString;
+    }
+  };
+
   React.useEffect(() => {
     fetch('/hiring/dashboard-metrics')
       .then(res => res.json())
@@ -133,7 +164,7 @@ export default function DashboardHub() {
                     <div style={{ flex: '1 1 200px' }}>
                     <h4 style={{ margin: '0 0 0.25rem 0', color: '#e2e8f0', fontSize: '1.1rem' }}>{role.role}</h4>
                     <span style={{ color: '#64748b', fontSize: '0.85rem' }}>
-                      {role.date && role.date !== "Recently" ? new Date(role.date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : role.date || 'Recently'}
+                      {formatDate(role.date)}
                     </span>
                     </div>
                   

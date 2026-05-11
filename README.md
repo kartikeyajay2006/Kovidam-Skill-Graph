@@ -194,7 +194,7 @@ For first time only:
 ```bash
 docker run -d \
   --name kovidam-db \
-  -p 5434:5432 \
+  -p 5432:5432 \
   -e POSTGRES_PASSWORD=postgres \
   ankane/pgvector
 ```
@@ -221,7 +221,7 @@ Create `backend/.env` and configure:
 # Core keys
 GITHUB_PAT=your_github_pat
 OPENAI_API_KEY=your_openai_api_key
-DATABASE_URL=postgresql://postgres:postgres@localhost:5434/kovidam
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kovidam
 
 # Concurrency
 RESUME_CONCURRENCY=2
@@ -310,7 +310,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Single command (safe startup: waits for DB readiness, reuses existing DB container, creates DB if missing, starts backend):
 ```bash
-cd /home/kartikeyayadav/Desktop/Kovidam-Skill-Graph && (docker start kovidam-db >/dev/null 2>&1 || docker run -d --name kovidam-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres ankane/pgvector >/dev/null) && until docker exec kovidam-db pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done && (docker exec kovidam-db psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='kovidam'" | grep -q 1 || docker exec kovidam-db psql -U postgres -d postgres -c "CREATE DATABASE kovidam;") && (docker start kovidam-qdrant >/dev/null 2>&1 || docker run -d --name kovidam-qdrant -p 6333:6333 qdrant/qdrant >/dev/null) && cd backend && ([ -d venv ] || python3 -m venv venv) && source venv/bin/activate && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python -m playwright install chromium && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+(docker start kovidam-db >/dev/null 2>&1 || docker run -d --name kovidam-db -p 5432:5432 -e POSTGRES_PASSWORD=postgres ankane/pgvector >/dev/null) && until docker exec kovidam-db pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done && (docker exec kovidam-db psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='kovidam'" | grep -q 1 || docker exec kovidam-db psql -U postgres -d postgres -c "CREATE DATABASE kovidam;") && (docker start kovidam-qdrant >/dev/null 2>&1 || docker run -d --name kovidam-qdrant -p 6333:6333 qdrant/qdrant >/dev/null) && cd backend && ([ -d venv ] || python3 -m venv venv) && source venv/bin/activate && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && python -m playwright install chromium && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Docs UI:
