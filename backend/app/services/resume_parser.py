@@ -335,6 +335,31 @@ def _clean_projects(raw_projects: Any) -> list[Dict[str, Any]]:
     return projects
 
 
+def _clean_experience(raw_experience: Any) -> list[Dict[str, Any]]:
+    if not isinstance(raw_experience, list):
+        return []
+    experiences: list[Dict[str, Any]] = []
+    for raw in raw_experience:
+        if not isinstance(raw, dict):
+            continue
+        position = re.sub(r"\s+", " ", str(raw.get("position") or "").strip())
+        company = re.sub(r"\s+", " ", str(raw.get("company") or "").strip())
+        duration = re.sub(r"\s+", " ", str(raw.get("duration") or "").strip())
+        description = re.sub(r"\s+", " ", str(raw.get("description") or "").strip())
+        tech_stack = _clean_skill_list(raw.get("tech_stack") or [])
+        experience = {
+            "position": position,
+            "company": company,
+            "duration": duration,
+            "description": description,
+            "tech_stack": tech_stack,
+        }
+        if any([experience["position"], experience["company"], experience["description"]]):
+            experiences.append(experience)
+    experiences.sort(key=lambda e: (e.get("company") or "", e.get("position") or ""))
+    return experiences
+
+
 def _chunk_text_by_headings_or_pages(text: str, pages: list[str]) -> list[str]:
     chunks: list[str] = []
     heading_pattern = re.compile(
@@ -370,15 +395,17 @@ def _extract_structured_from_chunk(client: Any, chunk_text: str) -> Dict[str, An
         "Return strict JSON with this shape only:\n"
         "{"
         "\"skills\":[\"...\"],"
-        "\"projects\":[{\"title\":\"...\",\"description\":\"...\",\"tech_stack\":[\"...\"],\"highlights\":[\"...\"]}]"
+        "\"projects\":[{\"title\":\"...\",\"description\":\"...\",\"tech_stack\":[\"...\"],\"highlights\":[\"...\"]}],"
+        "\"experience\":[{\"position\":\"...\",\"company\":\"...\",\"duration\":\"...\",\"description\":\"...\",\"tech_stack\":[\"...\"]}]"
         "}\n"
         "Rules:\n"
         "1) Skills must be canonicalized and deduplicated. Treat equivalent variants as the same skill "
         "(example: reactjs and react should collapse to one canonical label).\n"
-        "2) Do not invent skills or projects not supported by text.\n"
-        "3) Keep project descriptions concise and factual.\n"
-        "4) tech_stack should only contain skills/tools mentioned for that project.\n"
-        "5) Output JSON only, no markdown.\n"
+        "2) Do not invent skills, projects, or experience not supported by text.\n"
+        "3) Keep project and experience descriptions concise and factual.\n"
+        "4) tech_stack should only contain skills/tools mentioned for that project or role.\n"
+        "5) For experience, extract position (e.g. 'Software Engineer', 'Intern'), company, duration (e.g. '2023-2024' or 'June 2023 - Aug 2023'), and description.\n"
+        "6) Output JSON only, no markdown.\n"
         "Text chunk:\n"
         + chunk_text
     )
@@ -397,18 +424,22 @@ def _extract_structured_from_chunk(client: Any, chunk_text: str) -> Dict[str, An
     return {
         "skills": _clean_skill_list(parsed.get("skills") or []),
         "projects": _clean_projects(parsed.get("projects") or []),
+        "experience": _clean_experience(parsed.get("experience") or []),
     }
 
 
 def _merge_structured_results(parts: list[Dict[str, Any]]) -> Dict[str, Any]:
     all_skills: list[str] = []
     all_projects: list[Dict[str, Any]] = []
+    all_experience: list[Dict[str, Any]] = []
     for part in parts:
         all_skills.extend(part.get("skills") or [])
         all_projects.extend(part.get("projects") or [])
+        all_experience.extend(part.get("experience") or [])
     skills = _clean_skill_list(all_skills)
     projects = _clean_projects(all_projects)
-    return {"skills": skills, "projects": projects}
+    experience = _clean_experience(all_experience)
+    return {"skills": skills, "projects": projects, "experience": experience}
 
 
 def _extract_projects_from_text_fallback(text: str) -> list[Dict[str, Any]]:
@@ -504,14 +535,103 @@ def _extract_skills_from_text_fallback(text: str) -> list[str]:
     return _clean_skill_list(cleaned)
 
 
+def _extract_experience_from_text_fallback(text: str) -> list[Dict[str, Any]]:
+    lines = [ln.strip() for ln in text.splitlines()]
+    if not lines:
+        return []
+
+    # Find the experience/work experience section
+    heading_idx = -1
+    for i, ln in enumerate(lines):
+        if re.fullmatch(r"(?i)(work experience|experience|internships?|jobs?)", ln):
+            heading_idx = i
+            break
+
+    if heading_idx == -1:
+        return []
+
+    end_idx = len(lines)
+    for i in range(heading_idx + 1, len(lines)):
+        if re.fullmatch(r"(?i)(projects?|education|skills?|technical skills?|additional information|certifications?)", lines[i]):
+            end_idx = i
+            break
+
+    section = [ln for ln in lines[heading_idx + 1:end_idx] if ln]
+    if not section:
+        return []
+
+    experiences: list[Dict[str, Any]] = []
+    i = 0
+    while i < len(section):
+        line = section[i]
+        # Try to parse position and company
+        # Common patterns: "Position at Company", "Position, Company", etc.
+        position = ""
+        company = ""
+        duration = ""
+
+        # Look for patterns like "Software Engineer at TechCorp" or "Engineer, Company Name"
+        if " at " in line.lower():
+            parts = line.split(" at ")
+            position = parts[0].strip()
+            company = parts[1].strip()
+        elif "," in line:
+            parts = line.split(",")
+            position = parts[0].strip()
+            company = parts[1].strip() if len(parts) > 1 else ""
+
+        if position or company:
+            # Next line might contain duration
+            next_line = section[i + 1] if i + 1 < len(section) else ""
+            if next_line and re.search(r"\d{4}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec", next_line):
+                duration = next_line
+                description_start = i + 2
+            else:
+                description_start = i + 1
+
+            # Collect description lines
+            description_lines = []
+            j = description_start
+            while j < len(section):
+                candidate = section[j]
+                # Stop if we hit another job entry or section
+                if len(candidate) < 100 and " at " in candidate.lower():
+                    break
+                if re.search(r"^\d{4}", candidate):
+                    # Looks like a year/duration
+                    break
+                description_lines.append(candidate)
+                j += 1
+
+            description = " ".join(description_lines[:3]) if description_lines else ""
+
+            experience = {
+                "position": position,
+                "company": company,
+                "duration": duration,
+                "description": description,
+                "tech_stack": [],
+            }
+            if position or company or description:
+                experiences.append(experience)
+
+            i = j
+        else:
+            i += 1
+
+    return _clean_experience(experiences)
+
+
 def _extract_structured_resume_sections_sync(text: str, pages: list[str]) -> Dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         fallback_projects = _extract_projects_from_text_fallback(text)
         fallback_skills = _extract_skills_from_text_fallback(text)
+        fallback_experience = _extract_experience_from_text_fallback(text)
         return {
             "skills": fallback_skills,
             "projects": fallback_projects,
+            "experience": fallback_experience,
             "meta": {"provider": "none", "status": "skipped_no_api_key"},
         }
     try:
@@ -547,6 +667,7 @@ def _extract_structured_resume_sections_sync(text: str, pages: list[str]) -> Dic
         return {
             "skills": merged["skills"],
             "projects": merged["projects"],
+            "experience": merged["experience"],
             "meta": {
                 "provider": "openai",
                 "model": STRUCTURED_EXTRACTION_MODEL,
@@ -560,6 +681,7 @@ def _extract_structured_resume_sections_sync(text: str, pages: list[str]) -> Dic
         logger.exception("structured_resume_extraction_failed")
         fallback_projects = _extract_projects_from_text_fallback(text)
         fallback_skills = _extract_skills_from_text_fallback(text)
+        fallback_experience = _extract_experience_from_text_fallback(text)
         if fallback_projects:
             fallback_skills = _clean_skill_list(
                 fallback_skills + [s for p in fallback_projects for s in (p.get("tech_stack") or [])]
@@ -567,6 +689,7 @@ def _extract_structured_resume_sections_sync(text: str, pages: list[str]) -> Dic
         return {
             "skills": fallback_skills,
             "projects": fallback_projects,
+            "experience": fallback_experience,
             "meta": {
                 "provider": "openai",
                 "model": STRUCTURED_EXTRACTION_MODEL,
@@ -692,6 +815,10 @@ async def parse_resume_and_enrich(
         "projects_section": {
             "items": structured_sections.get("projects", []),
             "count": len(structured_sections.get("projects", [])),
+        },
+        "experience_section": {
+            "items": structured_sections.get("experience", []),
+            "count": len(structured_sections.get("experience", [])),
         },
         "structured_extraction_meta": structured_sections.get("meta", {}),
         "parser_meta": parser_meta,

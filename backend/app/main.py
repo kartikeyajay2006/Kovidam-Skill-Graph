@@ -1604,6 +1604,7 @@ def _policy_config(role: str) -> dict:
                 "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.20"), 0.20),
                 "profile": _to_float(os.getenv("INTERN_WEIGHT_PROFILE", "0.02"), 0.02),
                 "experience_quality": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_QUALITY", "0.00"), 0.00),
+                "experience_relevance": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_RELEVANCE", "0.10"), 0.10),
                 "achievements": _to_float(os.getenv("INTERN_WEIGHT_ACHIEVEMENTS", "0.10"), 0.10),
             },
             "thresholds": {
@@ -1622,6 +1623,7 @@ def _policy_config(role: str) -> dict:
             "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.14"), 0.14),
             "profile": _to_float(os.getenv("JOB_WEIGHT_PROFILE", "0.02"), 0.02),
             "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.12"), 0.12),
+            "experience_relevance": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_RELEVANCE", "0.08"), 0.08),
             "achievements": _to_float(os.getenv("JOB_WEIGHT_ACHIEVEMENTS", "0.04"), 0.04),
         },
         "thresholds": {
@@ -1804,6 +1806,88 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
     }
 
 
+def _experience_relevance_score(
+    extracted: dict,
+    required_skills: list[str],
+    must_have_skills: list[str],
+    role_context: dict,
+) -> tuple[float, dict]:
+    exp_items = ((extracted.get("experience_section", {}) or {}).get("items", []) or [])
+    if not exp_items:
+        return 0.0, {"experience_items": 0, "top_experiences": []}
+
+    target_skills = set(_normalize_skills_list(required_skills + must_have_skills))
+    family_keywords = set()
+    for family, score in (role_context.get("family_scores", {}) or {}).items():
+        if _to_float(score, 0.0) >= 0.2:
+            family_keywords.update(ROLE_FAMILY_KEYWORDS.get(family, set()))
+    domain_keywords = TARGET_DOMAIN_KEYWORDS.get(role_context.get("target_domain", "general"), set())
+
+    scored = []
+    for item in exp_items:
+        if not isinstance(item, dict):
+            continue
+        position = _normalize_text(str(item.get("position") or ""))
+        company = _normalize_text(str(item.get("company") or ""))
+        duration = _normalize_text(str(item.get("duration") or ""))
+        description = _normalize_text(str(item.get("description") or ""))
+        tech_stack = set(_normalize_skills_list([str(s) for s in (item.get("tech_stack") or [])]))
+        combined_skill_evidence = tech_stack.copy()
+        for token in list(tech_stack):
+            combined_skill_evidence.update(_expand_skill_with_implications(token))
+
+        text_blob = " ".join([position, company, duration, description])
+        matched_target = len(target_skills.intersection(combined_skill_evidence))
+        skill_relevance = (matched_target / max(1, len(target_skills))) if target_skills else 0.0
+        family_hits = sum(1 for kw in family_keywords if kw in text_blob)
+        family_relevance = _clamp01(family_hits / 6.0) if family_keywords else 0.0
+        domain_hits = sum(1 for kw in domain_keywords if kw in text_blob)
+        domain_relevance = _clamp01(domain_hits / 4.0) if domain_keywords else 0.0
+        impact_hits = len(re.findall(r"\b\d+(\.\d+)?\s*(%|x|ms|s|sec|seconds|users|req/s|rps)\b", text_blob))
+        impact_signal = _clamp01(impact_hits / 3.0)
+        recency_bonus = 1.0 if any(y in duration for y in ["2026", "2025", "2024"]) else 0.75
+
+        item_score = _clamp01(
+            (skill_relevance * 0.45)
+            + (family_relevance * 0.20)
+            + (domain_relevance * 0.17)
+            + (impact_signal * 0.10)
+            + (recency_bonus * 0.08)
+        )
+        scored.append(
+            {
+                "position": (item.get("position") or "")[:80],
+                "company": (item.get("company") or "")[:80],
+                "score": item_score,
+                "skill_relevance_100": _rscore(skill_relevance * 100.0),
+                "family_relevance_100": _rscore(family_relevance * 100.0),
+                "domain_relevance_100": _rscore(domain_relevance * 100.0),
+            }
+        )
+
+    if not scored:
+        return 0.0, {"experience_items": len(exp_items), "top_experiences": []}
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    top = scored[:3]
+    aggregate = sum(x["score"] for x in top) / len(top)
+    depth_bonus = _clamp01(len(scored) / 4.0) * 0.07
+    final = _clamp01((aggregate * 0.93) + depth_bonus)
+    return final, {
+        "experience_items": len(scored),
+        "top_experiences": [
+            {
+                "position": x["position"],
+                "company": x["company"],
+                "score_100": _rscore(x["score"] * 100.0),
+                "skill_relevance_100": x["skill_relevance_100"],
+                "family_relevance_100": x["family_relevance_100"],
+                "domain_relevance_100": x["domain_relevance_100"],
+            }
+            for x in top
+        ],
+    }
+
+
 def _parse_csv_list(value: str) -> list[str]:
     if not value:
         return []
@@ -1903,6 +1987,9 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
             "experience_years": experience_years,
             "experience_quality_score_100": _to_float(
                 fit.get("breakdown", {}).get("experience_quality_score_100"), 0.0
+            ),
+            "experience_relevance_score_100": _to_float(
+                fit.get("breakdown", {}).get("experience_relevance_score_100"), 0.0
             ),
             "platform_strength_score_100": _to_float(
                 fit.get("breakdown", {}).get("platform_strength_score_100"), 0.0
@@ -2120,6 +2207,12 @@ def _candidate_company_fit(
 
     target_alignment, target_alignment_meta = _target_alignment_score(extracted, role_context)
     experience_quality, experience_quality_meta = _experience_quality_score(extracted, role)
+    experience_relevance, experience_relevance_meta = _experience_relevance_score(
+        extracted=extracted,
+        required_skills=required_skills,
+        must_have_skills=must_have_skills,
+        role_context=role_context,
+    )
     # Prevent one-dimensional ranking spikes from contest platforms when practical delivery evidence is weak.
     platform_score = _clamp01((platform_score_raw * 0.68) + (platform_achievement_score * 0.32))
     if platform_score >= 0.75 and github_score < 0.45 and project_relevance < 0.45 and experience_quality < 0.45:
@@ -2134,6 +2227,7 @@ def _candidate_company_fit(
         "projects": True,
         "profile": True,
         "experience_quality": True,
+        "experience_relevance": True,
         "achievements": True,
     }
     available_weights = {
@@ -2155,6 +2249,7 @@ def _candidate_company_fit(
         + (project_evidence * eff_weights.get("projects", 0.0))
         + (profile_score * eff_weights.get("profile", 0.0))
         + (experience_quality * eff_weights.get("experience_quality", 0.0))
+        + (experience_relevance * eff_weights.get("experience_relevance", 0.0))
         + (achievement_score * eff_weights.get("achievements", 0.0))
     )
     # Target role/company alignment and must-have depth adjust final fit score.
@@ -2189,6 +2284,7 @@ def _candidate_company_fit(
             "project_relevance_score_100": _rscore(project_relevance * 100.0),
             "profile_completeness_score_100": _rscore(profile_score * 100.0),
             "experience_quality_score_100": _rscore(experience_quality * 100.0),
+            "experience_relevance_score_100": _rscore(experience_relevance * 100.0),
             "github_data_available_score_100": 100.0 if github_data_available else 0.0,
             "target_alignment_score_100": _rscore(target_alignment * 100.0),
             "confidence_score_100": _rscore(confidence * 100.0),
@@ -2218,6 +2314,7 @@ def _candidate_company_fit(
             "required_min_years": min_experience_years,
             "candidate_years": exp,
             "quality_meta": experience_quality_meta,
+            "relevance_meta": experience_relevance_meta,
         },
         "platform_meta": {
             "strength": platform_details,
