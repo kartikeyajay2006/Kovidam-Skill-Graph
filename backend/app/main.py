@@ -37,8 +37,9 @@ RESUME_CONCURRENCY = max(1, int(os.getenv("RESUME_CONCURRENCY", "2")))
 resume_semaphore = asyncio.Semaphore(RESUME_CONCURRENCY)
 NOTES_AI_TIMEOUT_SECONDS = float(os.getenv("NOTES_AI_TIMEOUT_SECONDS", "1.8"))
 API_VERSION = os.getenv("SHORTLIST_API_VERSION", "v1.0.0")
-SCORING_VERSION = os.getenv("SHORTLIST_SCORING_VERSION", "v1.2.0")
-POLICY_VERSION = os.getenv("SHORTLIST_POLICY_VERSION", "v1.1.0")
+SCORING_VERSION = os.getenv("SHORTLIST_SCORING_VERSION", "v2.1.0")
+POLICY_VERSION = os.getenv("SHORTLIST_POLICY_VERSION", "v2.1.0")
+SCORE_DECIMALS = max(2, min(6, int(os.getenv("SHORTLIST_SCORE_DECIMALS", "4"))))
 SHORTLIST_INCLUDE_LEGACY_KEYS = os.getenv("SHORTLIST_INCLUDE_LEGACY_KEYS", "true").lower() == "true"
 SHORTLIST_AUTO_SEND_EMAILS = os.getenv("SHORTLIST_AUTO_SEND_EMAILS", "false").lower() == "true"
 qdrant_index = QdrantResumeIndex()
@@ -655,6 +656,18 @@ def _to_float(value, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def _rscore(value: float) -> float:
+    return round(_to_float(value, 0.0), SCORE_DECIMALS)
+
+
+def _fscore(value: float) -> str:
+    return f"{_to_float(value, 0.0):.{SCORE_DECIMALS}f}"
+
+
+COMPANY_SIGNAL_MAX_CONTRIB = _to_float(os.getenv("COMPANY_SIGNAL_MAX_CONTRIB", "0.15"), 0.15)
+LOW_CONFIDENCE_REVIEW_ONLY = os.getenv("LOW_CONFIDENCE_REVIEW_ONLY", "true").lower() == "true"
 
 
 def _normalize_text(s: str) -> str:
@@ -1535,36 +1548,38 @@ def _policy_config(role: str) -> dict:
     if role_l == "internship":
         return {
             "weights": {
-                "skills": _to_float(os.getenv("INTERN_WEIGHT_SKILLS", "0.30"), 0.30),
-                "github": _to_float(os.getenv("INTERN_WEIGHT_GITHUB", "0.10"), 0.10),
-                "experience": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE", "0.08"), 0.08),
-                "platform": _to_float(os.getenv("INTERN_WEIGHT_PLATFORM", "0.20"), 0.20),
-                "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.18"), 0.18),
+                "skills": _to_float(os.getenv("INTERN_WEIGHT_SKILLS", "0.38"), 0.38),
+                "github": _to_float(os.getenv("INTERN_WEIGHT_GITHUB", "0.08"), 0.08),
+                "experience": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE", "0.06"), 0.06),
+                "platform": _to_float(os.getenv("INTERN_WEIGHT_PLATFORM", "0.16"), 0.16),
+                "projects": _to_float(os.getenv("INTERN_WEIGHT_PROJECTS", "0.20"), 0.20),
                 "profile": _to_float(os.getenv("INTERN_WEIGHT_PROFILE", "0.02"), 0.02),
                 "experience_quality": _to_float(os.getenv("INTERN_WEIGHT_EXPERIENCE_QUALITY", "0.00"), 0.00),
-                "achievements": _to_float(os.getenv("INTERN_WEIGHT_ACHIEVEMENTS", "0.12"), 0.12),
+                "achievements": _to_float(os.getenv("INTERN_WEIGHT_ACHIEVEMENTS", "0.10"), 0.10),
             },
             "thresholds": {
-                "min_skill_match_pct": 0.0,
+                "min_skill_match_pct": _to_float(os.getenv("INTERN_MIN_SKILL_MATCH_PCT", "35"), 35.0),
                 "min_github_score_100": 0.0,
                 "min_experience_quality_score_100": 0.0,
+                "min_confidence_score_100": _to_float(os.getenv("INTERN_MIN_CONFIDENCE_SCORE_100", "45"), 45.0),
             },
         }
     return {
         "weights": {
-            "skills": _to_float(os.getenv("JOB_WEIGHT_SKILLS", "0.28"), 0.28),
-            "github": _to_float(os.getenv("JOB_WEIGHT_GITHUB", "0.12"), 0.12),
-            "experience": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE", "0.19"), 0.19),
-            "platform": _to_float(os.getenv("JOB_WEIGHT_PLATFORM", "0.14"), 0.14),
-            "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.10"), 0.10),
+            "skills": _to_float(os.getenv("JOB_WEIGHT_SKILLS", "0.30"), 0.30),
+            "github": _to_float(os.getenv("JOB_WEIGHT_GITHUB", "0.10"), 0.10),
+            "experience": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE", "0.16"), 0.16),
+            "platform": _to_float(os.getenv("JOB_WEIGHT_PLATFORM", "0.12"), 0.12),
+            "projects": _to_float(os.getenv("JOB_WEIGHT_PROJECTS", "0.14"), 0.14),
             "profile": _to_float(os.getenv("JOB_WEIGHT_PROFILE", "0.02"), 0.02),
-            "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.20"), 0.20),
-            "achievements": _to_float(os.getenv("JOB_WEIGHT_ACHIEVEMENTS", "0.06"), 0.06),
+            "experience_quality": _to_float(os.getenv("JOB_WEIGHT_EXPERIENCE_QUALITY", "0.12"), 0.12),
+            "achievements": _to_float(os.getenv("JOB_WEIGHT_ACHIEVEMENTS", "0.04"), 0.04),
         },
         "thresholds": {
             "min_skill_match_pct": _to_float(os.getenv("JOB_MIN_SKILL_MATCH_PCT", "55"), 55.0),
-            "min_github_score_100": _to_float(os.getenv("JOB_MIN_GITHUB_SCORE_100", "0"), 0.0),
+            "min_github_score_100": _to_float(os.getenv("JOB_MIN_GITHUB_SCORE_100", "35"), 35.0),
             "min_experience_quality_score_100": job_min_exp_quality,
+            "min_confidence_score_100": _to_float(os.getenv("JOB_MIN_CONFIDENCE_SCORE_100", "50"), 50.0),
         },
     }
 
@@ -1581,12 +1596,14 @@ def _role_thresholds(role: str, min_experience_years: float) -> dict:
             "min_github_score_100": base["min_github_score_100"],
             "min_experience_years": min_experience_years,
             "min_experience_quality_score_100": base["min_experience_quality_score_100"],
+            "min_confidence_score_100": base.get("min_confidence_score_100", 0.0),
         }
     return {
         "min_skill_match_pct": base["min_skill_match_pct"],
         "min_github_score_100": base["min_github_score_100"],
         "min_experience_years": min_experience_years,
         "min_experience_quality_score_100": base["min_experience_quality_score_100"],
+        "min_confidence_score_100": base.get("min_confidence_score_100", 0.0),
     }
 
 
@@ -1633,6 +1650,8 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
     role_l = (role or "job").lower()
 
     company_score, _, company_meta = _company_signal(text)
+    # Fairness guardrail: brand pedigree should not dominate without delivery evidence.
+    company_score = min(company_score, COMPANY_SIGNAL_MAX_CONTRIB)
     keyword_hits = _count_keyword_hits(text, EXPERIENCE_KEYWORDS)
     keyword_score = min(keyword_hits / 5.0, 1.0)
 
@@ -1673,17 +1692,17 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
         years_score = min(years / 4.0, 1.0)
         terms = {
             "years": (years_score, 0.20),
-            "company": (company_score, 0.25),
-            "leadership": (leadership_score, 0.10),
-            "impact": (impact_score, 0.12),
-            "ownership": (ownership_score, 0.10),
-            "quant": (quant_score, 0.08),
-            "keyword": (keyword_score, 0.05),
+            "company": (company_score, 0.10),
+            "leadership": (leadership_score, 0.13),
+            "impact": (impact_score, 0.15),
+            "ownership": (ownership_score, 0.13),
+            "quant": (quant_score, 0.10),
+            "keyword": (keyword_score, 0.07),
             "achievement": (achievement_score, 0.04),
             "platform_achievement": (platform_achievement, 0.08),
             "gsoc": (gsoc_signal, 0.04),
             "medal": (medal_signal, 0.04),
-            "rank": (rank_signal, 0.03),
+            "rank": (rank_signal, 0.02),
         }
         denom = sum(w for _, w in terms.values()) or 1.0
         final = sum(v * w for v, w in terms.values()) / denom
@@ -1691,17 +1710,17 @@ def _experience_quality_score(extracted: dict, role: str) -> tuple[float, dict]:
         years_score = min(years / 2.0, 1.0)
         terms = {
             "years": (years_score, 0.12),
-            "company": (company_score, 0.18),
+            "company": (company_score, 0.10),
             "internship": (internship_score, 0.15),
-            "impact": (impact_score, 0.12),
-            "ownership": (ownership_score, 0.10),
-            "quant": (quant_score, 0.09),
+            "impact": (impact_score, 0.15),
+            "ownership": (ownership_score, 0.12),
+            "quant": (quant_score, 0.10),
             "keyword": (keyword_score, 0.07),
             "achievement": (achievement_score, 0.08),
             "platform_achievement": (platform_achievement, 0.09),
             "gsoc": (gsoc_signal, 0.04),
             "medal": (medal_signal, 0.03),
-            "rank": (rank_signal, 0.03),
+            "rank": (rank_signal, 0.05),
         }
         denom = sum(w for _, w in terms.values()) or 1.0
         final = sum(v * w for v, w in terms.values()) / denom
@@ -1772,6 +1791,7 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
     github_score_100 = _to_float(fit.get("breakdown", {}).get("github_score_100"), 0.0)
     experience_years = _to_float(fit.get("experience", {}).get("candidate_years"), 0.0)
     experience_quality_score_100 = _to_float(fit.get("breakdown", {}).get("experience_quality_score_100"), 0.0)
+    confidence_score_100 = _to_float(fit.get("breakdown", {}).get("confidence_score_100"), 0.0)
 
     if missing_must_have:
         rejection_reasons.append(f"Missing must-have skills: {', '.join(missing_must_have)} (failed semantic + alias match)")
@@ -1799,9 +1819,29 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
             rejection_reasons.append(
                 f"Experience quality score {experience_quality_score_100:.3f} below minimum {min_exp_quality:.3f}"
             )
+    min_confidence = _to_float(thresholds.get("min_confidence_score_100"), 0.0)
+    confidence_only_review = False
+    if min_confidence > 0.0 and confidence_score_100 < min_confidence:
+        confidence_reason = f"Confidence score {confidence_score_100:.3f} below minimum {min_confidence:.3f}"
+        if LOW_CONFIDENCE_REVIEW_ONLY:
+            confidence_only_review = True
+            rejection_reasons.append(f"{confidence_reason} (manual review recommended)")
+        else:
+            rejection_reasons.append(confidence_reason)
+
+    if confidence_only_review:
+        non_confidence_reasons = [r for r in rejection_reasons if not r.startswith("Confidence score ")]
+        if not non_confidence_reasons:
+            rejection_reasons = []
 
     decision_log = {
         "role_profile": role,
+        "manual_review_recommended": confidence_only_review,
+        "confidence_gate": {
+            "enabled": min_confidence > 0.0,
+            "minimum_score_100": min_confidence,
+            "candidate_score_100": confidence_score_100,
+        },
         "must_have_skills": must_have_skills,
         "missing_must_have_skills": missing_must_have,
         "applied_thresholds": thresholds,
@@ -1833,6 +1873,7 @@ def _build_eligibility(role: str, fit: dict, must_have_skills: list[str], thresh
             "achievement_score_100": _to_float(
                 fit.get("breakdown", {}).get("achievement_score_100"), 0.0
             ),
+            "confidence_score_100": confidence_score_100,
         },
     }
     return len(rejection_reasons) == 0, rejection_reasons, decision_log
@@ -2072,36 +2113,36 @@ def _candidate_company_fit(
     must_have_multiplier = 0.86 + (must_have_coverage * 0.20)
     final = _clamp01(final * target_multiplier * must_have_multiplier)
 
-    final_100 = round(final * 100.0, 3)
+    final_100 = _rscore(final * 100.0)
     confidence, confidence_meta = _confidence_score(
         extracted=extracted,
         fit_breakdown={
-            "skills_match_score_100": round(skill_score * 100.0, 3),
-            "project_relevance_score_100": round(project_relevance * 100.0, 3),
-            "platform_strength_score_100": round(platform_score * 100.0, 3),
+            "skills_match_score_100": _rscore(skill_score * 100.0),
+            "project_relevance_score_100": _rscore(project_relevance * 100.0),
+            "platform_strength_score_100": _rscore(platform_score * 100.0),
         },
     )
 
     return {
         "fit_score_100": final_100,
-        "fit_score_100_str": f"{final_100:.3f}",
+        "fit_score_100_str": _fscore(final_100),
         "breakdown": {
-            "skills_match_score_100": round(skill_score * 100.0, 3),
-            "must_have_coverage_score_100": round(must_have_coverage * 100.0, 3),
-            "github_score_100": round(github_score * 100.0, 3),
-            "experience_score_100": round(exp_score * 100.0, 3),
-            "platform_strength_score_100": round(platform_score * 100.0, 3),
-            "platform_strength_raw_score_100": round(platform_score_raw * 100.0, 3),
-            "platform_peak_score_100": round(_to_float(platform_details.get("peak_score"), 0.0) * 100.0, 3),
-            "platform_achievement_score_100": round(platform_achievement_score * 100.0, 3),
-            "achievement_score_100": round(achievement_score * 100.0, 3),
-            "project_evidence_score_100": round(project_evidence * 100.0, 3),
-            "project_relevance_score_100": round(project_relevance * 100.0, 3),
-            "profile_completeness_score_100": round(profile_score * 100.0, 3),
-            "experience_quality_score_100": round(experience_quality * 100.0, 3),
+            "skills_match_score_100": _rscore(skill_score * 100.0),
+            "must_have_coverage_score_100": _rscore(must_have_coverage * 100.0),
+            "github_score_100": _rscore(github_score * 100.0),
+            "experience_score_100": _rscore(exp_score * 100.0),
+            "platform_strength_score_100": _rscore(platform_score * 100.0),
+            "platform_strength_raw_score_100": _rscore(platform_score_raw * 100.0),
+            "platform_peak_score_100": _rscore(_to_float(platform_details.get("peak_score"), 0.0) * 100.0),
+            "platform_achievement_score_100": _rscore(platform_achievement_score * 100.0),
+            "achievement_score_100": _rscore(achievement_score * 100.0),
+            "project_evidence_score_100": _rscore(project_evidence * 100.0),
+            "project_relevance_score_100": _rscore(project_relevance * 100.0),
+            "profile_completeness_score_100": _rscore(profile_score * 100.0),
+            "experience_quality_score_100": _rscore(experience_quality * 100.0),
             "github_data_available_score_100": 100.0 if github_data_available else 0.0,
-            "target_alignment_score_100": round(target_alignment * 100.0, 3),
-            "confidence_score_100": round(confidence * 100.0, 3),
+            "target_alignment_score_100": _rscore(target_alignment * 100.0),
+            "confidence_score_100": _rscore(confidence * 100.0),
         },
         "criteria_used": {
             "role_profile": role.lower(),
@@ -2121,7 +2162,7 @@ def _candidate_company_fit(
             "must_have": must_have_skills,
             "matched": matched_skills,
             "missing": missing_skills,
-            "match_score_100": round(skill_score * 100.0, 3),
+            "match_score_100": _rscore(skill_score * 100.0),
             "evidence": skill_evidence,
         },
         "experience": {
@@ -2222,6 +2263,11 @@ async def hiring_shortlist(
 
     required_skills = _parse_csv_list(required_skills_csv)
     must_have_skills = _parse_csv_list(must_have_skills_csv)
+    if not required_skills:
+        raise HTTPException(
+            status_code=400,
+            detail="required_skills_csv did not contain any valid normalized skills.",
+        )
     jd_skills = _extract_skills_from_job_description(job_description)
     semantic_query_skills = _filter_semantic_generic_tokens(
         _normalize_skills_list(required_skills + must_have_skills + jd_skills)
@@ -2293,17 +2339,16 @@ async def hiring_shortlist(
         # Blend base score with JD semantic proximity from Qdrant.
         semantic_boost_weight = _to_float(os.getenv("SHORTLIST_JD_SEMANTIC_WEIGHT", "0.12"), 0.12)
         semantic_boost_weight = _clamp01(semantic_boost_weight)
-        adjusted_fit_100 = round(
+        adjusted_fit_100 = _rscore(
             _clamp01(
                 ((base_fit_100 / 100.0) * (1.0 - semantic_boost_weight))
                 + ((semantic_score_100 / 100.0) * semantic_boost_weight)
             )
-            * 100.0,
-            3,
+            * 100.0
         )
         fit["fit_score_100"] = adjusted_fit_100
-        fit["fit_score_100_str"] = f"{adjusted_fit_100:.3f}"
-        breakdown["jd_semantic_score_100"] = round(semantic_score_100, 3)
+        fit["fit_score_100_str"] = _fscore(adjusted_fit_100)
+        breakdown["jd_semantic_score_100"] = _rscore(semantic_score_100)
         fit["breakdown"] = breakdown
         fit["jd_semantic_meta"] = {
             "query_skills": semantic_query_skills,
@@ -2325,6 +2370,7 @@ async def hiring_shortlist(
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("target_alignment_score_100", 0.0) or 0.0),
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("confidence_score_100", 0.0) or 0.0),
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("skills_match_score_100", 0.0) or 0.0),
+            c.get("filename") or "",
         ),
         reverse=True,
     )
@@ -2334,6 +2380,10 @@ async def hiring_shortlist(
 
     failed = [c for c in candidates if not c.get("ok")]
     rejected = [c for c in candidates if c.get("ok") and not c.get("eligible")]
+    rejection_reason_counts: dict[str, int] = {}
+    for item in rejected:
+        for reason in item.get("rejection_reasons", []) or []:
+            rejection_reason_counts[reason] = rejection_reason_counts.get(reason, 0) + 1
 
     shortlisted_table = [_summarize_candidate_for_table(c) for c in ranked]
     rejected_table = [_summarize_candidate_for_table(c) for c in rejected]
@@ -2361,6 +2411,11 @@ async def hiring_shortlist(
             "semantic_query_skills": semantic_query_skills,
             "min_experience_years": min_experience_years,
             "applied_thresholds": thresholds,
+            "policy_runtime_flags": {
+                "low_confidence_review_only": LOW_CONFIDENCE_REVIEW_ONLY,
+                "company_signal_max_contrib": COMPANY_SIGNAL_MAX_CONTRIB,
+                "score_decimals": SCORE_DECIMALS,
+            },
         },
         "counts": {
             "uploaded": len(files),
@@ -2372,6 +2427,7 @@ async def hiring_shortlist(
         "rejected": rejected_table,
         "failed": failed_table,
         "top_3_insights_from_ranking_decision_log": top_3_insights,
+        "rejection_reason_counts": rejection_reason_counts,
         "shortlist_notifications": {
             "enabled": False,
             "reason": "Email notifications not requested",
@@ -2397,6 +2453,15 @@ async def hiring_shortlist(
             "send_shortlist_emails_form": send_shortlist_emails,
             "shortlist_auto_send_env": SHORTLIST_AUTO_SEND_EMAILS,
             "shortlisted_count": len(ranked),
+        },
+    )
+    _json_log(
+        "shortlist_rejection_audit",
+        {
+            "role": role,
+            "company_name": company_name,
+            "position_title": position_title,
+            "rejection_reason_counts": rejection_reason_counts,
         },
     )
     if should_send_mail:
