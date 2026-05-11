@@ -131,22 +131,22 @@ def save_to_db(
         existing_cs = db.query(candidate_scores).filter(candidate_scores.candidate_id == candidate_id).first()
         
         if existing_cs:
-            existing_cs.skills_match_score = cs_data.get("skills_match_score") or existing_cs.skills_match_score
-            existing_cs.github_score = cs_data.get("github_score") or existing_cs.github_score
-            existing_cs.experience_score = cs_data.get("experience_score") or existing_cs.experience_score
-            existing_cs.platform_strength_score = cs_data.get("platform_strength_score") or existing_cs.platform_strength_score
-            existing_cs.project_evidence_score = cs_data.get("project_evidence_score") or existing_cs.project_evidence_score
-            existing_cs.profile_completeness_score = cs_data.get("profile_completeness_score") or existing_cs.profile_completeness_score
+            if cs_data.get("skills_match_score") is not None: existing_cs.skills_match_score = cs_data.get("skills_match_score")
+            if cs_data.get("github_score") is not None: existing_cs.github_score = cs_data.get("github_score")
+            if cs_data.get("experience_score") is not None: existing_cs.experience_score = cs_data.get("experience_score")
+            if cs_data.get("platform_strength_score") is not None: existing_cs.platform_strength_score = cs_data.get("platform_strength_score")
+            if cs_data.get("project_evidence_score") is not None: existing_cs.project_evidence_score = cs_data.get("project_evidence_score")
+            if cs_data.get("profile_completeness_score") is not None: existing_cs.profile_completeness_score = cs_data.get("profile_completeness_score")
         else:
             candidate_score_record = candidate_scores(
                 id=str(uuid.uuid4()),
                 candidate_id=candidate_id,
-                skills_match_score=cs_data.get("skills_match_score") or None,
-                github_score=cs_data.get("github_score") or None,
-                experience_score=cs_data.get("experience_score") or None,
-                platform_strength_score=cs_data.get("platform_strength_score") or None,
-                project_evidence_score=cs_data.get("project_evidence_score") or None,
-                profile_completeness_score=cs_data.get("profile_completeness_score") or None,
+                skills_match_score=cs_data.get("skills_match_score"),
+                github_score=cs_data.get("github_score"),
+                experience_score=cs_data.get("experience_score"),
+                platform_strength_score=cs_data.get("platform_strength_score"),
+                project_evidence_score=cs_data.get("project_evidence_score"),
+                profile_completeness_score=cs_data.get("profile_completeness_score"),
             )
             db.add(candidate_score_record)
 

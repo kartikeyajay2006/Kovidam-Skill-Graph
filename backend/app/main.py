@@ -117,7 +117,7 @@ async def dashboard_metrics():
             recent_shortlists.append({
                 "id": r.trace_id,
                 "role": r.role or "Unknown Role",
-                "date": r.created_at.strftime("%b %d, %Y %I:%M %p") if r.created_at else "Recently",
+                "date": r.created_at.isoformat(timespec='milliseconds') if r.created_at else None,
                 "matches": r.matches,
                 "status": "completed"
             })
@@ -162,7 +162,7 @@ async def get_all_shortlists():
             shortlists.append({
                 "id": r.trace_id,
                 "role": r.role or "Unknown Role",
-                "date": r.created_at.strftime("%b %d, %Y %I:%M %p") if r.created_at else "Recently",
+                "date": r.created_at.isoformat(timespec='milliseconds') if r.created_at else None,
                 "matches": r.matches,
                 "status": "completed"
             })

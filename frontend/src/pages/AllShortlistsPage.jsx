@@ -72,7 +72,9 @@ export default function AllShortlistsPage() {
               >
                 <div style={{ flex: '1 1 200px' }}>
                   <h4 style={{ margin: '0 0 0.25rem 0', color: '#e2e8f0', fontSize: '1.1rem' }}>{role.role}</h4>
-                  <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{role.date}</span>
+                  <span style={{ color: '#64748b', fontSize: '0.85rem' }}>
+                    {role.date && role.date !== "Recently" ? new Date(role.date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : role.date || 'Recently'}
+                  </span>
                 </div>
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '120px' }}>

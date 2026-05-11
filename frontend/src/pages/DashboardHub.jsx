@@ -131,7 +131,9 @@ export default function DashboardHub() {
                 <div key={role.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.03)' }}>
                   <div style={{ flex: '1 1 200px' }}>
                     <h4 style={{ margin: '0 0 0.25rem 0', color: '#e2e8f0', fontSize: '1.1rem' }}>{role.role}</h4>
-                    <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{role.date}</span>
+                    <span style={{ color: '#64748b', fontSize: '0.85rem' }}>
+                      {role.date && role.date !== "Recently" ? new Date(role.date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : role.date || 'Recently'}
+                    </span>
                   </div>
                   
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '120px' }}>
