@@ -43,6 +43,7 @@ def save_to_db(
     structured_data: Dict[str, Any],
     trace_id: str,
     resume_hash: str,
+    tenant_id: str,
     *,
     force_reprocess: bool = False,
 ) -> Optional[Dict[str, str]]:
@@ -62,7 +63,11 @@ def save_to_db(
 
     logger.info("db_duplicate_check_start")
     try:
-        existing = db.query(candidates).filter(candidates.resume_hash == resume_hash).first()
+        existing = (
+            db.query(candidates)
+            .filter(candidates.resume_hash == resume_hash, candidates.tenant_id == tenant_id)
+            .first()
+        )
         if existing and not force_reprocess:
             logger.info("db_duplicate_resume_detected_updating_job_only")
             candidate_id = existing.id
@@ -83,6 +88,7 @@ def save_to_db(
             cand_data = structured_data.get("candidate") or {}
             candidate_record = candidates(
                 id=candidate_id,
+                tenant_id=tenant_id,
                 trace_id=trace_id,
                 resume_hash=resume_hash,
                 filename=cand_data.get("filename") or None,
@@ -101,6 +107,7 @@ def save_to_db(
         job_id = str(uuid.uuid4())
         job_record = jobs(
             id=job_id,
+            tenant_id=tenant_id,
             candidate_id=candidate_id,
             trace_id=trace_id,
             company_name=job_data.get("company_name") or None,
@@ -211,7 +218,11 @@ def save_to_db(
     except IntegrityError as e:
         db.rollback()
         try:
-            existing = db.query(candidates).filter(candidates.resume_hash == resume_hash).first()
+            existing = (
+                db.query(candidates)
+                .filter(candidates.resume_hash == resume_hash, candidates.tenant_id == tenant_id)
+                .first()
+            )
             if existing:
                 logger.info("db_duplicate_via_constraint")
                 return {

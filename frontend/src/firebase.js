@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAnalytics, isSupported } from 'firebase/analytics'
-import { GoogleAuthProvider, getAuth } from 'firebase/auth'
+import { GoogleAuthProvider, getAuth, onAuthStateChanged } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -15,6 +15,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 const auth = getAuth(app)
 const googleProvider = new GoogleAuthProvider()
+const authReady = new Promise((resolve) => {
+  const unsub = onAuthStateChanged(auth, () => {
+    unsub()
+    resolve()
+  })
+})
 
 isSupported()
   .then((supported) => {
@@ -26,4 +32,4 @@ isSupported()
     // Ignore analytics initialization issues in unsupported environments.
   })
 
-export { app, auth, googleProvider }
+export { app, auth, googleProvider, authReady }

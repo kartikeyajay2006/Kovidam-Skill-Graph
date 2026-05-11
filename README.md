@@ -288,6 +288,11 @@ QDRANT_COLLECTION=resumes
 QDRANT_VECTOR_SIZE=384
 QDRANT_DISTANCE=Cosine
 QDRANT_TIMEOUT_SECONDS=5.0
+
+# Auth / Tenant Security
+AUTH_REQUIRED=false
+AUTH_JWT_SECRET=change-me
+AUTH_JWT_ALGORITHM=HS256
 ```
 
 ### 3. Installation & Run (Backend)
@@ -457,6 +462,41 @@ curl -X POST "http://localhost:8000/hiring/shortlist" \
 
 - Extracted responses: `backend/data/extracted_resumes/`
 
+## Auth & Tenant Security
+
+- Backend supports JWT protection for `/hiring/*` and `/resume/*`.
+- Tenant isolation is enforced in DB queries/writes via `tenant_id`.
+- Local dev mode (no token required): `AUTH_REQUIRED=false`
+- Enterprise mode (token required): `AUTH_REQUIRED=true`
+
+JWT must include:
+- `sub`
+- `tenant_id`
+- `role`
+
+## How To Check JWT Integration
+
+1. Enable auth mode:
+```bash
+cd backend && source venv/bin/activate && sed -i 's/^AUTH_REQUIRED=.*/AUTH_REQUIRED=true/' .env
+```
+
+2. Restart backend:
+```bash
+set -a && source .env && set +a && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+3. Verify without token (expected: `401`):
+```bash
+curl -i http://127.0.0.1:8000/hiring/dashboard-metrics
+```
+
+4. Verify with token (expected: `200`):
+```bash
+curl -i http://127.0.0.1:8000/hiring/dashboard-metrics \
+  -H "Authorization: Bearer <JWT>"
+```
+
 ## Migration Commands
 
 From `backend/`:
@@ -464,3 +504,27 @@ From `backend/`:
 source venv/bin/activate
 alembic upgrade head
 ```  
+
+If your DB already has tables but no Alembic history (`DuplicateTable` during baseline), run:
+```bash
+source venv/bin/activate
+alembic stamp 20260503_01
+alembic upgrade head
+```
+
+Recent migration chain:
+- `20260511_02_add_jobs_trace_id`
+- `20260511_03_add_tenant_isolation`
+
+## One Command (Run Every Time, Any Laptop)
+
+Use this from repo root. It is idempotent and handles:
+- creates/starts Postgres container,
+- waits for DB readiness,
+- creates `kovidam` DB if missing,
+- safely stamps baseline only when tables already exist but Alembic history is absent,
+- upgrades to latest migration.
+
+```bash
+cd /home/kartikeyayadav/Desktop/Kovidam-Skill-Graph && (docker start kovidam-db >/dev/null 2>&1 || docker run -d --name kovidam-db -p 5434:5432 -e POSTGRES_PASSWORD=postgres ankane/pgvector >/dev/null) && until docker exec kovidam-db pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done && (docker exec kovidam-db psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='kovidam'" | grep -q 1 || docker exec kovidam-db psql -U postgres -d postgres -c "CREATE DATABASE kovidam;") && cd backend && ([ -d venv ] || python3 -m venv venv) && source venv/bin/activate && python -m pip install --upgrade pip && python -m pip install -r requirements.txt && set -a && source .env && set +a && (docker exec kovidam-db psql -U postgres -d kovidam -tAc "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='candidates');" | grep -q t && ! docker exec kovidam-db psql -U postgres -d kovidam -tAc "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='alembic_version');" | grep -q t && venv/bin/alembic -c alembic.ini stamp 20260503_01 || true) && venv/bin/alembic -c alembic.ini upgrade head && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```

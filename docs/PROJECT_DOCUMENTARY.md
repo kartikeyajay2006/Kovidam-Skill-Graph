@@ -2,6 +2,251 @@
 
 Detailed technical documentary of the implemented backend as of current code.
 
+## 2026-05-12 Enterprise Security Phase 1 (JWT + Tenant Isolation + Firebase Interop)
+
+This section documents the enterprise security implementation completed on May 12, 2026, covering:
+- backend endpoint authentication,
+- tenant-aware data isolation,
+- Firebase token interoperability,
+- frontend token propagation hardening.
+
+### Why this phase was required
+
+After enabling auth on backend protected routes, the product saw:
+- expected `401 Unauthorized` for requests without tokens,
+- mixed `200/401` behavior in frontend sessions due to token propagation timing,
+- mismatch risk between backend token format expectations and frontend Firebase ID tokens.
+
+Goal of this phase:
+- keep strict auth (`AUTH_REQUIRED=true`) in enterprise mode,
+- make frontend and backend token formats compatible,
+- enforce tenant boundaries in both read and write paths.
+
+### Files added/updated
+
+Backend:
+- `backend/app/core/security.py` (new)
+- `backend/app/main.py`
+- `backend/app/models/schema.py`
+- `backend/app/services/db_writer.py`
+- `backend/app/integrations/qdrant/store.py`
+- `backend/alembic/versions/20260511_03_add_tenant_isolation.py` (new)
+- `backend/requirements.txt`
+- `backend/.env` (runtime config updated)
+
+Frontend:
+- `frontend/src/main.jsx`
+- `frontend/src/firebase.js`
+
+### 1) Backend auth middleware for protected routes
+
+`backend/app/main.py` now applies auth middleware to:
+- `/hiring/*`
+- `/resume/*`
+
+Behavior:
+- If `AUTH_REQUIRED=true`, request must include Bearer token.
+- Missing/invalid token now returns clean JSON `401` response.
+- CORS preflight (`OPTIONS`) bypasses auth challenge.
+
+This replaced earlier behavior where middleware-raised `HTTPException` surfaced as noisy middleware stack traces.
+
+### 2) Token verification model: HS256 + Firebase ID token fallback
+
+`backend/app/core/security.py` now verifies tokens with a two-path strategy:
+
+Path A (legacy/internal):
+- HS256 token via `AUTH_JWT_SECRET` and `AUTH_JWT_ALGORITHM`.
+
+Path B (frontend production path):
+- Firebase ID token (RS256), verified against Google JWKS:
+  - audience must match `FIREBASE_PROJECT_ID`,
+  - issuer must match `https://securetoken.google.com/<project_id>`.
+
+This resolved the format mismatch where frontend emitted Firebase tokens while backend initially expected only HS256 custom JWTs.
+
+### 3) Auth context extraction
+
+Auth context normalized into:
+- `user_id` from `sub`,
+- `tenant_id` from token claim precedence:
+  1. `tenant_id` claim
+  2. Firebase tenant claim (if present)
+  3. `AUTH_DEFAULT_TENANT`
+- `role` from `role` claim (default `viewer`).
+
+This gives stable tenant identity even for first-phase deployments without custom tenant claim minting.
+
+### 4) Tenant isolation in relational model
+
+Schema updates in `backend/app/models/schema.py`:
+- Added `tenant_id` to:
+  - `candidates`
+  - `jobs`
+- Added indexes:
+  - `ix_candidates_tenant_id`
+  - `ix_jobs_tenant_id`
+- Replaced global `resume_hash` uniqueness with tenant-scoped uniqueness:
+  - `uq_candidates_tenant_resume_hash (tenant_id, resume_hash)`
+
+Rationale:
+- same resume hash can exist across different companies/tenants without collision,
+- query plans remain efficient for tenant-filtered reads.
+
+### 5) Tenant migration and backfill
+
+New migration:
+- `backend/alembic/versions/20260511_03_add_tenant_isolation.py`
+
+Upgrade behavior:
+1. adds nullable `tenant_id` to `candidates` and `jobs`,
+2. backfills existing rows to `default` tenant,
+3. backfills `jobs.tenant_id` from linked candidate where possible,
+4. sets both columns to non-null,
+5. swaps global unique `resume_hash` constraint to tenant-scoped unique,
+6. creates tenant indexes.
+
+### 6) Tenant-aware write path
+
+`backend/app/services/db_writer.py` updates:
+- `save_to_db(...)` now requires `tenant_id`,
+- duplicate detection now scoped by `(tenant_id, resume_hash)`,
+- inserted `candidates` and `jobs` rows include `tenant_id`.
+
+Impact:
+- cross-tenant duplicate suppression no longer occurs,
+- data ownership remains tenant-bounded at persistence time.
+
+### 7) Tenant-aware read path (API queries)
+
+`backend/app/main.py` query filters now scope by authenticated tenant:
+- `GET /hiring/dashboard-metrics`
+- `GET /hiring/shortlists`
+- `GET /hiring/shortlist/{trace_id}`
+
+Impact:
+- shortlist history and dashboard data are no longer globally visible across tenants.
+
+### 8) Tenant-aware semantic search in Qdrant
+
+`backend/app/integrations/qdrant/store.py`:
+- `search()` now accepts `tenant_id`,
+- query filter combines `tenant_id` and optional `role`.
+
+`backend/app/main.py`:
+- upsert payload now writes `tenant_id`,
+- shortlist semantic blending calls include tenant-scoped search,
+- `/hiring/semantic-search` now sends `tenant_id` to qdrant search path.
+
+Impact:
+- semantic retrieval no longer leaks vectors between tenant workspaces.
+
+### 9) Frontend token propagation integration
+
+`frontend/src/main.jsx` adds global fetch wrapper behavior:
+- for `/hiring/*` and `/resume/*` requests:
+  - obtains current Firebase ID token,
+  - appends `Authorization: Bearer <token>`.
+
+`frontend/src/firebase.js` adds `authReady` promise:
+- resolves after first `onAuthStateChanged` callback.
+
+`frontend/src/main.jsx` now awaits `authReady` before protected requests.
+
+Why this was necessary:
+- without `authReady`, early page-load requests could fire before Firebase restored session, causing intermittent `401`.
+
+### 10) Observed symptom and final stabilization
+
+Observed after initial auth enable:
+- repeated `401` logs from dashboard poll calls.
+
+Root cause:
+- frontend request race before auth restoration.
+
+Fix:
+- `authReady` gate + fetch token injection.
+
+Post-fix expected behavior:
+- unauthenticated requests -> deterministic `401`,
+- authenticated frontend session -> deterministic `200` on protected routes,
+- no random alternation caused by startup timing.
+
+### 11) Environment contract for this phase
+
+Required backend env keys:
+- `AUTH_REQUIRED=true|false`
+- `AUTH_JWT_SECRET=<secret>`
+- `AUTH_JWT_ALGORITHM=HS256`
+- `FIREBASE_PROJECT_ID=<firebase-project-id>`
+- `AUTH_DEFAULT_TENANT=default`
+
+Recommended operating modes:
+- Local UI smoke testing (no token wiring): `AUTH_REQUIRED=false`
+- Enterprise/auth testing: `AUTH_REQUIRED=true`
+
+### 12) Validation performed
+
+Backend auth checks:
+- no token -> `401`,
+- invalid token -> `401`.
+
+Frontend/build checks:
+- `npm run build` completed successfully after fetch/auth changes.
+
+Runtime behavior:
+- protected routes reachable with valid logged-in session token,
+- `Missing bearer token` errors eliminated for authenticated flow.
+
+## 2026-05-11 Alembic + Dashboard Metrics DB Fix
+
+This section documents the production DB issue and fix completed on May 11, 2026.
+
+### Incident summary
+
+Observed API error during dashboard fetch:
+- endpoint: `GET /hiring/dashboard-metrics`
+- failure: `sqlalchemy.exc.ProgrammingError`
+- root SQL error: `psycopg2.errors.UndefinedColumn: column jobs.trace_id does not exist`
+
+The failing query path used `Job.trace_id` in shortlist/dashboard aggregation logic, but some deployed databases were created from an older baseline where `jobs.trace_id` was not present.
+
+### Root cause
+
+Schema drift between ORM and baseline migration:
+- ORM model expected `jobs.trace_id`.
+- baseline migration `20260503_01_baseline_schema.py` created `jobs` without `trace_id`.
+- result: runtime query failures in metrics and shortlist history queries.
+
+### Fix implemented
+
+New Alembic revision added:
+- `backend/alembic/versions/20260511_02_add_jobs_trace_id.py`
+
+Upgrade behavior:
+1. adds nullable `jobs.trace_id`,
+2. creates index `ix_jobs_trace_id`,
+3. backfills existing `jobs.trace_id` from `candidates.trace_id` via `candidate_id`.
+
+### Recovery flow for existing DBs
+
+For databases that already had tables but no Alembic history, running `upgrade head` directly triggered:
+- `DuplicateTable: relation "candidates" already exists`
+
+Correct recovery procedure:
+1. `alembic stamp 20260503_01` (marks baseline as applied without re-creating tables),
+2. `alembic upgrade head` (applies incremental migrations including `20260511_02`).
+
+### Documentation/operability update
+
+`README.md` now includes a single idempotent startup command that:
+- starts/creates Postgres container,
+- waits for readiness,
+- creates DB if missing,
+- conditionally stamps baseline when tables exist but `alembic_version` is absent,
+- runs `alembic upgrade head`,
+- starts backend server.
+
 ## 2026-05-09 Frontend Authentication Integration (Firebase)
 
 This section documents the frontend authentication implementation completed on May 9, 2026.

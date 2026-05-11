@@ -211,6 +211,7 @@ class QdrantResumeIndex:
         self,
         *,
         query_skills: list[str],
+        tenant_id: str | None = None,
         role: str | None = None,
         top_k: int = 20,
         min_score: float = 0.0,
@@ -221,17 +222,24 @@ class QdrantResumeIndex:
 
         query_tokens = self.build_skill_tokens(query_skills)
         vector = _vectorize_skill_tokens(query_tokens, self.vector_dim)
-        qfilter = None
+        must_conditions = []
         role_norm = _normalize_text(role or "")
         if role_norm:
-            qfilter = qmodels.Filter(
-                must=[
-                    qmodels.FieldCondition(
-                        key="role",
-                        match=qmodels.MatchValue(value=role_norm),
-                    )
-                ]
+            must_conditions.append(
+                qmodels.FieldCondition(
+                    key="role",
+                    match=qmodels.MatchValue(value=role_norm),
+                )
             )
+        tenant_norm = _normalize_text(tenant_id or "")
+        if tenant_norm:
+            must_conditions.append(
+                qmodels.FieldCondition(
+                    key="tenant_id",
+                    match=qmodels.MatchValue(value=tenant_norm),
+                )
+            )
+        qfilter = qmodels.Filter(must=must_conditions) if must_conditions else None
         limit = max(1, min(top_k, 200))
         score_threshold = min_score if min_score > 0 else None
         if hasattr(client, "search"):

@@ -11,6 +11,8 @@ from typing import Literal
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.config import load_environment
@@ -27,6 +29,7 @@ from app.services.shortlist_notifier import send_shortlist_notifications
 from app.utils.hash_utils import generate_resume_hash
 from app.schemas.shortlist_response import ShortlistResponse
 from app.integrations.qdrant import QdrantResumeIndex
+from app.core.security import AUTH_REQUIRED, AuthContext, authenticate_request
 
 load_environment()
 logger = logging.getLogger("kovidam.shortlist")
@@ -80,6 +83,32 @@ async def _lifespan(_: FastAPI):
 
 app = FastAPI(title="Kovidam Skill Graph API", lifespan=_lifespan)
 
+PROTECTED_PATH_PREFIXES = ("/hiring", "/resume")
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    # Let CORS preflight pass through without auth challenge.
+    if request.method.upper() == "OPTIONS":
+        return await call_next(request)
+
+    if AUTH_REQUIRED and any(request.url.path.startswith(p) for p in PROTECTED_PATH_PREFIXES):
+        try:
+            auth_ctx = authenticate_request(request)
+            request.state.auth = auth_ctx
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
+
+
+def _get_auth_context(request: Request) -> AuthContext:
+    auth_ctx = getattr(request.state, "auth", None)
+    if auth_ctx is None:
+        if AUTH_REQUIRED:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return AuthContext(user_id="local-dev", tenant_id="default", role="owner", claims={})
+    return auth_ctx
+
 
 @app.get("/")
 async def root():
@@ -90,11 +119,12 @@ async def root():
 
 
 @app.get("/hiring/dashboard-metrics")
-async def dashboard_metrics():
+async def dashboard_metrics(request: Request):
     db = SessionLocal()
+    auth = _get_auth_context(request)
     try:
-        total_candidates = db.query(Candidate).count()
-        shortlists_completed = db.query(Job.trace_id).distinct().count()
+        total_candidates = db.query(Candidate).filter(Candidate.tenant_id == auth.tenant_id).count()
+        shortlists_completed = db.query(Job.trace_id).filter(Job.tenant_id == auth.tenant_id).distinct().count()
         
         # In Kovidam, pending reviews isn't tracked in DB explicitly yet
         pending_reviews = 0
@@ -107,6 +137,7 @@ async def dashboard_metrics():
                 func.count(Candidate.id).label("matches")
             )
             .join(Candidate, Job.candidate_id == Candidate.id)
+            .filter(Job.tenant_id == auth.tenant_id)
             .group_by(Job.trace_id)
             .order_by(func.max(Job.created_at).desc())
             .limit(5)
@@ -120,7 +151,7 @@ async def dashboard_metrics():
                 .join(Job, Candidate.id == Job.candidate_id)
                 .outerjoin(CandidateJobScore, Job.id == CandidateJobScore.job_id)
                 .outerjoin(CandidateScore, Candidate.id == CandidateScore.candidate_id)
-                .filter(Job.trace_id == r.trace_id)
+                .filter(Job.trace_id == r.trace_id, Job.tenant_id == auth.tenant_id)
                 .order_by((CandidateJobScore.fit_score).desc().nullslast(), Candidate.filename.asc())
                 .all()
             )
@@ -191,8 +222,9 @@ async def dashboard_metrics():
 
 
 @app.get("/hiring/shortlists")
-async def get_all_shortlists():
+async def get_all_shortlists(request: Request):
     db = SessionLocal()
+    auth = _get_auth_context(request)
     try:
         query = (
             db.query(
@@ -202,6 +234,7 @@ async def get_all_shortlists():
                 func.count(Candidate.id).label("matches")
             )
             .join(Candidate, Job.candidate_id == Candidate.id)
+            .filter(Job.tenant_id == auth.tenant_id)
             .group_by(Job.trace_id)
             .order_by(func.max(Job.created_at).desc())
             .all()
@@ -226,8 +259,9 @@ async def get_all_shortlists():
 
 
 @app.get("/hiring/shortlist/{trace_id}")
-async def get_past_shortlist(trace_id: str):
+async def get_past_shortlist(trace_id: str, request: Request):
     db = SessionLocal()
+    auth = _get_auth_context(request)
     try:
         # Fetch candidates matching the trace_id, along with their scores
         query = (
@@ -235,7 +269,7 @@ async def get_past_shortlist(trace_id: str):
             .join(Job, Candidate.id == Job.candidate_id)
             .outerjoin(CandidateJobScore, Job.id == CandidateJobScore.job_id)
             .outerjoin(CandidateScore, Candidate.id == CandidateScore.candidate_id)
-            .filter(Job.trace_id == trace_id)
+            .filter(Job.trace_id == trace_id, Job.tenant_id == auth.tenant_id)
             .all()
         )
         
@@ -586,6 +620,7 @@ async def _process_resume_file(
     file: UploadFile, 
     role: str, 
     trace_id: str,
+    tenant_id: str,
     force_reprocess: bool = False,
     company_name: str = "",
     position_title: str = "",
@@ -649,6 +684,7 @@ async def _process_resume_file(
             structured_data,
             trace_id,
             resume_hash,
+            tenant_id,
             force_reprocess=force_reprocess,
         )
         semantic_raw_skills = _collect_candidate_raw_skills(result)
@@ -671,6 +707,7 @@ async def _process_resume_file(
             payload_extra={
                 "resume_hash": resume_hash, 
                 "trace_id": trace_id,
+                "tenant_id": tenant_id,
                 "github_score_100": github_score_100,
                 "comp_coding_score_100": comp_coding_score_100,
                 "experience_years": exp_years,
@@ -875,6 +912,7 @@ def _extract_skills_from_job_description(job_description: str) -> list[str]:
 async def _qdrant_jd_semantic_map(
     *,
     query_skills: list[str],
+    tenant_id: str,
     role: str,
     candidates: list[dict],
 ) -> dict[str, dict]:
@@ -888,6 +926,7 @@ async def _qdrant_jd_semantic_map(
     result = await asyncio.to_thread(
         qdrant_index.search,
         query_skills=query_skills,
+        tenant_id=tenant_id,
         role=role,
         top_k=top_k,
         min_score=0.0,
@@ -2338,13 +2377,15 @@ def _candidate_company_fit(
 
 @app.post("/resume/extract")
 async def extract_resume(
+    request: Request,
     file: UploadFile = File(...),
     role: Literal["job", "internship"] = Form(default="job"),
     force_reprocess: bool = Form(default=False),
 ):
     try:
+        auth = _get_auth_context(request)
         trace_id = str(uuid.uuid4())
-        return await _process_resume_file(file, role, trace_id, force_reprocess=force_reprocess)
+        return await _process_resume_file(file, role, trace_id, auth.tenant_id, force_reprocess=force_reprocess)
     except HTTPException:
         raise
     except Exception as exc:
@@ -2353,16 +2394,18 @@ async def extract_resume(
 
 @app.post("/resume/extract/batch")
 async def extract_resume_batch(
+    request: Request,
     files: list[UploadFile] = File(...),
     role: Literal["job", "internship"] = Form(default="job"),
     force_reprocess: bool = Form(default=False),
 ):
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
+    auth = _get_auth_context(request)
 
     trace_id = str(uuid.uuid4())
     tasks = [
-        asyncio.create_task(_process_resume_file(file, role, trace_id, force_reprocess=force_reprocess))
+        asyncio.create_task(_process_resume_file(file, role, trace_id, auth.tenant_id, force_reprocess=force_reprocess))
         for file in files
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -2391,6 +2434,7 @@ async def extract_resume_batch(
 
 @app.post("/hiring/shortlist", response_model=ShortlistResponse)
 async def hiring_shortlist(
+    request: Request,
     files: list[UploadFile] = File(...),
     role: Literal["job", "internship"] = Form(default="internship"),
     company_name: str = Form(...),
@@ -2404,6 +2448,7 @@ async def hiring_shortlist(
     interview_base_url: str = Form(default=""),
 ):
     started_at = time.time()
+    auth = _get_auth_context(request)
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
@@ -2427,6 +2472,7 @@ async def hiring_shortlist(
             file, 
             role, 
             trace_id,
+            auth.tenant_id,
             force_reprocess=force_reprocess,
             company_name=company_name,
             position_title=position_title,
@@ -2470,6 +2516,7 @@ async def hiring_shortlist(
 
     semantic_map = await _qdrant_jd_semantic_map(
         query_skills=semantic_query_skills,
+        tenant_id=auth.tenant_id,
         role=role,
         candidates=[c for c in candidates if c.get("ok")],
     )
@@ -2642,16 +2689,19 @@ async def hiring_shortlist(
 
 @app.post("/hiring/semantic-search")
 async def hiring_semantic_search(
+    request: Request,
     query_skills_csv: str = Form(...),
     top_k: int = Form(default=20),
     min_score: float = Form(default=0.0),
 ):
     query_skills = _parse_csv_list(query_skills_csv)
+    auth = _get_auth_context(request)
     if not query_skills:
         raise HTTPException(status_code=400, detail="query_skills_csv must contain at least one skill")
     result = await asyncio.to_thread(
         qdrant_index.search,
         query_skills=query_skills,
+        tenant_id=auth.tenant_id,
         top_k=top_k,
         min_score=min_score,
     )
