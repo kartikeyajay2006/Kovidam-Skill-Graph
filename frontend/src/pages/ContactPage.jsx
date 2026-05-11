@@ -263,11 +263,7 @@ export default function ContactPage() {
 
           {error && <div className="form-notice error">{error}</div>}
           {success && <div className="form-notice success">{success}</div>}
-          {!success && (
-            <div className="form-notice" style={{ marginTop: 8, color: '#94a3b8' }}>
-              Using EmailJS config: service=`{serviceId || 'missing'}`, template=`{templateId || 'missing'}`
-            </div>
-          )}
+
 
           <div className="contact-actions">
             <button className="btn-premium btn-primary" disabled={isSubmitting} onClick={() => void submit('Book Demo')}>

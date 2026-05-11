@@ -6,9 +6,12 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import PlaceholderPage from './pages/PlaceholderPage'
+import DashboardHub from './pages/DashboardHub'
 import ShortlistPage from './pages/ShortlistPage'
+import PastShortlistPage from './pages/PastShortlistPage'
 import SemanticSearchPage from './pages/SemanticSearchPage'
 import ContactPage from './pages/ContactPage'
+import AllShortlistsPage from './pages/AllShortlistsPage'
 import './App.css'
 
 function App() {
@@ -30,8 +33,10 @@ function App() {
 
       {/* Core Web App / Dashboard Pages */}
       <Route path="/dashboard" element={<DashboardLayout />}>
-        <Route index element={<PlaceholderPage title="Dashboard Hub" />} />
+        <Route index element={<DashboardHub />} />
         <Route path="shortlist" element={<ShortlistPage />} />
+        <Route path="history" element={<AllShortlistsPage />} />
+        <Route path="history/:traceId" element={<PastShortlistPage />} />
         <Route path="search" element={<SemanticSearchPage />} />
         <Route path="candidate/:id" element={<PlaceholderPage title="Candidate Profile" />} />
         <Route path="settings" element={<PlaceholderPage title="Settings & Configuration" />} />

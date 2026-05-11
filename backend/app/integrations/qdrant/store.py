@@ -285,6 +285,15 @@ class QdrantResumeIndex:
                     "matched_query_count": len(matched_query_tokens),
                     "skills_preview": preview[:20],
                     "skills_total": len(candidate_skills),
+                    "github_score_100": payload.get("github_score_100", 0.0),
+                    "comp_coding_score_100": payload.get("comp_coding_score_100", 0.0),
+                    "experience_years": payload.get("experience_years", 0.0),
+                    "skills_match_score_100": payload.get("skills_match_score_100", 0.0),
+                    "experience_score_100": payload.get("experience_score_100", 0.0),
+                    "platform_strength_score_100": payload.get("platform_strength_score_100", 0.0),
+                    "project_evidence_score_100": payload.get("project_evidence_score_100", 0.0),
+                    "profile_completeness_score_100": payload.get("profile_completeness_score_100", 0.0),
+                    "fit_score_100": payload.get("fit_score_100", 0.0),
                 }
             )
         return {

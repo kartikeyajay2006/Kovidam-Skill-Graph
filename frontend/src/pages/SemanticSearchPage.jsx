@@ -297,13 +297,64 @@ export default function SemanticSearchPage() {
                       style={{ overflow: 'hidden', padding: '0', background: 'rgba(0,0,0,0.25)', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', borderTop: 'none', marginBottom: '1rem' }}
                     >
                       <div style={{ padding: '1.5rem' }}>
-                        <h4 style={{ color: '#818cf8', marginBottom: '1rem', marginTop: 0, fontSize: '1rem' }}>Matched Query Tokens ({c.matched_query_count || 0})</h4>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                          {c.matched_query_tokens?.length > 0 ? c.matched_query_tokens.map((token, tIdx) => (
-                            <span key={tIdx} style={{ background: 'rgba(52, 211, 153, 0.15)', border: '1px solid rgba(52, 211, 153, 0.3)', padding: '4px 10px', borderRadius: '6px', fontSize: '0.85rem', color: '#6ee7b7' }}>
-                              {token}
-                            </span>
-                          )) : <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No direct query matches found.</span>}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', borderLeft: '4px solid #818cf8' }}>
+                          <div style={{ background: '#818cf8', color: '#fff', fontWeight: 'bold', padding: '0.5rem 1rem', borderRadius: '6px', fontSize: '1.2rem' }}>
+                            {(c.score_100 || 0).toFixed(1)}%
+                          </div>
+                          <div>
+                            <h4 style={{ margin: 0, color: '#f8fafc', fontSize: '1.1rem' }}>Semantic Match Score</h4>
+                            <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.85rem', marginTop: '4px' }}>This score represents the conceptual match between the candidate's skills and your search query.</p>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '1.5rem' }}>
+                          <div>
+                            <h4 style={{ color: '#818cf8', marginBottom: '1rem', marginTop: 0, fontSize: '1rem' }}>Matched Query Tokens ({c.matched_query_count || 0})</h4>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                              {c.matched_query_tokens?.length > 0 ? c.matched_query_tokens.map((token, tIdx) => (
+                                <span key={tIdx} style={{ background: 'rgba(52, 211, 153, 0.15)', border: '1px solid rgba(52, 211, 153, 0.3)', padding: '4px 10px', borderRadius: '6px', fontSize: '0.85rem', color: '#6ee7b7' }}>
+                                  {token}
+                                </span>
+                              )) : <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No direct query matches found.</span>}
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <h4 style={{ color: '#818cf8', marginBottom: '1rem', marginTop: 0, fontSize: '1rem' }}>Score Breakdown</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.75rem', fontSize: '1rem' }}>
+                              
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+                                <span style={{ color: '#94a3b8' }}>GitHub Score</span>
+                                <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{(c.github_score_100 || 0).toFixed(1)}%</span>
+                              </div>
+                              
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+                                <span style={{ color: '#94a3b8' }}>Skills Match</span>
+                                <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{(c.skills_match_score_100 || 0).toFixed(1)}%</span>
+                              </div>
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+                                <span style={{ color: '#94a3b8' }}>Platform Strength</span>
+                                <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{(c.platform_strength_score_100 || 0).toFixed(1)}%</span>
+                              </div>
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+                                <span style={{ color: '#94a3b8' }}>Project Evidence</span>
+                                <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{(c.project_evidence_score_100 || 0).toFixed(1)}%</span>
+                              </div>
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+                                <span style={{ color: '#94a3b8' }}>Profile Completeness</span>
+                                <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{(c.profile_completeness_score_100 || 0).toFixed(1)}%</span>
+                              </div>
+                              
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
+                                <span style={{ color: '#94a3b8' }}>Experience</span>
+                                <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{(c.experience_years || 0).toFixed(1)} Yrs</span>
+                              </div>
+
+                            </div>
+                          </div>
                         </div>
                         
                         <h4 style={{ color: '#818cf8', marginBottom: '1rem', marginTop: 0, fontSize: '1rem' }}>Candidate Skills Preview (Total: {c.skills_total || 0})</h4>

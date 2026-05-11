@@ -29,10 +29,14 @@ class Candidate(Base):
 
 class Job(Base):
     __tablename__ = "jobs"
-    __table_args__ = (Index("ix_jobs_candidate_id", "candidate_id"),)
+    __table_args__ = (
+        Index("ix_jobs_candidate_id", "candidate_id"),
+        Index("ix_jobs_trace_id", "trace_id"),
+    )
 
     id = Column(String, primary_key=True)
     candidate_id = Column(String, ForeignKey("candidates.id"), nullable=False)
+    trace_id = Column(String, index=True)
     company_name = Column(String)
     position_title = Column(String)
     role = Column(String, nullable=False)

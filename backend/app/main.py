@@ -16,6 +16,11 @@ from pydantic import BaseModel, Field
 from app.config import load_environment
 from app.db.postgres.session import init_db
 from app.services.resume_parser import parse_resume_and_enrich, save_extracted_data_to_json
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
+
+from app.db.postgres.session import SessionLocal
+from app.models.schema import Candidate, Job, CandidateJobScore, CandidateScore
 from app.services.transformer import transform_resume_data
 from app.services.db_writer import save_to_db
 from app.services.shortlist_notifier import send_shortlist_notifications
@@ -81,6 +86,203 @@ async def root():
         "message": "Welcome to Kovidam Skill Graph API",
         "resume_concurrency": RESUME_CONCURRENCY,
     }
+
+
+@app.get("/hiring/dashboard-metrics")
+async def dashboard_metrics():
+    db = SessionLocal()
+    try:
+        total_candidates = db.query(Candidate).count()
+        shortlists_completed = db.query(Job.trace_id).distinct().count()
+        
+        # In Kovidam, pending reviews isn't tracked in DB explicitly yet
+        pending_reviews = 0
+        
+        recent_query = (
+            db.query(
+                Job.trace_id,
+                func.max(Job.role).label("role"),
+                func.max(Job.created_at).label("created_at"),
+                func.count(Candidate.id).label("matches")
+            )
+            .join(Candidate, Job.candidate_id == Candidate.id)
+            .group_by(Job.trace_id)
+            .order_by(func.max(Job.created_at).desc())
+            .limit(5)
+            .all()
+        )
+        
+        recent_shortlists = []
+        for r in recent_query:
+            recent_shortlists.append({
+                "id": r.trace_id,
+                "role": r.role or "Unknown Role",
+                "date": r.created_at.strftime("%b %d, %Y %I:%M %p") if r.created_at else "Recently",
+                "matches": r.matches,
+                "status": "completed"
+            })
+            
+        return {
+            "metrics": {
+                "total_candidates": total_candidates,
+                "shortlists_completed": shortlists_completed,
+                "pending_reviews": pending_reviews
+            },
+            "recent_shortlists": recent_shortlists
+        }
+    except Exception as e:
+        logger.exception("failed_to_fetch_dashboard_metrics")
+        return {
+            "metrics": {"total_candidates": 0, "shortlists_completed": 0, "pending_reviews": 0},
+            "recent_shortlists": []
+        }
+    finally:
+        db.close()
+
+
+@app.get("/hiring/shortlists")
+async def get_all_shortlists():
+    db = SessionLocal()
+    try:
+        query = (
+            db.query(
+                Job.trace_id,
+                func.max(Job.role).label("role"),
+                func.max(Job.created_at).label("created_at"),
+                func.count(Candidate.id).label("matches")
+            )
+            .join(Candidate, Job.candidate_id == Candidate.id)
+            .group_by(Job.trace_id)
+            .order_by(func.max(Job.created_at).desc())
+            .all()
+        )
+        
+        shortlists = []
+        for r in query:
+            shortlists.append({
+                "id": r.trace_id,
+                "role": r.role or "Unknown Role",
+                "date": r.created_at.strftime("%b %d, %Y %I:%M %p") if r.created_at else "Recently",
+                "matches": r.matches,
+                "status": "completed"
+            })
+            
+        return shortlists
+    except Exception as e:
+        logger.exception("failed_to_fetch_all_shortlists")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    finally:
+        db.close()
+
+
+@app.get("/hiring/shortlist/{trace_id}")
+async def get_past_shortlist(trace_id: str):
+    db = SessionLocal()
+    try:
+        # Fetch candidates matching the trace_id, along with their scores
+        query = (
+            db.query(Candidate, Job, CandidateJobScore, CandidateScore)
+            .join(Job, Candidate.id == Job.candidate_id)
+            .outerjoin(CandidateJobScore, Job.id == CandidateJobScore.job_id)
+            .outerjoin(CandidateScore, Candidate.id == CandidateScore.candidate_id)
+            .filter(Job.trace_id == trace_id)
+            .all()
+        )
+        
+        if not query:
+            raise HTTPException(status_code=404, detail="Shortlist not found")
+
+        # In a real environment, you'd calculate these dynamically or store them.
+        # Here we approximate eligibility by checking if there's a fit score.
+        shortlisted = []
+        rejected = []
+        failed = []
+
+        for cand, job, cjs, cs in query:
+            fit_score = cjs.fit_score if cjs and cjs.fit_score else 0.0
+            reasons = []
+            
+            # Reconstruct candidate metrics
+            metrics = {}
+            if cs:
+                metrics["github_score_100"] = cs.github_score or 0.0
+                metrics["skills_match_score_100"] = cs.skills_match_score or 0.0
+                metrics["experience_score_100"] = cs.experience_score or 0.0
+                metrics["platform_strength_score_100"] = cs.platform_strength_score or 0.0
+                metrics["project_evidence_score_100"] = cs.project_evidence_score or 0.0
+                metrics["profile_completeness_score_100"] = cs.profile_completeness_score or 0.0
+                
+            # Reconstruct rejection reasons based on thresholds
+            thresholds = _role_thresholds(job.role, float(job.min_experience_years) if job and job.min_experience_years is not None else 0.0)
+            skill_match_score_100 = float(cs.skills_match_score) if cs and cs.skills_match_score is not None else 0.0
+            github_score_100 = float(cs.github_score) if cs and cs.github_score is not None else 0.0
+            experience_years = float(cand.work_experience_years) if cand and cand.work_experience_years is not None else 0.0
+            
+            # Use notes as secondary rejection source if thresholds pass but they were still rejected
+            if cjs and isinstance(cjs.notes, list):
+                for note in cjs.notes:
+                    if isinstance(note, str) and ("missing" in note.lower() or "below" in note.lower()):
+                        reasons.append(note)
+
+            if job.role == "job":
+                if skill_match_score_100 < thresholds["min_skill_match_pct"]:
+                    reasons.append(f"Skill match {skill_match_score_100:.1f} below minimum")
+                min_github = _to_float(thresholds.get("min_github_score_100"), 0.0)
+                if min_github > 0.0 and github_score_100 < min_github:
+                    reasons.append(f"GitHub score {github_score_100:.1f} below minimum")
+                if experience_years < thresholds["min_experience_years"]:
+                    reasons.append(f"Experience {experience_years:.1f} years below minimum")
+            else:
+                if skill_match_score_100 < thresholds["min_skill_match_pct"]:
+                    reasons.append(f"Skill match {skill_match_score_100:.1f} below minimum")
+
+            eligible = len(reasons) == 0
+
+            candidate_summary = {
+                "filename": cand.filename or "Unknown",
+                "rank": 0, # Will sort later
+                "eligible": eligible,
+                "fit_score_100": fit_score,
+                "rejection_reasons": reasons,
+                "ranking_decision_log": {
+                    "role_profile": job.role or "job",
+                    "candidate_metrics": metrics
+                },
+                "experience": {
+                    "candidate_years": cand.work_experience_years or 0.0,
+                    "meets_min_experience": (cand.work_experience_years or 0.0) >= (job.min_experience_years or 0.0)
+                }
+            }
+
+            if eligible:
+                shortlisted.append(candidate_summary)
+            else:
+                rejected.append(candidate_summary)
+
+        # Sort shortlisted by fit score desc
+        shortlisted.sort(key=lambda x: x["fit_score_100"], reverse=True)
+        for i, c in enumerate(shortlisted, 1):
+            c["rank"] = i
+            
+        return {
+            "trace_id": trace_id,
+            "counts": {
+                "total": len(query),
+                "ranked": len(shortlisted),
+                "rejected": len(rejected),
+                "failed": len(failed)
+            },
+            "shortlisted": shortlisted,
+            "rejected": rejected,
+            "failed": failed
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("failed_to_fetch_past_shortlist")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    finally:
+        db.close()
 
 
 class ChatRequest(BaseModel):
@@ -330,7 +532,18 @@ async def chat_respond(payload: ChatRequest):
     return ChatResponse(reply=ai_reply, quick_options=_post_answer_options(message))
 
 
-async def _process_resume_file(file: UploadFile, role: str, force_reprocess: bool = False):
+async def _process_resume_file(
+    file: UploadFile, 
+    role: str, 
+    trace_id: str,
+    force_reprocess: bool = False,
+    company_name: str = "",
+    position_title: str = "",
+    min_experience_years: float = 0.0,
+    required_skills: list[str] = None,
+    must_have_skills: list[str] = None,
+    thresholds: dict = None
+):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail=f"Only PDF files are supported: {file.filename}")
 
@@ -342,17 +555,43 @@ async def _process_resume_file(file: UploadFile, role: str, force_reprocess: boo
             tmp_path = tmp.name
 
         resume_hash = generate_resume_hash(content)
-        trace_id = str(uuid.uuid4())
 
         async with resume_semaphore:
             result = await parse_resume_and_enrich(tmp_path, role=role)
 
         saved_json_path = save_extracted_data_to_json(result, file.filename)
 
+        # Compute fit before saving to database
+        fit = _candidate_company_fit(
+            extracted=result,
+            required_skills=required_skills or [],
+            must_have_skills=must_have_skills or [],
+            min_experience_years=min_experience_years,
+            role=role,
+            company_name=company_name,
+            position_title=position_title,
+        )
+        fit["criteria_used"]["notes"] = await _generate_ai_notes(role, fit, result)
+        
+        eligible, rejection_reasons, decision_log = _build_eligibility(
+            role=role,
+            fit=fit,
+            must_have_skills=must_have_skills or [],
+            thresholds=thresholds or {},
+        )
+        fit["ranking_decision_log"] = decision_log
+
         # Persist parsed data to PostgreSQL.
         raw_for_transform = {
             "filename": file.filename,
             "data": result,
+            "fit": fit,
+            "job": {
+                "company_name": company_name,
+                "position_title": position_title,
+                "min_experience_years": min_experience_years,
+                "role": role,
+            }
         }
         structured_data = transform_resume_data(raw_for_transform)
         db_result = await asyncio.to_thread(
@@ -363,13 +602,35 @@ async def _process_resume_file(file: UploadFile, role: str, force_reprocess: boo
             force_reprocess=force_reprocess,
         )
         semantic_raw_skills = _collect_candidate_raw_skills(result)
+        
+        # Extract github score to store in semantic search payload
+        github_summary = result.get("github_analysis", {}).get("summary", {})
+        github_score_100 = _to_float(github_summary.get("overall_score_100"), 0.0)
+        
+        platform_summary = result.get("platform_stats", {}).get("summary", {})
+        comp_coding_score_100 = _to_float(platform_summary.get("overall_competitive_coding_score_100"), 0.0)
+        
+        exp_years = _to_float(result.get("work_experience_years", "0"), 0.0)
+
         qdrant_result = await asyncio.to_thread(
             qdrant_index.upsert_resume,
             point_id=resume_hash,
             filename=file.filename,
             role=role,
             raw_skills=semantic_raw_skills,
-            payload_extra={"resume_hash": resume_hash, "trace_id": trace_id},
+            payload_extra={
+                "resume_hash": resume_hash, 
+                "trace_id": trace_id,
+                "github_score_100": github_score_100,
+                "comp_coding_score_100": comp_coding_score_100,
+                "experience_years": exp_years,
+                "skills_match_score_100": _to_float(fit.get("breakdown", {}).get("skills_match_score_100"), 0.0),
+                "experience_score_100": _to_float(fit.get("breakdown", {}).get("experience_score_100"), 0.0),
+                "platform_strength_score_100": _to_float(fit.get("breakdown", {}).get("platform_strength_score_100"), 0.0),
+                "project_evidence_score_100": _to_float(fit.get("breakdown", {}).get("project_evidence_score_100"), 0.0),
+                "profile_completeness_score_100": _to_float(fit.get("breakdown", {}).get("profile_completeness_score_100"), 0.0),
+                "fit_score_100": _to_float(fit.get("fit_score_100"), 0.0)
+            },
         )
 
         return {
@@ -380,6 +641,9 @@ async def _process_resume_file(file: UploadFile, role: str, force_reprocess: boo
             "resume_hash": resume_hash,
             "db_result": db_result,
             "qdrant_result": qdrant_result,
+            "fit": fit,
+            "eligible": eligible,
+            "rejection_reasons": rejection_reasons,
         }
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -1892,7 +2156,8 @@ async def extract_resume(
     force_reprocess: bool = Form(default=False),
 ):
     try:
-        return await _process_resume_file(file, role, force_reprocess=force_reprocess)
+        trace_id = str(uuid.uuid4())
+        return await _process_resume_file(file, role, trace_id, force_reprocess=force_reprocess)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1908,8 +2173,9 @@ async def extract_resume_batch(
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
+    trace_id = str(uuid.uuid4())
     tasks = [
-        asyncio.create_task(_process_resume_file(file, role, force_reprocess=force_reprocess))
+        asyncio.create_task(_process_resume_file(file, role, trace_id, force_reprocess=force_reprocess))
         for file in files
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1962,8 +2228,21 @@ async def hiring_shortlist(
     )
     thresholds = _role_thresholds(role, min_experience_years)
 
+    trace_id = str(uuid.uuid4())
+
     tasks = [
-        asyncio.create_task(_process_resume_file(file, role, force_reprocess=force_reprocess))
+        asyncio.create_task(_process_resume_file(
+            file, 
+            role, 
+            trace_id,
+            force_reprocess=force_reprocess,
+            company_name=company_name,
+            position_title=position_title,
+            min_experience_years=min_experience_years,
+            required_skills=required_skills,
+            must_have_skills=must_have_skills,
+            thresholds=thresholds
+        ))
         for file in files
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1979,23 +2258,9 @@ async def hiring_shortlist(
             continue
 
         extracted = outcome.get("extracted", {})
-        fit = _candidate_company_fit(
-            extracted=extracted,
-            required_skills=required_skills,
-            must_have_skills=must_have_skills,
-            min_experience_years=min_experience_years,
-            role=role,
-            company_name=company_name,
-            position_title=position_title,
-        )
-        fit["criteria_used"]["notes"] = await _generate_ai_notes(role, fit, extracted)
-        eligible, rejection_reasons, decision_log = _build_eligibility(
-            role=role,
-            fit=fit,
-            must_have_skills=must_have_skills,
-            thresholds=thresholds,
-        )
-        fit["ranking_decision_log"] = decision_log
+        fit = outcome.get("fit", {})
+        eligible = outcome.get("eligible", False)
+        rejection_reasons = outcome.get("rejection_reasons", [])
 
         candidates.append({
             "filename": outcome.get("filename") or file.filename,

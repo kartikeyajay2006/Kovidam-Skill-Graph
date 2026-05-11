@@ -76,7 +76,7 @@ export default function DashboardNavbar() {
           onClick={() => navigate('/')}
         >
           <LogOut size={16} />
-          <span>Exit ATS</span>
+          <span>Exit Medha</span>
         </motion.button>
       </div>
     </header>
