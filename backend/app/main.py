@@ -83,6 +83,27 @@ async def _lifespan(_: FastAPI):
 
 app = FastAPI(title="Kovidam Skill Graph API", lifespan=_lifespan)
 
+cors_env = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
+if cors_env:
+    if cors_env == "*":
+        cors_allowed_origins = ["*"]
+    else:
+        cors_allowed_origins = [origin.strip() for origin in cors_env.split(",") if origin.strip()]
+else:
+    cors_allowed_origins = [
+        "http://localhost:5173",
+        "https://kovidam-skill-graph-1.onrender.com",
+        "https://kovidam-skill-graph.vercel.app",
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_allowed_origins,
+    allow_credentials=False if cors_allowed_origins == ["*"] else True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 PROTECTED_PATH_PREFIXES = ("/hiring", "/resume")
 
 
