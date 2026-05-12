@@ -6,6 +6,8 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import PlaceholderPage from './pages/PlaceholderPage'
+import AboutPage from './pages/AboutPage'
+import TeamPage from './pages/TeamPage'
 import DashboardHub from './pages/DashboardHub'
 import ShortlistPage from './pages/ShortlistPage'
 import PastShortlistPage from './pages/PastShortlistPage'
@@ -22,7 +24,8 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/product" element={<PlaceholderPage title="Product Overview" />} />
         <Route path="/features" element={<PlaceholderPage title="Features & Capabilities" />} />
-        <Route path="/about" element={<PlaceholderPage title="About Us" />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/company/team" element={<TeamPage />} />
         <Route path="/contact" element={<ContactPage />} />
         
         {/* Authentication */}

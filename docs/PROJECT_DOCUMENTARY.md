@@ -1423,3 +1423,593 @@ Commands executed and passed:
 
 Build note:
 - Vite chunk-size warning remains non-blocking and unrelated to chatbot behavior.
+
+## 15) Extended Enterprise Security Blueprint (Detailed)
+
+This section is an expanded implementation blueprint for taking current security from "strong startup baseline" to "enterprise procurement-ready maturity".
+
+### 15.1 Identity and Access Maturity Model
+
+Level 1 (already in place):
+- JWT authentication on protected routes.
+- Firebase token interoperability.
+- Tenant-scoped request context.
+
+Level 2 (partially in place):
+- Membership validation against tenant.
+- Role claim presence.
+- Audit event capture for sensitive paths.
+
+Level 3 (next target):
+- Full RBAC policy matrix with endpoint-level allow/deny rules.
+- Role-change workflow with approval + reason capture.
+- Session and token revocation strategy.
+
+Level 4 (enterprise target):
+- SSO/SAML compatibility path.
+- SCIM lifecycle automation.
+- Fine-grained resource-level authorization.
+
+### 15.2 Recommended RBAC Matrix (Practical)
+
+Roles:
+- `owner`
+- `recruiter`
+- `reviewer`
+- `viewer`
+
+Example capability matrix:
+- Owner: full control including billing/security settings, role assignment, exports.
+- Recruiter: upload resumes, run shortlist, view/edit job criteria, view candidates, send outreach.
+- Reviewer: view shortlist outputs and provide review notes, but cannot change security settings.
+- Viewer: read-only access to dashboards and approved shortlist views.
+
+Hard deny examples:
+- Viewer cannot trigger new shortlist runs.
+- Reviewer cannot delete candidate records.
+- Recruiter cannot change tenant role assignments.
+- Non-owner cannot modify security policy values.
+
+### 15.3 Authorization Decision Logging Standard
+
+For each authz decision, log:
+- `decision_id`
+- `timestamp`
+- `tenant_id`
+- `user_id`
+- `role`
+- `action`
+- `resource_type`
+- `resource_id`
+- `allow_or_deny`
+- `deny_reason`
+- `policy_version`
+
+Why:
+- Makes incident triage faster.
+- Supports enterprise evidence requests.
+- Enables internal policy debugging.
+
+### 15.4 Token and Session Policy
+
+Recommended defaults:
+- ID token validity: provider-managed.
+- Backend session cache TTL: short-lived.
+- Sensitive action re-check: always verify live membership before action.
+- Role changes invalidate active permission cache.
+
+Do not rely on:
+- long-lived cached role claims without live membership check.
+- client-only role gating for server-sensitive actions.
+
+### 15.5 Secrets Management Policy
+
+Current pattern includes local `.env` usage for development.
+Enterprise-ready target should include:
+- centralized secret store (cloud vault),
+- rotation runbook,
+- key owner mapping,
+- rotation frequency by key category.
+
+Key categories:
+- auth keys,
+- DB credentials,
+- SMTP credentials,
+- OpenAI keys,
+- third-party integration keys.
+
+### 15.6 Data Protection and Retention Model
+
+Data classes:
+- Public product metadata.
+- Internal operational telemetry.
+- Customer business metadata.
+- Candidate PII.
+- Derived scoring artifacts.
+
+Per-class policy should define:
+- encryption requirements,
+- retention duration,
+- deletion triggers,
+- exportability,
+- legal hold behavior.
+
+### 15.7 Backup and Recovery Standard
+
+Minimum maturity target:
+- scheduled backups,
+- backup encryption,
+- point-in-time restore option,
+- periodic restore drill evidence.
+
+Restore drill should capture:
+- timestamp of drill,
+- backup source,
+- restore duration,
+- data integrity check result,
+- incident notes.
+
+### 15.8 Abuse and Rate-Limit Policy
+
+Protect high-cost endpoints (AI + upload + shortlist):
+- per-user rate limits,
+- per-tenant burst control,
+- IP anomaly monitoring,
+- payload-size protection.
+
+### 15.9 Security Posture Communication
+
+Public "Security" page should eventually include:
+- current controls,
+- architecture overview,
+- contact path for security inquiries,
+- vulnerability disclosure policy,
+- status of planned certifications.
+
+---
+
+## 16) API Surface Documentary (Functional View)
+
+This section explains expected behavior by API families in plain language.
+
+### 16.1 `/hiring/*` family
+
+Purpose:
+- run shortlisting,
+- fetch shortlist history,
+- fetch dashboard metrics,
+- perform semantic search.
+
+Security expectation:
+- must require valid auth when `AUTH_REQUIRED=true`.
+- must enforce tenant scope on reads and writes.
+
+Failure semantics:
+- no token -> 401
+- invalid token -> 401
+- auth ok, no membership -> deny (expected 403 style behavior where configured)
+
+### 16.2 `/resume/*` family
+
+Purpose:
+- resume upload/extraction operations.
+
+Security expectation:
+- protected under same auth policy as hiring endpoints.
+- tenant ownership attached at persistence time.
+
+### 16.3 Health/Readiness endpoints
+
+Purpose:
+- operational checks for deployment/system orchestration.
+
+Security expectation:
+- split into public-safe and private-operational as needed.
+
+### 16.4 Error response principles
+
+Good error contract:
+- deterministic status codes,
+- short machine-readable reason,
+- no secret leakage,
+- no stacktrace leak to client.
+
+---
+
+## 17) Data Model Documentary (Expanded)
+
+### 17.1 Core entities
+
+Candidates:
+- candidate identity,
+- resume fingerprint,
+- profile-derived structured fields,
+- tenant ownership,
+- timestamps.
+
+Jobs:
+- job/trace linkage,
+- role context,
+- tenant ownership,
+- shortlist linkage.
+
+Tenant-related entities:
+- tenants,
+- users,
+- memberships,
+- role association.
+
+Audit entities:
+- append-only events with action context.
+
+### 17.2 Candidate hash uniqueness policy
+
+Global uniqueness is intentionally removed.
+Current policy uses `(tenant_id, resume_hash)` uniqueness.
+
+Practical effect:
+- same person resume can exist in multiple customer tenants without conflict.
+
+### 17.3 Timestamp policy
+
+All critical entities should include:
+- `created_at`
+- `updated_at`
+
+Operational value:
+- debugging,
+- analytics windows,
+- retention workflows.
+
+### 17.4 Indexing strategy notes
+
+Tenant-first index policy is important because:
+- almost all reads are tenant-scoped,
+- multi-tenant scale requires predictable filter performance.
+
+---
+
+## 18) Shortlist Engine Documentary (Expanded)
+
+### 18.1 Input groups
+
+Shortlist inputs combine:
+- parsed resume signals,
+- job role criteria,
+- required and must-have skills,
+- optional context (job description, role type),
+- semantic/vector relevance support.
+
+### 18.2 Component scoring categories
+
+Typical component categories include:
+- skills match,
+- GitHub quality signal,
+- experience evidence,
+- platform coding profile signal,
+- project relevance,
+- profile completeness,
+- experience quality,
+- achievements.
+
+### 18.3 Hard gate vs ranking signal
+
+Hard gate:
+- must-have requirements.
+
+Ranking signals:
+- weighted fit and confidence.
+
+This split is deliberate:
+- gate enforces minimum requirement integrity,
+- ranking differentiates among eligible candidates.
+
+### 18.4 Weight redistribution rationale
+
+If one major signal is missing (example: GitHub profile),
+weight redistribution prevents score unfairness and improves practical usability.
+
+### 18.5 Tie-break logic intent
+
+When two candidates are close on fit,
+secondary ordering uses policy-guided indicators (must-have coverage, achievement, semantic relevance, etc.)
+so ordering remains explainable.
+
+---
+
+## 19) Frontend Experience Documentary (Expanded)
+
+### 19.1 Public experience
+
+Public routes now include:
+- real about/company/legal content pathways,
+- improved contact/demo flow,
+- dedicated team page.
+
+### 19.2 Team transition behavior
+
+Current implemented interaction:
+1. user clicks `Meet Our Team`,
+2. intro screen displays `Kovidam Team` with circular ring,
+3. intro holds for 1.3 seconds,
+4. team cards slide in one-by-one.
+
+### 19.3 UX quality principles currently applied
+
+- consistent dark theme,
+- shared global background system,
+- readable typographic hierarchy,
+- spacing rhythm improvements,
+- high-contrast actionable buttons.
+
+---
+
+## 20) DevOps and Local Operations Documentary
+
+### 20.1 Local startup dependency order
+
+Recommended order:
+1. Postgres up and ready.
+2. Env loaded.
+3. Alembic migration run.
+4. Backend start.
+5. Frontend start.
+
+### 20.2 Common local errors and fixes
+
+Error: `Address already in use`
+- Cause: old uvicorn process still running.
+- Fix: stop previous process, restart cleanly.
+
+Error: `DuplicateTable` during migration
+- Cause: DB already has tables without Alembic history.
+- Fix: baseline stamp, then upgrade head.
+
+Error: 401 repeated in frontend
+- Cause: missing/invalid token or auth restore race.
+- Fix: verify login session + token injection path.
+
+### 20.3 Production deployment sanity checklist
+
+Before deployment:
+- migrations applied,
+- auth env keys set,
+- tenant defaults reviewed,
+- Qdrant connectivity verified,
+- rollback plan documented,
+- smoke tests pass.
+
+After deployment:
+- protected route auth verified,
+- shortlist endpoint smoke test,
+- dashboard metrics test,
+- audit event generation test,
+- error log scan window.
+
+---
+
+## 21) Compliance Readiness Narrative
+
+This section is written in buyer-friendly language for enterprise conversations.
+
+What can already be claimed honestly:
+- protected API architecture exists,
+- tenant-aware isolation is implemented in both relational and semantic layers,
+- security-sensitive actions are auditable,
+- schema migration discipline is present.
+
+What should be stated as "in-progress":
+- full RBAC enforcement matrix completion,
+- formal policy docs lifecycle,
+- advanced compliance evidence packs.
+
+How to present maturity:
+- "We have strong technical controls in place and are actively formalizing enterprise governance layers."
+
+---
+
+## 22) Product Reliability and Quality Notes
+
+### 22.1 Non-fatal persistence pattern
+
+Shortlist user flow can complete even if DB persistence has transient failure,
+with failure logged for operational follow-up.
+
+This is a conscious UX choice to avoid full user-flow collapse.
+
+### 22.2 Extraction fallback philosophy
+
+When structured extraction path is slow or fails,
+fallback parsing keeps product useful.
+
+### 22.3 Deterministic behavior targets
+
+Current goal:
+- reduce random behavior,
+- reduce race-driven status variance,
+- keep auth and scoring outcomes predictable.
+
+---
+
+## 23) Future Roadmap (Execution-Oriented)
+
+### 23.1 Security roadmap
+
+Phase A:
+- complete endpoint-by-endpoint RBAC enforcement.
+
+Phase B:
+- role management admin UX + audit reason capture.
+
+Phase C:
+- rate-limits + abuse monitoring expansion.
+
+Phase D:
+- enterprise docs and evidence kit.
+
+### 23.2 Product roadmap
+
+- deeper explainability panel for shortlist results,
+- model/version stamping at per-result level,
+- confidence calibration and uncertainty visualization,
+- evaluator harness with regression benchmark suite.
+
+### 23.3 Ops roadmap
+
+- centralized observability dashboards,
+- structured incident runbooks,
+- recurring backup restore drills.
+
+---
+
+## 24) Quick Reference Appendix
+
+### 24.1 Critical files
+
+Backend:
+- `backend/app/main.py`
+- `backend/app/core/security.py`
+- `backend/app/models/schema.py`
+- `backend/app/services/db_writer.py`
+- `backend/app/integrations/qdrant/store.py`
+
+Migrations:
+- `backend/alembic/versions/20260503_01_baseline_schema.py`
+- `backend/alembic/versions/20260511_02_add_jobs_trace_id.py`
+- `backend/alembic/versions/20260511_03_add_tenant_isolation.py`
+- `backend/alembic/versions/20260512_04_membership_and_audit.py`
+
+Frontend:
+- `frontend/src/main.jsx`
+- `frontend/src/firebase.js`
+- `frontend/src/App.jsx`
+- `frontend/src/layouts/PublicLayout.jsx`
+- `frontend/src/pages/AboutPage.jsx`
+- `frontend/src/pages/TeamPage.jsx`
+- `frontend/src/pages/ContactPage.jsx`
+
+### 24.2 Founders' one-minute status
+
+Current state:
+- Core product works.
+- Security foundation is real and meaningful.
+- Tenant boundaries exist in both DB and vector layers.
+- Public company pages are now branded and functional.
+- Next big enterprise step is RBAC depth + governance formalization.
+
+
+## 25) Extended Verification Checklist (Line-Item Format)
+
+Use this checklist during release readiness, QA signoff, and enterprise demos.
+
+1. Verify backend starts without migration drift errors.
+2. Verify `alembic current` matches expected head revision.
+3. Verify unauthenticated `/hiring/dashboard-metrics` returns 401 in secure mode.
+4. Verify invalid bearer token returns 401 with clean JSON body.
+5. Verify authenticated request returns 200 for protected metrics endpoint.
+6. Verify shortlist run works under authenticated session.
+7. Verify shortlist run is denied when membership is inactive.
+8. Verify tenant A cannot see tenant B shortlist history.
+9. Verify tenant A cannot fetch tenant B shortlist detail by trace id.
+10. Verify candidate upsert writes correct tenant id.
+11. Verify job rows include tenant id after shortlist run.
+12. Verify duplicate resume detection is tenant-scoped.
+13. Verify same resume hash can exist in separate tenants.
+14. Verify Qdrant payload contains tenant id for indexed points.
+15. Verify semantic search filters by tenant id.
+16. Verify role-filtered semantic query path behaves as expected.
+17. Verify audit event is written for authz deny case.
+18. Verify audit event is written for shortlist trigger action.
+19. Verify audit event table ordering by created_at works.
+20. Verify audit event captures user_id and tenant_id.
+21. Verify audit event captures action and status.
+22. Verify contact page submits with valid inputs.
+23. Verify contact page shows readable validation errors.
+24. Verify contact form does not feel visually congested on desktop.
+25. Verify contact form remains usable on mobile width.
+26. Verify About page layout renders without placeholder content.
+27. Verify Meet Our Team CTA route opens correctly.
+28. Verify Team intro screen appears before card reveal.
+29. Verify Team intro duration is approximately 1.3 seconds.
+30. Verify circular ring appears around Kovidam Team intro text.
+31. Verify team cards slide in sequentially (staggered).
+32. Verify team member names and roles match current founder data.
+33. Verify Varun card does not include removed title.
+34. Verify third member displays Vikram J Purohit.
+35. Verify all three team cards include Co-Founder where expected.
+36. Verify public pages share same global home background style.
+37. Verify no conflicting local page glow overlay overrides global background.
+38. Verify navbar remains consistent across public pages.
+39. Verify Book a Demo and Login buttons remain visible and aligned.
+40. Verify footer links navigate to intended routes.
+41. Verify public route `/about` resolves to custom About page.
+42. Verify route `/company/team` resolves to Team page.
+43. Verify route `/contact` resolves to enhanced contact page.
+44. Verify dashboard layout still includes background effects.
+45. Verify public layout now includes background effects.
+46. Verify frontend build succeeds (`npm run build`).
+47. Verify backend dependencies install cleanly in venv.
+48. Verify env template files include required keys.
+49. Verify real `.env` files are not committed.
+50. Verify `.gitignore` protects secret env files.
+51. Verify Firebase Email/Password provider is enabled.
+52. Verify Firebase Google provider is enabled.
+53. Verify Firebase allowed domains include local and production hosts.
+54. Verify frontend token injection for protected endpoints.
+55. Verify authReady gating prevents startup race in session restore.
+56. Verify no random 200/401 alternation after auth stabilization.
+57. Verify response codes are deterministic for same auth state.
+58. Verify migration `jobs.trace_id` exists in DB schema.
+59. Verify index for `jobs.trace_id` exists.
+60. Verify backfill populated historical job trace id where possible.
+61. Verify tenant migration created indexes on tenant fields.
+62. Verify tenant fields are non-null after migration.
+63. Verify schema constraints match ORM expectation.
+64. Verify startup command handles DB readiness before running SQL.
+65. Verify Postgres container restart does not break migration flow.
+66. Verify API startup logs show clean lifecycle start.
+67. Verify no import-time DB side effects remain.
+68. Verify structured extraction timeout fallback still returns usable output.
+69. Verify fallback path logs expected event markers.
+70. Verify shortlist still returns if persistence transiently fails.
+71. Verify failure logs are sufficient for ops triage.
+72. Verify must-have semantic matching honors directionality.
+73. Verify ambiguous single-letter skill false positives are blocked.
+74. Verify explicit "c language" style positives still pass.
+75. Verify risky alias keys are removed from alias map.
+76. Verify typo aliases normalize to correct canonical skill.
+77. Verify generic semantic tokens are filtered from search blending.
+78. Verify CSV parser accepts comma delimiters.
+79. Verify CSV parser accepts semicolon delimiters.
+80. Verify CSV parser accepts pipe delimiters.
+81. Verify CSV parser accepts newline delimiters.
+82. Verify normalized skill list is deduplicated.
+83. Verify achievement score appears in shortlist breakdown.
+84. Verify ranking decision log includes candidate metrics.
+85. Verify effective weights include redistribution metadata where applicable.
+86. Verify job threshold defaults align with intended fairness policy.
+87. Verify internship weighting aligns with current product policy.
+88. Verify shortlist API version metadata is returned as configured.
+89. Verify scoring policy version metadata is returned as configured.
+90. Verify API response remains backward compatible where legacy keys enabled.
+91. Verify qdrant health check endpoint behavior in startup logs.
+92. Verify qdrant disabled mode falls back gracefully if configured false.
+93. Verify semantic search route handles empty query safely.
+94. Verify shortlist trace retrieval handles unknown trace id safely.
+95. Verify frontend error messages are user-readable (not raw stack traces).
+96. Verify backend error responses do not leak sensitive internals.
+97. Verify logs are structured enough for centralized ingestion.
+98. Verify log level obeys env config.
+99. Verify SMTP config is loaded only when mail send is required.
+100. Verify AI model env keys are present and valid.
+101. Verify timeout envs produce expected behavior under stress.
+102. Verify concurrency env values do not overwhelm local resources.
+103. Verify docs reflect latest implemented security controls.
+104. Verify docs reflect latest UI flow (About -> Team intro -> cards).
+105. Verify docs reflect latest migration sequence.
+106. Verify docs reflect latest route structure.
+107. Verify docs are understandable to non-core contributors.
+108. Verify release notes include any breaking API behavior.
+109. Verify branch is clean before production deployment tagging.
+110. Verify rollback plan is documented before release.
+
