@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import TagInput from '../components/TagInput';
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
 export default function ShortlistPage() {
   const [step, setStep] = useState(1); // 1: Upload, 2: Config, 3: Results
   const [formData, setFormData] = useState({
@@ -94,15 +96,29 @@ export default function ShortlistPage() {
     });
 
     try {
-      const response = await fetch('/hiring/shortlist', {
+      const response = await fetch(`${API_BASE_URL}/hiring/shortlist`, {
         method: 'POST',
         body: data,
       });
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Error processing request');
+      const rawBody = await response.text();
+      let json = null;
+      if (rawBody && rawBody.trim()) {
+        try {
+          json = JSON.parse(rawBody);
+        } catch {
+          throw new Error(`Server returned invalid JSON (status ${response.status})`);
+        }
       }
-      const json = await response.json();
+      if (!response.ok) {
+        const errorMessage =
+          (json && (json.detail || json.message)) ||
+          rawBody ||
+          `Error processing request (${response.status})`;
+        throw new Error(errorMessage);
+      }
+      if (!json) {
+        throw new Error("Server returned empty response");
+      }
       setResults(json);
     } catch (err) {
       setError(err.message);

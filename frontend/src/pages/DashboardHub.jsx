@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   Users, 
   Briefcase, 
   CheckCircle2, 
@@ -12,6 +12,8 @@ import {
   ArrowRight,
   Activity
 } from 'lucide-react';
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 export default function DashboardHub() {
   const navigate = useNavigate();
@@ -56,7 +58,7 @@ export default function DashboardHub() {
   };
 
   React.useEffect(() => {
-    fetch('/hiring/dashboard-metrics')
+    fetch(`${API_BASE_URL}/hiring/dashboard-metrics`)
       .then(res => res.json())
       .then(data => {
         if (data.metrics) {

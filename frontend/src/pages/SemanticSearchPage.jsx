@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Star, Zap, Target, Award, CheckCircle2, RotateCcw, XCircle } from 'lucide-react';
 import TagInput from '../components/TagInput';
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
 export default function SemanticSearchPage() {
   const [querySkills, setQuerySkills] = useState([]);
   const [formData, setFormData] = useState({
@@ -32,7 +34,7 @@ export default function SemanticSearchPage() {
     data.append('min_score', formData.min_score);
 
     try {
-      const response = await fetch('/hiring/semantic-search', {
+      const response = await fetch(`${API_BASE_URL}/hiring/semantic-search`, {
         method: 'POST',
         body: data,
       });

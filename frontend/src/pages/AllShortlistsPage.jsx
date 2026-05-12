@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Activity, Users, ArrowRight, ArrowLeft } from 'lucide-react';
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
 export default function AllShortlistsPage() {
   const navigate = useNavigate();
   const [shortlists, setShortlists] = useState([]);
@@ -40,7 +42,7 @@ export default function AllShortlistsPage() {
   };
 
   useEffect(() => {
-    fetch('/hiring/shortlists')
+    fetch(`${API_BASE_URL}/hiring/shortlists`)
       .then(res => res.json())
       .then(data => {
         setShortlists(data || []);
