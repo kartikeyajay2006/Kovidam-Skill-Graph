@@ -18,8 +18,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("candidates", sa.Column("tenant_id", sa.String(), nullable=True))
-    op.add_column("jobs", sa.Column("tenant_id", sa.String(), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+
+    candidate_columns = {col["name"] for col in inspector.get_columns("candidates")}
+    job_columns = {col["name"] for col in inspector.get_columns("jobs")}
+
+    if "tenant_id" not in candidate_columns:
+        op.add_column("candidates", sa.Column("tenant_id", sa.String(), nullable=True))
+    if "tenant_id" not in job_columns:
+        op.add_column("jobs", sa.Column("tenant_id", sa.String(), nullable=True))
 
     # Backfill existing rows into a default tenant for backward compatibility.
     op.execute(sa.text("UPDATE candidates SET tenant_id = 'default' WHERE tenant_id IS NULL"))
@@ -40,16 +48,26 @@ def upgrade() -> None:
     op.alter_column("jobs", "tenant_id", nullable=False)
 
     # Replace global resume_hash uniqueness with tenant-scoped uniqueness.
-    op.drop_index("ix_candidates_resume_hash", table_name="candidates")
-    
-    op.create_unique_constraint(
-        "uq_candidates_tenant_resume_hash",
-        "candidates",
-        ["tenant_id", "resume_hash"],
-    )
+    candidate_indexes = {idx["name"] for idx in inspector.get_indexes("candidates")}
+    job_indexes = {idx["name"] for idx in inspector.get_indexes("jobs")}
 
-    op.create_index("ix_candidates_tenant_id", "candidates", ["tenant_id"], unique=False)
-    op.create_index("ix_jobs_tenant_id", "jobs", ["tenant_id"], unique=False)
+    if "ix_candidates_resume_hash" in candidate_indexes:
+        op.drop_index("ix_candidates_resume_hash", table_name="candidates")
+    
+    candidate_unique_constraints = {
+        uq["name"] for uq in inspector.get_unique_constraints("candidates")
+    }
+    if "uq_candidates_tenant_resume_hash" not in candidate_unique_constraints:
+        op.create_unique_constraint(
+            "uq_candidates_tenant_resume_hash",
+            "candidates",
+            ["tenant_id", "resume_hash"],
+        )
+
+    if "ix_candidates_tenant_id" not in candidate_indexes:
+        op.create_index("ix_candidates_tenant_id", "candidates", ["tenant_id"], unique=False)
+    if "ix_jobs_tenant_id" not in job_indexes:
+        op.create_index("ix_jobs_tenant_id", "jobs", ["tenant_id"], unique=False)
 
 
 def downgrade() -> None:

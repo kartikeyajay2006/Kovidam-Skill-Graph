@@ -15,7 +15,7 @@ class Candidate(Base):
     )
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String, nullable=False, index=True)
+    tenant_id = Column(String, nullable=False)
     trace_id = Column(String, nullable=False)
     filename = Column(String, nullable=False)
     resume_hash = Column(String, nullable=False, index=True)
@@ -39,7 +39,7 @@ class Job(Base):
     )
 
     id = Column(String, primary_key=True)
-    tenant_id = Column(String, nullable=False, index=True)
+    tenant_id = Column(String, nullable=False)
     candidate_id = Column(String, ForeignKey("candidates.id"), nullable=False)
     trace_id = Column(String, index=True)
     company_name = Column(String)

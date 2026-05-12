@@ -6,7 +6,6 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import text
 
 from app.config import load_environment
-from app.models.schema import Base
 
 load_environment()
 
@@ -24,35 +23,26 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db() -> None:
     """
-    Initialize database schema/tables explicitly.
-    Kept out of import path to avoid side effects during tests and tooling.
-    """
-    print("[DB] Ensuring database schema and tables exist...")
-    with engine.connect() as conn:
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS public;"))
-        conn.commit()
-        
-        # Check if alembic_version table exists
-        alembic_exists = conn.execute(
-            text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'alembic_version');")
-        ).scalar()
+    Verify database connectivity at startup.
 
-    Base.metadata.create_all(bind=engine)
-    
-    if not alembic_exists:
+    Schema management is handled exclusively by Alembic (run via
+    `alembic upgrade head` in the Render build command). This function
+    must NOT call Base.metadata.create_all() — doing so would conflict
+    with Alembic-managed indexes and cause DuplicateTable errors on
+    an already-migrated database.
+    """
+    print("[DB] Verifying database connectivity...")
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+
+        # Log the current Alembic revision for observability.
         try:
-            print("[DB] First run detected. Stamping alembic head...")
-            from alembic.config import Config
-            from alembic import command
-            alembic_cfg_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../alembic.ini"))
-            if os.path.exists(alembic_cfg_path):
-                alembic_cfg = Config(alembic_cfg_path)
-                # Need to set sqlalchemy.url so alembic knows which db to stamp
-                alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
-                command.stamp(alembic_cfg, "head")
-                print("[DB] Alembic head stamped successfully.")
-        except Exception as e:
-            print(f"[DB] Could not stamp alembic head: {e}")
+            revision = conn.execute(
+                text("SELECT version_num FROM alembic_version LIMIT 1")
+            ).scalar()
+            print(f"[DB] Connected. Alembic revision: {revision}")
+        except Exception:
+            print("[DB] Connected. alembic_version table not found — run `alembic upgrade head` to initialise schema.")
 
 
 def get_db() -> Generator[Session, None, None]:
