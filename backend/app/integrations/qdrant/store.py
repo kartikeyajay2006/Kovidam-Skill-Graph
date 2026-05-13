@@ -18,9 +18,11 @@ from app.constants.skills_implications import SKILL_IMPLICATIONS
 try:
     from qdrant_client import QdrantClient
     from qdrant_client.http import models as qmodels
+    from qdrant_client.http.exceptions import UnexpectedResponse
 except Exception:  # pragma: no cover - optional dependency at runtime
     QdrantClient = None
     qmodels = None
+    UnexpectedResponse = Exception
 
 logger = logging.getLogger("kovidam.qdrant")
 
@@ -142,6 +144,17 @@ class QdrantResumeIndex:
                     distance=self._distance_model(),
                 ),
             )
+        # Ensure payload indexes used by filters exist (required on cloud clusters).
+        for key in ("role", "tenant_id"):
+            try:
+                client.create_payload_index(
+                    collection_name=self.collection,
+                    field_name=key,
+                    field_schema=qmodels.PayloadSchemaType.KEYWORD,
+                )
+            except Exception:
+                # Index may already exist or operation may be eventually consistent.
+                pass
         return {"enabled": True, "ready": True, "collection": self.collection, "vector_dim": self.vector_dim}
 
     def build_skill_tokens(self, raw_skills: list[str]) -> list[str]:
@@ -242,26 +255,56 @@ class QdrantResumeIndex:
         qfilter = qmodels.Filter(must=must_conditions) if must_conditions else None
         limit = max(1, min(top_k, 200))
         score_threshold = min_score if min_score > 0 else None
-        if hasattr(client, "search"):
-            result = client.search(
-                collection_name=self.collection,
-                query_vector=vector,
-                query_filter=qfilter,
-                with_payload=True,
-                limit=limit,
-                score_threshold=score_threshold,
-            )
-        else:
-            # qdrant-client >= 1.10 promotes query_points over search.
-            response = client.query_points(
-                collection_name=self.collection,
-                query=vector,
-                query_filter=qfilter,
-                with_payload=True,
-                limit=limit,
-                score_threshold=score_threshold,
-            )
-            result = getattr(response, "points", response)
+        try:
+            if hasattr(client, "search"):
+                result = client.search(
+                    collection_name=self.collection,
+                    query_vector=vector,
+                    query_filter=qfilter,
+                    with_payload=True,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                )
+            else:
+                # qdrant-client >= 1.10 promotes query_points over search.
+                response = client.query_points(
+                    collection_name=self.collection,
+                    query=vector,
+                    query_filter=qfilter,
+                    with_payload=True,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                )
+                result = getattr(response, "points", response)
+        except UnexpectedResponse as exc:
+            # Some Qdrant clusters require a payload index before filtered search.
+            # Fall back by dropping role filter to keep shortlist endpoint resilient.
+            msg = str(exc).lower()
+            if "index required" in msg and "role" in msg and role_norm:
+                logger.warning(
+                    "qdrant_role_filter_missing_index_fallback",
+                    extra={"event": "qdrant_role_filter_missing_index_fallback", "collection": self.collection},
+                )
+                fallback_must = []
+                if tenant_norm:
+                    fallback_must.append(
+                        qmodels.FieldCondition(
+                            key="tenant_id",
+                            match=qmodels.MatchValue(value=tenant_norm),
+                        )
+                    )
+                fallback_filter = qmodels.Filter(must=fallback_must) if fallback_must else None
+                response = client.query_points(
+                    collection_name=self.collection,
+                    query=vector,
+                    query_filter=fallback_filter,
+                    with_payload=True,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                )
+                result = getattr(response, "points", response)
+            else:
+                raise
         hits = []
         for idx, item in enumerate(result, start=1):
             payload = item.payload or {}
