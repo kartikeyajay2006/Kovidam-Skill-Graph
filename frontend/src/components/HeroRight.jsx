@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Play, Pause } from 'lucide-react'
 import SkillNode from './SkillNode'
+import logo from '../assets/logo.png'
 import './HeroRight.css'
 
 export default function HeroRight({ 
@@ -149,7 +150,7 @@ export default function HeroRight({
           }}
         >
           <div className="orb-inner-reflection" />
-          <img src="/src/assets/logo.png" alt="Kovidam AI" className="orb-dolphin" style={{ width: '120px', height: '120px' }} />
+          <img src={logo} alt="Kovidam AI" className="orb-dolphin" style={{ width: '120px', height: '120px' }} />
         </motion.div>
 
         {/* Final Video Content */}

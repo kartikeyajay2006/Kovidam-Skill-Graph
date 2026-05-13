@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { createUserWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth'
 import { auth, googleProvider } from '../firebase'
+import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Auth.css'
 
 export default function Signup() {
@@ -55,7 +56,7 @@ export default function Signup() {
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
       >
         <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
-          <img src="/src/assets/logo-cropped-tight.png" alt="Logo" style={{ width: '48px', height: '48px' }} />
+          <img src={logoCroppedTight} alt="Logo" style={{ width: '48px', height: '48px' }} />
         </div>
         
         <div>

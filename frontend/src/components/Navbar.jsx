@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Sparkles, Settings, Info, Mail } from 'lucide-react'
+import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Navbar.css'
 
 export default function Navbar() {
@@ -19,7 +20,7 @@ export default function Navbar() {
   return (
     <header className="top-header">
       <div className="header-logo" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
-        <img src="/src/assets/logo-cropped-tight.png" alt="Kovidam Logo" className="brand-logo" />
+        <img src={logoCroppedTight} alt="Kovidam Logo" className="brand-logo" />
         <span className="brand-text">KOVI<span className="sanskrit">दम्</span></span>
       </div>
       

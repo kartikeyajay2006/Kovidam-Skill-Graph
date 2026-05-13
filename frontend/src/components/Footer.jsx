@@ -1,5 +1,6 @@
 import React from 'react';
 import { Mail, ArrowRight } from 'lucide-react';
+import logoCroppedTight from '../assets/logo-cropped-tight.png';
 import './Footer.css';
 
 export default function Footer() {
@@ -32,7 +33,7 @@ export default function Footer() {
       <div className="footer-content-grid">
         <div className="footer-brand-col">
           <div className="footer-logo">
-            <img src="/src/assets/logo-cropped-tight.png" alt="Kovidam Logo" className="footer-brand-image" />
+            <img src={logoCroppedTight} alt="Kovidam Logo" className="footer-brand-image" />
             <span className="footer-brand-text">KOVI<span className="sanskrit">दम्</span></span>
           </div>
           <p className="footer-brand-desc">

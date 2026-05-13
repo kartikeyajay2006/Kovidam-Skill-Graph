@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LayoutDashboard, Briefcase, Search, Settings, LogOut } from 'lucide-react'
+import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Navbar.css'
 
 export default function DashboardNavbar() {
@@ -19,7 +20,7 @@ export default function DashboardNavbar() {
   return (
     <header className="top-header">
       <div className="header-logo" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>
-        <img src="/src/assets/logo-cropped-tight.png" alt="Kovidam Logo" className="brand-logo" />
+        <img src={logoCroppedTight} alt="Kovidam Logo" className="brand-logo" />
         <span className="brand-text">KOVI<span className="sanskrit">दम्</span><span style={{ fontSize: '1.2rem', marginLeft: '10px', fontWeight: 500, color: '#e2e8f0', letterSpacing: '1px' }}>Medha</span></span>
       </div>
       
