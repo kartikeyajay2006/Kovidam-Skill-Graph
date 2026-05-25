@@ -22,7 +22,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 
 from app.db.postgres.session import SessionLocal
-from app.models.schema import Candidate, Job, CandidateJobScore, CandidateScore
+from app.models.schema import (
+    Candidate,
+    Job,
+    CandidateJobScore,
+    CandidateScore,
+    CandidateSkill,
+    PlatformStat,
+    CandidateGithubSummary,
+    CandidateGithubCommit,
+)
 from app.services.transformer import transform_resume_data
 from app.services.db_writer import save_to_db
 from app.services.shortlist_notifier import send_shortlist_notifications
@@ -154,6 +163,8 @@ async def dashboard_metrics(request: Request):
             db.query(
                 Job.trace_id,
                 func.max(Job.role).label("role"),
+                func.max(Job.company_name).label("company_name"),
+                func.max(Job.position_title).label("position_title"),
                 func.max(Job.created_at).label("created_at"),
                 func.count(Candidate.id).label("matches")
             )
@@ -177,7 +188,6 @@ async def dashboard_metrics(request: Request):
                 .all()
             )
             shortlisted = []
-            rejected = []
             for c, cjs, cs in candidate_rows:
                 fit_score = float((cjs.fit_score if cjs and cjs.fit_score is not None else 0.0) or 0.0)
                 metrics = {
@@ -202,12 +212,7 @@ async def dashboard_metrics(request: Request):
                         "candidate_years": float((c.work_experience_years if c.work_experience_years is not None else 0.0) or 0.0),
                     },
                 }
-                if fit_score > 0:
-                    shortlisted.append(candidate_summary)
-                else:
-                    candidate_summary["eligible"] = False
-                    candidate_summary["rejection_reasons"] = ["Insufficient score/evidence"]
-                    rejected.append(candidate_summary)
+                shortlisted.append(candidate_summary)
 
             shortlisted.sort(key=lambda x: x.get("fit_score_100") or 0.0, reverse=True)
             for idx, item in enumerate(shortlisted, start=1):
@@ -216,12 +221,18 @@ async def dashboard_metrics(request: Request):
             recent_shortlists.append({
                 "id": r.trace_id,
                 "role": r.role or "Unknown Role",
+                "company_name": r.company_name or "",
+                "position_title": r.position_title or "",
+                "display_title": (
+                    f"{(r.company_name or '').strip()} - {(r.position_title or '').strip()}".strip(" -")
+                    or (r.role or "Unknown Role")
+                ),
                 "date": r.created_at.isoformat(timespec='milliseconds') if r.created_at else None,
                 "matches": r.matches,
                 "status": "completed",
                 "top_candidates": shortlisted[:3],
                 "shortlisted": shortlisted,
-                "rejected": rejected,
+                "rejected": [],
             })
             
         return {
@@ -251,6 +262,8 @@ async def get_all_shortlists(request: Request):
             db.query(
                 Job.trace_id,
                 func.max(Job.role).label("role"),
+                func.max(Job.company_name).label("company_name"),
+                func.max(Job.position_title).label("position_title"),
                 func.max(Job.created_at).label("created_at"),
                 func.count(Candidate.id).label("matches")
             )
@@ -266,6 +279,12 @@ async def get_all_shortlists(request: Request):
             shortlists.append({
                 "id": r.trace_id,
                 "role": r.role or "Unknown Role",
+                "company_name": r.company_name or "",
+                "position_title": r.position_title or "",
+                "display_title": (
+                    f"{(r.company_name or '').strip()} - {(r.position_title or '').strip()}".strip(" -")
+                    or (r.role or "Unknown Role")
+                ),
                 "date": r.created_at.isoformat(timespec='milliseconds') if r.created_at else None,
                 "matches": r.matches,
                 "status": "completed"
@@ -275,6 +294,109 @@ async def get_all_shortlists(request: Request):
     except Exception as e:
         logger.exception("failed_to_fetch_all_shortlists")
         raise HTTPException(status_code=500, detail="Internal server error")
+    finally:
+        db.close()
+
+
+@app.delete("/hiring/shortlist/{trace_id}")
+async def delete_shortlist(trace_id: str, request: Request):
+    db = SessionLocal()
+    auth = _get_auth_context(request)
+    try:
+        jobs_for_trace = (
+            db.query(Job.id, Job.candidate_id)
+            .filter(Job.trace_id == trace_id, Job.tenant_id == auth.tenant_id)
+            .all()
+        )
+        if not jobs_for_trace:
+            raise HTTPException(status_code=404, detail="Shortlist not found")
+
+        job_ids = [row.id for row in jobs_for_trace if row.id]
+        candidate_ids = sorted({row.candidate_id for row in jobs_for_trace if row.candidate_id})
+
+        deleted_candidate_job_scores = 0
+        deleted_jobs = 0
+        if job_ids:
+            deleted_candidate_job_scores = (
+                db.query(CandidateJobScore)
+                .filter(CandidateJobScore.job_id.in_(job_ids))
+                .delete(synchronize_session=False)
+            )
+            deleted_jobs = (
+                db.query(Job)
+                .filter(Job.id.in_(job_ids), Job.tenant_id == auth.tenant_id)
+                .delete(synchronize_session=False)
+            )
+
+        # Candidate-level cleanup only when candidate has no remaining jobs in this tenant.
+        removed_candidates = 0
+        removed_candidate_scores = 0
+        removed_candidate_skills = 0
+        removed_platform_stats = 0
+        removed_github_summary = 0
+        removed_github_commits = 0
+        for candidate_id in candidate_ids:
+            remaining_jobs = (
+                db.query(Job.id)
+                .filter(Job.candidate_id == candidate_id, Job.tenant_id == auth.tenant_id)
+                .first()
+            )
+            if remaining_jobs:
+                continue
+
+            removed_candidate_scores += (
+                db.query(CandidateScore)
+                .filter(CandidateScore.candidate_id == candidate_id)
+                .delete(synchronize_session=False)
+            )
+            removed_candidate_skills += (
+                db.query(CandidateSkill)
+                .filter(CandidateSkill.candidate_id == candidate_id)
+                .delete(synchronize_session=False)
+            )
+            removed_platform_stats += (
+                db.query(PlatformStat)
+                .filter(PlatformStat.candidate_id == candidate_id)
+                .delete(synchronize_session=False)
+            )
+            removed_github_summary += (
+                db.query(CandidateGithubSummary)
+                .filter(CandidateGithubSummary.candidate_id == candidate_id)
+                .delete(synchronize_session=False)
+            )
+            removed_github_commits += (
+                db.query(CandidateGithubCommit)
+                .filter(CandidateGithubCommit.candidate_id == candidate_id)
+                .delete(synchronize_session=False)
+            )
+            removed_candidates += (
+                db.query(Candidate)
+                .filter(Candidate.id == candidate_id, Candidate.tenant_id == auth.tenant_id)
+                .delete(synchronize_session=False)
+            )
+
+        db.commit()
+        return {
+            "status": "deleted",
+            "trace_id": trace_id,
+            "deleted": {
+                "jobs": deleted_jobs,
+                "candidate_job_scores": deleted_candidate_job_scores,
+                "candidates": removed_candidates,
+                "candidate_scores": removed_candidate_scores,
+                "candidate_skills": removed_candidate_skills,
+                "platform_stats": removed_platform_stats,
+                "candidate_github_summary": removed_github_summary,
+                "candidate_github_commits": removed_github_commits,
+            },
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        logger.exception("failed_to_delete_shortlist")
+        raise HTTPException(status_code=500, detail="Failed to delete shortlist")
     finally:
         db.close()
 
@@ -297,15 +419,11 @@ async def get_past_shortlist(trace_id: str, request: Request):
         if not query:
             raise HTTPException(status_code=404, detail="Shortlist not found")
 
-        # In a real environment, you'd calculate these dynamically or store them.
-        # Here we approximate eligibility by checking if there's a fit score.
         shortlisted = []
-        rejected = []
         failed = []
 
         for cand, job, cjs, cs in query:
             fit_score = cjs.fit_score if cjs and cjs.fit_score else 0.0
-            reasons = []
             
             # Reconstruct candidate metrics
             metrics = {}
@@ -317,38 +435,12 @@ async def get_past_shortlist(trace_id: str, request: Request):
                 metrics["project_evidence_score_100"] = cs.project_evidence_score or 0.0
                 metrics["profile_completeness_score_100"] = cs.profile_completeness_score or 0.0
                 
-            # Reconstruct rejection reasons based on thresholds
-            thresholds = _role_thresholds(job.role, float(job.min_experience_years) if job and job.min_experience_years is not None else 0.0)
-            skill_match_score_100 = float(cs.skills_match_score) if cs and cs.skills_match_score is not None else 0.0
-            github_score_100 = float(cs.github_score) if cs and cs.github_score is not None else 0.0
-            experience_years = float(cand.work_experience_years) if cand and cand.work_experience_years is not None else 0.0
-            
-            # Use notes as secondary rejection source if thresholds pass but they were still rejected
-            if cjs and isinstance(cjs.notes, list):
-                for note in cjs.notes:
-                    if isinstance(note, str) and ("missing" in note.lower() or "below" in note.lower()):
-                        reasons.append(note)
-
-            if job.role == "job":
-                if skill_match_score_100 < thresholds["min_skill_match_pct"]:
-                    reasons.append(f"Skill match {skill_match_score_100:.1f} below minimum")
-                min_github = _to_float(thresholds.get("min_github_score_100"), 0.0)
-                if min_github > 0.0 and github_score_100 < min_github:
-                    reasons.append(f"GitHub score {github_score_100:.1f} below minimum")
-                if experience_years < thresholds["min_experience_years"]:
-                    reasons.append(f"Experience {experience_years:.1f} years below minimum")
-            else:
-                if skill_match_score_100 < thresholds["min_skill_match_pct"]:
-                    reasons.append(f"Skill match {skill_match_score_100:.1f} below minimum")
-
-            eligible = len(reasons) == 0
-
             candidate_summary = {
                 "filename": cand.filename or "Unknown",
                 "rank": 0, # Will sort later
-                "eligible": eligible,
+                "eligible": True,
                 "fit_score_100": fit_score,
-                "rejection_reasons": reasons,
+                "rejection_reasons": [],
                 "ranking_decision_log": {
                     "role_profile": job.role or "job",
                     "candidate_metrics": metrics
@@ -358,11 +450,7 @@ async def get_past_shortlist(trace_id: str, request: Request):
                     "meets_min_experience": (cand.work_experience_years or 0.0) >= (job.min_experience_years or 0.0)
                 }
             }
-
-            if eligible:
-                shortlisted.append(candidate_summary)
-            else:
-                rejected.append(candidate_summary)
+            shortlisted.append(candidate_summary)
 
         # Sort shortlisted by fit score desc
         shortlisted.sort(key=lambda x: x["fit_score_100"], reverse=True)
@@ -374,11 +462,11 @@ async def get_past_shortlist(trace_id: str, request: Request):
             "counts": {
                 "total": len(query),
                 "ranked": len(shortlisted),
-                "rejected": len(rejected),
+                "rejected": 0,
                 "failed": len(failed)
             },
             "shortlisted": shortlisted,
-            "rejected": rejected,
+            "rejected": [],
             "failed": failed
         }
     except HTTPException:
@@ -2603,17 +2691,14 @@ async def hiring_shortlist(
 
         extracted = outcome.get("extracted", {})
         fit = outcome.get("fit", {})
-        eligible = outcome.get("eligible", False)
-        rejection_reasons = outcome.get("rejection_reasons", [])
-
         candidates.append({
             "filename": outcome.get("filename") or file.filename,
             "ok": True,
             "saved_json_path": outcome.get("saved_json_path"),
             "resume_hash": outcome.get("resume_hash"),
             "extracted": extracted,
-            "eligible": eligible,
-            "rejection_reasons": rejection_reasons,
+            "eligible": True,
+            "rejection_reasons": [],
             "fit": fit,
             "profiles": extracted.get("profiles", {}),
             "github_summary": extracted.get("github_analysis", {}).get("summary", {}),
@@ -2660,7 +2745,7 @@ async def hiring_shortlist(
         candidate["fit"] = fit
 
     ranked = sorted(
-        [c for c in candidates if c.get("ok") and c.get("eligible")],
+        [c for c in candidates if c.get("ok")],
         key=lambda c: (
             c.get("fit", {}).get("fit_score_100", 0.0) or 0.0,
             ((c.get("fit", {}).get("breakdown", {}) or {}).get("must_have_coverage_score_100", 0.0) or 0.0),
@@ -2678,14 +2763,11 @@ async def hiring_shortlist(
         candidate["rank"] = idx
 
     failed = [c for c in candidates if not c.get("ok")]
-    rejected = [c for c in candidates if c.get("ok") and not c.get("eligible")]
+    rejected = []
     rejection_reason_counts: dict[str, int] = {}
-    for item in rejected:
-        for reason in item.get("rejection_reasons", []) or []:
-            rejection_reason_counts[reason] = rejection_reason_counts.get(reason, 0) + 1
 
     shortlisted_table = [_summarize_candidate_for_table(c) for c in ranked]
-    rejected_table = [_summarize_candidate_for_table(c) for c in rejected]
+    rejected_table = []
     failed_table = [
         {
             "filename": c.get("filename"),
@@ -2719,7 +2801,7 @@ async def hiring_shortlist(
         "counts": {
             "uploaded": len(files),
             "ranked": len(ranked),
-            "rejected": len(rejected),
+            "rejected": 0,
             "failed": len(failed),
         },
         "shortlisted": shortlisted_table,
@@ -2737,7 +2819,7 @@ async def hiring_shortlist(
     }
     if SHORTLIST_INCLUDE_LEGACY_KEYS:
         response_payload["ranked_candidates"] = ranked
-        response_payload["rejected_candidates"] = rejected
+        response_payload["rejected_candidates"] = []
         response_payload["failed_candidates"] = failed
     else:
         response_payload["ranked_candidates"] = []
@@ -2760,7 +2842,7 @@ async def hiring_shortlist(
             "role": role,
             "company_name": company_name,
             "position_title": position_title,
-            "rejection_reason_counts": rejection_reason_counts,
+            "rejection_reason_counts": {},
         },
     )
     if should_send_mail:
@@ -2782,7 +2864,7 @@ async def hiring_shortlist(
             "position_title": position_title,
             "uploaded": len(files),
             "ranked": len(ranked),
-            "rejected": len(rejected),
+            "rejected": 0,
             "failed": len(failed),
             "duration_ms": round((time.time() - started_at) * 1000.0, 2),
             "api_version": API_VERSION,

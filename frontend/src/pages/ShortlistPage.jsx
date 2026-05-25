@@ -860,108 +860,10 @@ export default function ShortlistPage() {
                     </div>
                   ) : (
                     <div style={{ padding: '5rem 2rem', textAlign: 'center', color: '#64748b', fontSize: '1.1rem' }}>
-                      No candidates met the minimum criteria.
+                      No candidates available to rank.
                     </div>
                   )}
                 </motion.div>
-
-                {/* Rejected List */}
-                {results.rejected?.length > 0 && (
-                  <motion.div variants={itemVariants} className="glass-panel" style={{ borderRadius: '24px', overflow: 'hidden' }}>
-                    <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid rgba(255,255,255,0.08)', background: 'rgba(239, 68, 68, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <XCircle size={24} />
-                        Filtered Candidates
-                      </h3>
-                      <span style={{ color: '#ef4444', fontSize: '1rem', fontWeight: '600' }}>
-                        {results.counts?.rejected || 0} Rejected
-                      </span>
-                    </div>
-                      <div style={{ padding: '1.5rem 2rem', display: 'flex', flexDirection: 'column' }}>
-                        {results.rejected.map((c, idx) => {
-                          const realIdx = idx + formData.target_headcount + (results.shortlisted?.length || 0);
-                          return (
-                            <React.Fragment key={realIdx}>
-                              <motion.div 
-                                whileHover={{ background: 'rgba(255,255,255,0.03)' }}
-                                style={{ padding: '1.5rem 0', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'grid', gridTemplateColumns: '70px 2fr 1.5fr 1fr', gap: '2rem', alignItems: 'center', opacity: 0.7 }}
-                              >
-                                <div style={{ fontSize: '1.75rem', fontWeight: '700', color: '#64748b' }}>
-                                  <XCircle size={28} color="#ef4444" />
-                                </div>
-                                
-                                <div style={{ minWidth: 0 }}>
-                                  <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {c.filename.replace(/\.[^/.]+$/, "")}
-                                  </h4>
-                                  <div style={{ fontSize: '0.95rem', color: '#fca5a5', display: 'flex', gap: '1.25rem' }}>
-                                    <span>{c.rejection_reasons?.[0] || 'Unfit profile'}</span>
-                                  </div>
-                                </div>
-                                
-                                <div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '1rem' }}>
-                                    <span style={{ color: '#94a3b8' }}>Fit Score</span>
-                                    <span style={{ fontWeight: '600', color: '#fca5a5' }}>{c.fit_score_100?.toFixed(1)}%</span>
-                                  </div>
-                                  <div style={{ width: '100%', height: '10px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '5px', overflow: 'hidden' }}>
-                                    <motion.div 
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${c.fit_score_100}%` }}
-                                      transition={{ duration: 1, ease: "easeOut" }}
-                                      style={{ height: '100%', background: 'linear-gradient(90deg, #ef4444, #fca5a5)' }} 
-                                    />
-                                  </div>
-                                </div>
-                                
-                                <div style={{ textAlign: 'right' }}>
-                                  <button 
-                                    onClick={() => setSelectedCandidateIndex(selectedCandidateIndex === realIdx ? null : realIdx)}
-                                    className="btn-premium" style={{ padding: '0.6rem 1.25rem', fontSize: '0.95rem', background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)' }}
-                                  >
-                                    {selectedCandidateIndex === realIdx ? 'Hide Details' : 'View Details'}
-                                  </button>
-                                </div>
-                              </motion.div>
-        
-                              <AnimatePresence>
-                                {selectedCandidateIndex === realIdx && (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    style={{ overflow: 'hidden' }}
-                                  >
-                                    <div style={{ padding: '2rem', background: 'rgba(239, 68, 68, 0.05)', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.1)', borderTop: 'none', marginBottom: '1.5rem' }}>
-                                      <h4 style={{ color: '#fca5a5', marginBottom: '1.5rem', marginTop: 0, fontSize: '1.1rem' }}>Score Breakdown</h4>
-                                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', fontSize: '1rem' }}>
-                                        {c.ranking_decision_log?.candidate_metrics && Object.entries(c.ranking_decision_log.candidate_metrics).map(([key, value]) => {
-                                            if (typeof value !== 'number' && typeof value !== 'string') return null;
-                                            let formattedKey = key.replace('_score_100', '').replace('_100', '').split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-                                            let displayValue = typeof value === 'number' ? value.toFixed(1) : String(value);
-                                            if (typeof value === 'number' && key.includes('score_100')) {
-                                              displayValue += '%';
-                                            } else if (key.includes('years')) {
-                                              displayValue += ' Yrs';
-                                            }
-                                            return (
-                                              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.75rem' }}>
-                                                <span style={{ color: '#94a3b8' }}>{formattedKey}</span>
-                                                <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{displayValue}</span>
-                                              </div>
-                                            );
-                                        })}
-                                      </div>
-                                    </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </React.Fragment>
-                          );
-                        })}
-                      </div>
-                  </motion.div>
-                )}
               </motion.div>
             ) : null}
           </motion.div>

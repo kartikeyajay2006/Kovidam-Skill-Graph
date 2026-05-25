@@ -10,7 +10,8 @@ import {
   Zap, 
   Search,
   ArrowRight,
-  Activity
+  Activity,
+  Trash2
 } from 'lucide-react';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
@@ -25,6 +26,7 @@ export default function DashboardHub() {
   });
   const [recentShortlists, setRecentShortlists] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [deletingId, setDeletingId] = React.useState(null);
 
   const formatDate = (dateString) => {
     if (!dateString || dateString === "Recently") return "Recently";
@@ -71,6 +73,32 @@ export default function DashboardHub() {
       .catch(err => console.error("Error fetching dashboard metrics:", err))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleDelete = async (item) => {
+    const label = item.display_title || item.role || item.id;
+    const shouldDelete = window.confirm(`Delete shortlist "${label}"? This removes related records from the database.`);
+    if (!shouldDelete) return;
+
+    setDeletingId(item.id);
+    try {
+      const response = await fetch(`${API_BASE_URL}/hiring/shortlist/${item.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to delete shortlist');
+      }
+      setRecentShortlists((prev) => prev.filter((s) => s.id !== item.id));
+      setMetricsData((prev) => ({
+        ...prev,
+        shortlists_completed: Math.max(0, (prev.shortlists_completed || 0) - 1),
+      }));
+    } catch (err) {
+      alert(err.message || 'Failed to delete shortlist');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // Use the fetched data
   const companyName = "Acme Corp"; // Can also be fetched later
@@ -164,7 +192,7 @@ export default function DashboardHub() {
                 <div key={role.id} style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.03)' }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ flex: '1 1 200px' }}>
-                    <h4 style={{ margin: '0 0 0.25rem 0', color: '#e2e8f0', fontSize: '1.1rem' }}>{role.role}</h4>
+                    <h4 style={{ margin: '0 0 0.25rem 0', color: '#e2e8f0', fontSize: '1.1rem' }}>{role.display_title || role.role}</h4>
                     <span style={{ color: '#64748b', fontSize: '0.85rem' }}>
                       {formatDate(role.date)}
                     </span>
@@ -183,9 +211,20 @@ export default function DashboardHub() {
                       )}
                     </div>
 
-                    <button className="btn-premium" style={{ width: '40px', height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }} onClick={() => navigate('/dashboard/history/' + role.id)}>
-                      <ArrowRight size={18} />
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <button
+                        className="btn-premium"
+                        style={{ width: '40px', height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', opacity: deletingId === role.id ? 0.6 : 1 }}
+                        onClick={() => handleDelete(role)}
+                        disabled={deletingId === role.id}
+                        title="Delete shortlist"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                      <button className="btn-premium" style={{ width: '40px', height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }} onClick={() => navigate('/dashboard/history/' + role.id)}>
+                        <ArrowRight size={18} />
+                      </button>
+                    </div>
                   </div>
 
                 </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Activity, Users, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Activity, Users, ArrowRight, ArrowLeft, Trash2 } from 'lucide-react';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
@@ -9,6 +9,7 @@ export default function AllShortlistsPage() {
   const navigate = useNavigate();
   const [shortlists, setShortlists] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
 
   const formatDate = (dateString) => {
     if (!dateString || dateString === "Recently") return "Recently";
@@ -53,6 +54,28 @@ export default function AllShortlistsPage() {
         setLoading(false);
       });
   }, []);
+
+  const handleDelete = async (item) => {
+    const label = item.display_title || item.role || item.id;
+    const shouldDelete = window.confirm(`Delete shortlist "${label}"? This removes related records from the database.`);
+    if (!shouldDelete) return;
+
+    setDeletingId(item.id);
+    try {
+      const response = await fetch(`${API_BASE_URL}/hiring/shortlist/${item.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to delete shortlist');
+      }
+      setShortlists((prev) => prev.filter((s) => s.id !== item.id));
+    } catch (err) {
+      alert(err.message || 'Failed to delete shortlist');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -104,7 +127,9 @@ export default function AllShortlistsPage() {
                 style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.03)' }}
               >
                 <div style={{ flex: '1 1 200px' }}>
-                  <h4 style={{ margin: '0 0 0.25rem 0', color: '#e2e8f0', fontSize: '1.1rem' }}>{role.role}</h4>
+                  <h4 style={{ margin: '0 0 0.25rem 0', color: '#e2e8f0', fontSize: '1.1rem' }}>
+                    {role.display_title || role.role}
+                  </h4>
                   <span style={{ color: '#64748b', fontSize: '0.85rem' }}>
                     {formatDate(role.date)}
                   </span>
@@ -123,13 +148,24 @@ export default function AllShortlistsPage() {
                   )}
                 </div>
 
-                <button 
-                  className="btn-premium" 
-                  style={{ width: '40px', height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }} 
-                  onClick={() => navigate('/dashboard/history/' + role.id)}
-                >
-                  <ArrowRight size={18} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <button
+                    className="btn-premium"
+                    style={{ width: '40px', height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', opacity: deletingId === role.id ? 0.6 : 1 }}
+                    onClick={() => handleDelete(role)}
+                    disabled={deletingId === role.id}
+                    title="Delete shortlist"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                  <button 
+                    className="btn-premium" 
+                    style={{ width: '40px', height: '40px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px' }} 
+                    onClick={() => navigate('/dashboard/history/' + role.id)}
+                  >
+                    <ArrowRight size={18} />
+                  </button>
+                </div>
               </motion.div>
             ))}
           </div>
