@@ -1,16 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
-
-const COMMON_SKILLS = [
-  "Python", "JavaScript", "React", "Node.js", "TypeScript", "Java", "C++", 
-  "C#", "Ruby", "Go", "Rust", "Swift", "Kotlin", "PHP", "HTML", "CSS", 
-  "SQL", "NoSQL", "MongoDB", "PostgreSQL", "MySQL", "Redis", "Docker", 
-  "Kubernetes", "AWS", "Azure", "GCP", "Linux", "Git", "Machine Learning",
-  "Deep Learning", "Data Science", "PyTorch", "TensorFlow", "Pandas",
-  "Django", "Flask", "FastAPI", "Spring Boot", "Express", "Next.js",
-  "Vue.js", "Angular", "Tailwind CSS", "GraphQL", "REST API"
-];
+import { COMMON_SKILLS } from '../constants/commonSkills';
 
 export default function TagInput({ 
   tags, 
