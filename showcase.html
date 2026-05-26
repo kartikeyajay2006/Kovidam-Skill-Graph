@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kovidam Skill Graph | 3D Project Showcase</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-0: #070b14;
+      --bg-1: #0f1629;
+      --ink: #edf2ff;
+      --muted: #9ba8c7;
+      --accent-a: #42d6ff;
+      --accent-b: #6b8bff;
+      --accent-c: #61f4b7;
+      --panel: rgba(255, 255, 255, 0.06);
+      --stroke: rgba(255, 255, 255, 0.16);
+      --shadow: 0 28px 60px rgba(0, 0, 0, 0.42);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "Sora", system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(60rem 35rem at 8% -10%, #1b2f63 0%, transparent 55%),
+        radial-gradient(50rem 30rem at 95% -20%, #123957 0%, transparent 60%),
+        linear-gradient(160deg, var(--bg-0), var(--bg-1));
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .noise {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(255,255,255,0.06) 0.5px, transparent 0.5px);
+      background-size: 3px 3px;
+      mix-blend-mode: soft-light;
+      opacity: 0.25;
+      z-index: 1;
+    }
+
+    .wrap {
+      width: min(1180px, 94vw);
+      margin: 0 auto;
+      position: relative;
+      z-index: 2;
+      padding: 2rem 0 4rem;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      gap: 1rem;
+    }
+
+    .brand {
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      font-size: clamp(1rem, 1.2vw, 1.2rem);
+    }
+
+    .brand span {
+      color: var(--accent-a);
+    }
+
+    .pill {
+      border: 1px solid var(--stroke);
+      background: rgba(255, 255, 255, 0.04);
+      padding: 0.45rem 0.8rem;
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 1.2rem;
+      margin-bottom: 1.2rem;
+      perspective: 1600px;
+    }
+
+    .tilt {
+      background: linear-gradient(160deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03));
+      border: 1px solid var(--stroke);
+      border-radius: 1.4rem;
+      box-shadow: var(--shadow);
+      transform-style: preserve-3d;
+      transition: transform 220ms ease, box-shadow 220ms ease;
+      overflow: hidden;
+      position: relative;
+      min-height: 320px;
+    }
+
+    .tilt::before {
+      content: "";
+      position: absolute;
+      inset: -40% -10%;
+      background: conic-gradient(from 180deg at 50% 50%, transparent, rgba(66, 214, 255, 0.16), transparent 45%);
+      animation: spin 12s linear infinite;
+      pointer-events: none;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .hero-main,
+    .hero-side {
+      padding: clamp(1.2rem, 2vw, 2rem);
+      position: relative;
+      z-index: 1;
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      border: 1px solid rgba(97, 244, 183, 0.4);
+      background: rgba(97, 244, 183, 0.12);
+      color: #b8ffe4;
+      border-radius: 999px;
+      padding: 0.4rem 0.72rem;
+      font-size: 0.72rem;
+      margin-bottom: 1rem;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    h1 {
+      font-size: clamp(1.9rem, 4vw, 3.35rem);
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.95rem;
+      max-width: 18ch;
+    }
+
+    .grad {
+      background: linear-gradient(100deg, var(--accent-a), var(--accent-c));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .lead {
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 0.95rem;
+      max-width: 62ch;
+      margin-bottom: 1.2rem;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.7rem;
+    }
+
+    .metric {
+      border: 1px solid var(--stroke);
+      border-radius: 0.9rem;
+      background: rgba(4, 10, 20, 0.45);
+      padding: 0.8rem;
+      text-align: left;
+      transform: translateZ(30px);
+    }
+
+    .metric .v {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 0.15rem;
+      color: #dff9ff;
+    }
+
+    .metric .l {
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .panel-title {
+      font-size: 0.88rem;
+      color: #d4dcf6;
+      margin-bottom: 0.75rem;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .stack {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.5rem;
+    }
+
+    .tag {
+      border: 1px solid rgba(255,255,255,0.19);
+      border-radius: 0.7rem;
+      background: rgba(255,255,255,0.04);
+      padding: 0.5rem 0.6rem;
+      font-size: 0.74rem;
+      color: #d5dff8;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-top: 0.5rem;
+    }
+
+    .card {
+      border: 1px solid var(--stroke);
+      border-radius: 1rem;
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      padding: 1rem;
+      transform-style: preserve-3d;
+      transition: transform 260ms ease, border-color 260ms ease;
+      min-height: 185px;
+    }
+
+    .card:hover {
+      transform: translateY(-4px) rotateX(7deg) rotateY(-8deg);
+      border-color: rgba(66,214,255,0.5);
+    }
+
+    .card h3 {
+      font-size: 0.9rem;
+      margin-bottom: 0.6rem;
+      color: #eff4ff;
+    }
+
+    .card p {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.62;
+    }
+
+    .flow {
+      margin-top: 1rem;
+      border: 1px solid var(--stroke);
+      border-radius: 1rem;
+      padding: 1rem;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.6rem;
+      margin-top: 0.7rem;
+    }
+
+    .step {
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(5, 12, 24, 0.62);
+      border-radius: 0.65rem;
+      padding: 0.58rem;
+      font-size: 0.69rem;
+      color: #cfd9f4;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .step::after {
+      content: "";
+      position: absolute;
+      left: -120%;
+      top: 0;
+      width: 120%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(66,214,255,0.2), transparent);
+      animation: sweep 5.5s ease-in-out infinite;
+    }
+
+    .step:nth-child(2)::after { animation-delay: .35s; }
+    .step:nth-child(3)::after { animation-delay: .7s; }
+    .step:nth-child(4)::after { animation-delay: 1.05s; }
+    .step:nth-child(5)::after { animation-delay: 1.4s; }
+
+    @keyframes sweep {
+      0% { left: -120%; }
+      60% { left: 120%; }
+      100% { left: 120%; }
+    }
+
+    .footer {
+      margin-top: 1.4rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      padding-top: 1rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .btn {
+      text-decoration: none;
+      color: #051323;
+      background: linear-gradient(100deg, var(--accent-a), var(--accent-c));
+      border-radius: 0.75rem;
+      padding: 0.65rem 0.95rem;
+      font-weight: 700;
+      font-size: 0.78rem;
+    }
+
+    @media (max-width: 1024px) {
+      .hero { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: repeat(2, 1fr); }
+      .steps { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 640px) {
+      .metrics { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: 1fr; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="noise"></div>
+
+  <main class="wrap">
+    <div class="topbar">
+      <div class="brand">KOVIDAM <span>SKILL GRAPH</span></div>
+      <div class="pill">3D Showcase | Current Architecture Snapshot</div>
+    </div>
+
+    <section class="hero">
+      <article class="tilt" data-tilt>
+        <div class="hero-main">
+          <div class="kicker">AI Hiring Intelligence Platform</div>
+          <h1>Rank technical talent by <span class="grad">real engineering evidence</span>.</h1>
+          <p class="lead">
+            Kovidam combines resume parsing, coding-profile enrichment, GitHub depth analysis,
+            semantic skill matching, and tenant-safe scoring to produce explainable shortlists
+            for job and internship pipelines.
+          </p>
+          <div class="metrics">
+            <div class="metric"><div class="v">11</div><div class="l">Backend API Routes</div></div>
+            <div class="metric"><div class="v">76+</div><div class="l">Backend Source Files</div></div>
+            <div class="metric"><div class="v">52+</div><div class="l">Frontend Source Files</div></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="tilt" data-tilt>
+        <div class="hero-side">
+          <div class="panel-title">Core Runtime Stack</div>
+          <div class="stack">
+            <div class="tag">FastAPI + Uvicorn</div>
+            <div class="tag">PostgreSQL + Alembic</div>
+            <div class="tag">Qdrant Semantic Index</div>
+            <div class="tag">Firebase Token Flow</div>
+            <div class="tag">Role-aware Scoring</div>
+            <div class="tag">Chat Support Endpoint</div>
+          </div>
+
+          <div class="flow">
+            <div class="panel-title">Shortlist Pipeline</div>
+            <div class="steps">
+              <div class="step">PDF Parse</div>
+              <div class="step">Signal Enrich</div>
+              <div class="step">Score + Gate</div>
+              <div class="step">Semantic Blend</div>
+              <div class="step">Rank + Insights</div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h3>Evidence-Centered Scoring</h3>
+        <p>
+          Skill evidence is canonicalized through alias and implication constraints, then modulated by authenticity,
+          confidence, and target relevance gates to avoid keyword-only false positives.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Tenant Isolation</h3>
+        <p>
+          Relational and semantic layers are tenant-scoped. Candidate and shortlist queries, persistence, and
+          semantic retrieval paths are isolated by tenant context from auth claims.
+        </p>
+      </article>
+      <article class="card">
+        <h3>GitHub Depth Intelligence</h3>
+        <p>
+          Repository analysis includes language composition, dependency detection, contribution retention checks,
+          commit/PR behavior, and role-context scoring tuned for job versus internship ranking.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Progressive Shortlist UX</h3>
+        <p>
+          Frontend shortlist flow shows real-time progress stages, partial completions, and final ranked output
+          with transparent per-candidate score breakdown and decision hints.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Deployment Flexibility</h3>
+        <p>
+          Local development supports Dockerized PostgreSQL and optional Qdrant. Backend remains functional when
+          semantic index is disabled, preserving core shortlist behavior.
+        </p>
+      </article>
+      <article class="card">
+        <h3>Ops-Friendly Behavior</h3>
+        <p>
+          Startup includes DB connectivity checks and migration-driven schema evolution. Error paths are designed
+          for deterministic API behavior and controlled fallback where feasible.
+        </p>
+      </article>
+    </section>
+
+    <footer class="footer">
+      <span>Open full engineering details in <code>docs/PROJECT_DOCUMENTARY.md</code></span>
+      <a class="btn" href="README.md">Back to README</a>
+    </footer>
+  </main>
+
+  <script>
+    const cards = document.querySelectorAll('[data-tilt]');
+
+    cards.forEach((card) => {
+      const maxTilt = 10;
+
+      card.addEventListener('mousemove', (e) => {
+        const r = card.getBoundingClientRect();
+        const px = (e.clientX - r.left) / r.width;
+        const py = (e.clientY - r.top) / r.height;
+
+        const rx = (0.5 - py) * maxTilt;
+        const ry = (px - 0.5) * maxTilt;
+
+        card.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg) translateZ(0)`;
+      });
+
+      card.addEventListener('mouseleave', () => {
+        card.style.transform = 'rotateX(0deg) rotateY(0deg)';
+      });
+    });
+  </script>
+</body>
+</html>
