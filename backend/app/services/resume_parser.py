@@ -36,7 +36,11 @@ load_environment()
 logger = logging.getLogger("kovidam.resume_parser")
 
 
-URL_PATTERN = re.compile(r"https?://[^\s)>,]+")
+URL_PATTERN = re.compile(r"https?://[^\s)>,]+", re.IGNORECASE)
+BARE_PLATFORM_URL_PATTERN = re.compile(
+    r"(?<!@)\b(?:www\.)?(?:leetcode\.com|codeforces\.com|codechef\.com|atcoder\.jp|kaggle\.com)/[^\s)>,]+",
+    re.IGNORECASE,
+)
 YEARS_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years|yrs)", re.IGNORECASE)
 GITHUB_REPO_CONCURRENCY = max(1, int(os.getenv("GITHUB_REPO_CONCURRENCY", "3")))
 STRUCTURED_EXTRACTION_MODEL = os.getenv("RESUME_STRUCTURED_MODEL", "gpt-4o-mini")
@@ -213,6 +217,15 @@ def _extract_text_and_pages_from_pdf(file_path: str) -> tuple[str, list[str], di
         final_text = best_text
         final_pages = merged_pages if merged_pages else py_pages
 
+    # Preserve hyperlink annotations discovered by pypdf even when another parser
+    # wins text quality selection, so profile URLs remain parseable.
+    annotation_urls = URL_PATTERN.findall(py_text)
+    if annotation_urls:
+        existing = set(URL_PATTERN.findall(final_text))
+        missing = [u for u in annotation_urls if u not in existing]
+        if missing:
+            final_text = f"{final_text}\n\n" + "\n".join(sorted(set(missing)))
+
     meta = {
         "parsers_used": {
             "pymupdf": bool(mu_pages),
@@ -230,7 +243,13 @@ def extract_text_from_pdf(file_path: str) -> str:
 
 
 def _extract_urls(text: str) -> List[str]:
-    return sorted(set(URL_PATTERN.findall(text)))
+    urls = set(URL_PATTERN.findall(text))
+    for raw in BARE_PLATFORM_URL_PATTERN.findall(text):
+        candidate = raw.rstrip(".,;:!?")
+        if not re.match(r"^https?://", candidate, re.IGNORECASE):
+            candidate = f"https://{candidate}"
+        urls.add(candidate)
+    return sorted(urls)
 
 
 def _extract_handles_and_urls(text: str) -> Dict[str, Any]:

@@ -8,6 +8,16 @@ def test_extract_handles_and_urls_parses_leetcode_u_profile():
     assert extracted["leetcode_username"] == "someName"
 
 
+def test_extract_handles_and_urls_parses_platform_profiles_without_protocol():
+    text = (
+        "LeetCode: leetcode.com/u/someName/ "
+        "Codeforces: codeforces.com/profile/cfUser"
+    )
+    extracted = resume_parser._extract_handles_and_urls(text)
+    assert extracted["leetcode_username"] == "someName"
+    assert extracted["codeforces_username"] == "cfUser"
+
+
 @pytest.mark.asyncio
 async def test_parse_resume_and_enrich_uses_resume_username_and_role(monkeypatch):
     monkeypatch.setattr(
