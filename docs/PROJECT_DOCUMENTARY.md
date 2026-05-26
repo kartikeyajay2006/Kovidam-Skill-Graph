@@ -2013,3 +2013,1206 @@ Use this checklist during release readiness, QA signoff, and enterprise demos.
 109. Verify branch is clean before production deployment tagging.
 110. Verify rollback plan is documented before release.
 
+---
+
+## 26) Authoritative As-Built Snapshot (Current `main`)
+
+This section is the current-state supplement after syncing local repository to `origin/main`.
+
+Snapshot metadata:
+- Snapshot date (local): `2026-05-27`
+- Snapshot commit: `a28864e`
+- Branch: `main`
+- Repository status at snapshot: clean working tree
+
+Scope note:
+- This section is treated as the highest-priority reference for "what is currently in code."
+- If any earlier historical section in this document conflicts with this section, this section should be trusted.
+
+### 26.1 Repository Shape and Scale
+
+Current repository inventory:
+- Total tracked files: `203`
+- Backend Python/migration/test files discovered under key folders: `76`
+- Frontend source files under `frontend/src`: `52`
+
+Largest active implementation files:
+- `backend/app/main.py`: `3010` lines
+- `backend/app/services/resume_parser.py`: `934` lines
+- `backend/app/integrations/github/analyzer_core.py`: `430` lines
+- `backend/app/integrations/qdrant/store.py`: `357` lines
+- `frontend/src/pages/ShortlistPage.jsx`: `1004` lines
+- `frontend/src/pages/SemanticSearchPage.jsx`: `388` lines
+- `frontend/src/pages/PastShortlistPage.jsx`: `328` lines
+
+Document baseline before this supplement:
+- `docs/PROJECT_DOCUMENTARY.md`: `2015` lines
+
+### 26.2 Runtime Architecture (Reality, Not Intention)
+
+Backend runtime is a single FastAPI service with:
+- API orchestration and scoring in `backend/app/main.py`
+- resume text extraction + enrichment in `backend/app/services/resume_parser.py`
+- relational persistence via SQLAlchemy in `backend/app/services/db_writer.py`
+- vector semantic indexing/retrieval in `backend/app/integrations/qdrant/store.py`
+- authentication middleware and token verification in `backend/app/core/security.py`
+
+Data stores:
+- PostgreSQL (primary system of record)
+- Qdrant (optional semantic index)
+
+Frontend runtime is a React + Vite SPA with:
+- public marketing routes
+- authenticated dashboard routes
+- global fetch wrapping that injects Firebase ID token for `/hiring/*` and `/resume/*`
+
+### 26.3 Endpoint Surface (Current Code)
+
+Current API decorators present in `backend/app/main.py`:
+- `GET /`
+- `GET /hiring/dashboard-metrics`
+- `GET /hiring/shortlists`
+- `DELETE /hiring/shortlist/{trace_id}`
+- `GET /hiring/shortlist/{trace_id}`
+- `POST /chat/respond`
+- `POST /resume/extract`
+- `POST /resume/extract/batch`
+- `POST /hiring/shortlist`
+- `GET /hiring/shortlist/progress/{trace_id}`
+- `POST /hiring/semantic-search`
+
+### 26.4 Migration Chain Present in Repo
+
+Current Alembic revisions available:
+- `20260503_01_baseline_schema.py`
+- `20260511_02_add_jobs_trace_id.py`
+- `20260511_03_add_tenant_isolation.py`
+
+Current revision order:
+1. `20260503_01`
+2. `20260511_02`
+3. `20260511_03`
+
+---
+
+## 27) Backend Deep Runtime Flow (Request to Response)
+
+This section explains how each API route behaves at runtime.
+
+### 27.1 Global Startup and Middleware
+
+App startup (`lifespan`):
+1. `init_db()` runs a connectivity check (`SELECT 1`).
+2. Alembic revision is read from `alembic_version` when possible.
+3. Qdrant collection initialization runs (`init_collection()`).
+4. Qdrant init result is logged as structured event.
+
+Auth middleware behavior:
+- CORS preflight (`OPTIONS`) bypasses auth challenge.
+- Protected prefixes: `/hiring`, `/resume`.
+- If `AUTH_REQUIRED=true`:
+  - request must contain `Authorization: Bearer <token>`
+  - token decode path:
+    - primary: HS256 via `AUTH_JWT_SECRET`
+    - fallback: Firebase ID token via Google JWKS and issuer/audience checks
+- On auth failure, middleware returns JSON `401` without app crash.
+
+Auth context shape used by handlers:
+- `user_id`: from token `sub`
+- `tenant_id`: priority `tenant_id` claim -> Firebase tenant claim -> `AUTH_DEFAULT_TENANT`
+- `role`: token role claim fallback `viewer`
+
+### 27.2 `GET /`
+
+Purpose:
+- service welcome and quick runtime signal.
+
+Response includes:
+- static message
+- current `resume_concurrency`
+
+No DB writes.
+
+### 27.3 `GET /hiring/dashboard-metrics`
+
+Auth:
+- protected route, tenant-scoped.
+
+Reads:
+- `candidates` table count for tenant
+- distinct `jobs.trace_id` count for tenant
+- last 5 shortlists by `max(jobs.created_at)`
+
+Join pattern:
+- `jobs` joined with `candidates`
+- optional joins for candidate score fragments from:
+  - `candidate_job_scores`
+  - `candidate_scores`
+
+Returned metrics:
+- total candidates
+- completed shortlists
+- pending reviews (currently hardcoded `0`)
+
+Returned shortlist preview:
+- shortlist id (`trace_id`)
+- role/company/position/date/match count
+- top candidates with summarized score signals
+
+Failure behavior:
+- catches exception
+- logs exception
+- returns safe zeroed metrics payload instead of 500
+
+### 27.4 `GET /hiring/shortlists`
+
+Auth:
+- protected route, tenant-scoped.
+
+Reads:
+- grouped shortlist rows by `trace_id` from tenant jobs
+
+Returns:
+- concise shortlist history list
+- id, role, display title, date, matches, status
+
+Failure behavior:
+- raises HTTP 500 on unexpected errors
+
+### 27.5 `DELETE /hiring/shortlist/{trace_id}`
+
+Auth:
+- protected, tenant-scoped.
+
+Delete strategy:
+1. find jobs for `trace_id` within tenant
+2. delete dependent `candidate_job_scores`
+3. delete matching jobs
+4. for affected candidates:
+   - if candidate has no remaining jobs in same tenant:
+     - delete `candidate_scores`
+     - delete `candidate_skills`
+     - delete `platform_stats`
+     - delete `candidate_github_summary`
+     - delete `candidate_github_commits`
+     - delete candidate row
+
+Commit/rollback:
+- transaction committed on success
+- rollback on handled or unhandled failure
+
+Response:
+- object with counts of deleted entities
+
+### 27.6 `GET /hiring/shortlist/{trace_id}`
+
+Auth:
+- protected, tenant-scoped.
+
+Reads:
+- candidate + job + score joins for specified trace id
+
+Behavior:
+- reconstructs shortlist-style candidate summaries
+- sorts descending by fit score
+- assigns ranks
+
+Returns:
+- `counts.total`
+- `counts.ranked`
+- `counts.rejected` (currently always 0 in persisted path)
+- `counts.failed`
+- shortlisted list and metadata
+
+### 27.7 `POST /chat/respond`
+
+Purpose:
+- product support assistant for user guidance.
+
+Modes:
+- menu-option mode (`selected_option` supplied)
+- greeting shortcut mode (`hi`, `hello`, etc.)
+- platform overview mode
+- free-text AI fallback mode
+
+AI fallback:
+- if `OPENAI_API_KEY` is available:
+  - uses OpenAI chat completion
+  - model default from `CHATBOT_AI_MODEL` (fallback `gpt-4o-mini`)
+- if AI unavailable:
+  - deterministic fallback support message
+
+Response model:
+- `reply`
+- `quick_options`
+- `allow_free_text`
+
+### 27.8 `POST /resume/extract`
+
+Input:
+- single PDF file
+- role (`job` or `internship`)
+- optional `force_reprocess`
+
+Processing:
+- delegates to `_process_resume_file`
+
+Output includes:
+- extracted data payload
+- JSON artifact path
+- resume hash
+- DB write result
+- Qdrant upsert result
+- fit analysis
+
+### 27.9 `POST /resume/extract/batch`
+
+Input:
+- multiple PDFs
+- shared role
+- optional `force_reprocess`
+
+Behavior:
+- launches one async task per file
+- each task still bounded by global semaphore
+- returns per-file `ok/error` entries
+
+### 27.10 `POST /hiring/shortlist`
+
+Input (multipart form):
+- `files`
+- `role`
+- `company_name`
+- `position_title`
+- `required_skills_csv`
+- `must_have_skills_csv`
+- `job_description`
+- `min_experience_years`
+- `force_reprocess`
+- `send_shortlist_emails`
+- `interview_base_url`
+- `client_trace_id`
+
+Lifecycle stages:
+1. validate and normalize skills
+2. derive JD extracted skill tokens
+3. initialize in-memory progress record keyed by trace id
+4. process resumes concurrently
+5. continuously update progress snapshots
+6. perform semantic re-ranking blend from Qdrant scores
+7. sort with multi-key ranking order
+8. prepare shortlist response payload
+9. optional email notification dispatch
+10. finalize and store progress result
+
+Ranking sort keys (descending):
+1. fit score
+2. must-have coverage
+3. achievement score
+4. JD semantic score
+5. target alignment
+6. confidence score
+7. skills match score
+8. filename
+
+Response family:
+- curated shortlist tables
+- optional legacy candidate arrays
+- policy/version metadata
+- runtime flags and thresholds
+
+### 27.11 `GET /hiring/shortlist/progress/{trace_id}`
+
+Purpose:
+- real-time status polling for long shortlist runs.
+
+Store:
+- in-memory dictionary with TTL cleanup.
+
+Fields tracked include:
+- stage/status
+- processed/uploaded counts
+- ranked/failed so far
+- rolling completed resume summaries
+
+### 27.12 `POST /hiring/semantic-search`
+
+Input:
+- `query_skills_csv`
+- `top_k`
+- `min_score`
+
+Behavior:
+- normalizes query skills using same canonicalization logic
+- executes tenant-aware Qdrant search
+- returns scored semantic hits
+
+---
+
+## 28) Resume Parsing and Enrichment Pipeline (Deep)
+
+### 28.1 Multi-parser extraction model
+
+Text extraction stack:
+- `pypdf` extraction
+- `PyMuPDF` block extraction
+- `pdfplumber` extraction
+- OCR fallback via `pytesseract` + rendered page images
+
+Selection strategy:
+- per-page best text chosen using `_text_quality_score`
+- global best candidate chosen from merged and parser-specific candidates
+- fallback to `pypdf` if alpha-character quality too low
+
+Quality signals used:
+- alphabetic character density
+- bullet density
+- heading density
+- symbol-noise penalty
+
+### 28.2 URL and handle extraction
+
+Extracted profile families:
+- GitHub
+- Codeforces
+- LeetCode
+- CodeChef
+- AtCoder
+- Kaggle
+
+Supports:
+- explicit `https://` URLs
+- bare platform URLs without protocol
+
+### 28.3 Structured section extraction
+
+If OpenAI key exists:
+- text chunking by headings/pages
+- chunk-level JSON extraction prompt
+- retries per chunk (`RESUME_STRUCTURED_RETRIES`)
+- merge + dedupe of skills/projects/experience/achievements
+
+If OpenAI unavailable/fails/times out:
+- deterministic fallback extractors for:
+  - projects
+  - skills
+  - experience
+  - achievements
+
+### 28.4 Platform enrichment
+
+Concurrent platform fetch orchestration:
+- codeforces
+- leetcode
+- codechef
+- atcoder
+- kaggle
+
+Platform data fetchers are mixed sync/async; orchestration normalizes this via:
+- coroutine direct await for async functions
+- `asyncio.to_thread` for sync functions
+
+### 28.5 GitHub enrichment
+
+GitHub scan stages:
+1. detect explicit repo links in resume text
+2. detect profile usernames
+3. infer likely candidate username by frequency
+4. fallback repo discovery by comparing owned repos against project-section text
+5. per-repo deep analysis via GitHub API + local git-based survivability audit
+6. role-aware repo scoring
+
+Repository deep analysis includes:
+- repository metadata
+- language breakdown percentages
+- dependency stack detection across common manifest file types
+- inferred user role in repository
+- surviving-line ownership via local `git blame`
+- user commit history
+- merged PR depth
+
+### 28.6 Final extracted payload shape
+
+`parse_resume_and_enrich` returns:
+- `work_experience_years`
+- `profiles`
+- `skills_section`
+- `projects_section`
+- `experience_section`
+- `achievements_section`
+- `structured_extraction_meta`
+- `parser_meta`
+- `platform_stats`
+- `github_analysis`
+- `raw_text_full`
+- `raw_text_preview`
+
+Artifact persistence:
+- `save_extracted_data_to_json` writes a timestamped JSON under `backend/data/extracted_resumes`.
+
+---
+
+## 29) Scoring and Ranking Internals (Formula-Level)
+
+### 29.1 Skill normalization and semantic expansion
+
+Normalization layers:
+- sanitize token
+- stopword filtering
+- min/max length rules
+- short-token allowlist
+- alias canonicalization
+- implication closure traversal
+
+Directionality principle:
+- child skill can imply parent domain/language
+- reverse implication is not assumed
+
+### 29.2 Skill match scoring
+
+Evidence channels for each skill:
+- GitHub dependency evidence
+- project tech stack
+- explicit skills section
+- project text proximity
+- raw text lexical match
+
+Verification overlay:
+- `verify_skills` computes evidence level and multiplier
+- levels include:
+  - `HIGH_VERIFIED`
+  - `MEDIUM_VERIFIED`
+  - `LOW_VERIFIED`
+  - `PUBLICLY_UNVERIFIED`
+  - `CONTRADICTORY`
+
+Weighted skill score composition:
+- required skills contribute weighted average
+- must-have skills receive increased internal weight
+- must-have coverage contributes additional blending factor
+
+### 29.3 Authenticity and anti-inflation controls
+
+Authenticity penalties:
+- contradiction penalty
+- spam inflation penalty
+- repository quality penalty
+- timeline authenticity penalty
+
+Authenticity factor:
+- `factor = max(0.4, 1.0 - total_penalty)`
+
+Effect:
+- base skill score is multiplied by authenticity factor before final aggregation.
+
+### 29.4 Platform strength and achievements
+
+Platform strength score:
+- platform-specific normalization functions
+- role-context adaptive platform weights
+- blended score + peak score + coverage bonus
+
+Platform achievement:
+- rating/rank/medal-based point model
+- strong single-platform spike plus breadth contribution
+
+### 29.5 Project and experience relevance
+
+Project relevance uses:
+- target skill overlap
+- role-family keyword relevance
+- quantified impact phrase detection
+- complexity hints
+- ownership wording
+
+Experience relevance uses:
+- experience tech stack overlap
+- family/domain keyword hits
+- impact patterns
+- recency bonus
+
+### 29.6 Target alignment
+
+Target alignment score blends:
+- role family alignment
+- target domain alignment
+
+Candidate text corpus used:
+- raw resume text
+- skills tokens
+- project text
+
+### 29.7 Confidence model
+
+Confidence includes:
+- parser quality strength
+- structured extraction status
+- section completeness
+- evidence strength derived from scoring breakdown
+
+Plus native confidence engines:
+- ambiguity detector
+- GitHub confidence
+- skills confidence
+- deployment confidence
+
+### 29.8 Policy weights and thresholds
+
+Role-specific policy is environment-driven:
+- internships and jobs have distinct weight vectors
+- thresholds include:
+  - min skill match
+  - min GitHub score (conditional on data availability)
+  - min experience years
+  - min experience quality
+  - min confidence
+
+Weight redistribution:
+- when certain signals are unavailable (e.g., GitHub absent), effective weights are renormalized.
+
+### 29.9 Gating engine
+
+Post-score gates:
+1. relevance gate
+2. authenticity gate
+3. evidence amplification gate
+
+Final:
+- `final_score = clamp01(score * relevance_mult * auth_mult * evidence_mult)`
+
+### 29.10 Eligibility and rejection reasons
+
+Hard/soft checks:
+- missing must-have skills
+- role thresholds
+- low confidence path:
+  - if `LOW_CONFIDENCE_REVIEW_ONLY=true`, low confidence can become manual-review signal instead of direct rejection
+
+Decision log captures:
+- thresholds used
+- missing must-haves
+- candidate metric snapshot
+- manual review recommendation flag
+
+---
+
+## 30) Persistence Layer and Data Model (Deep)
+
+### 30.1 Relational tables (current ORM)
+
+`candidates`:
+- primary candidate identity and profile handles
+- tenant-scoped uniqueness on `(tenant_id, resume_hash)`
+
+`jobs`:
+- per-evaluation job context
+- tenant-scoped shortlist grouping by `trace_id`
+
+`candidate_job_scores`:
+- per candidate-per-job fit snapshot
+
+`candidate_scores`:
+- consolidated per-candidate score components
+
+`skills`:
+- canonical skill dictionary
+
+`candidate_skills`:
+- many-to-many link with status metadata
+
+`platform_stats`:
+- per-platform stat JSON blobs
+
+`candidate_github_summary`:
+- aggregate GitHub summary signals
+
+`candidate_github_commits`:
+- repo-level commit snippets
+
+### 30.2 Tenant isolation model
+
+Enforced in:
+- relational writes (`save_to_db` includes `tenant_id`)
+- relational reads (dashboard/history/detail filters)
+- semantic index payload and filtered search
+
+Uniqueness model:
+- duplicate hash detection is tenant-scoped
+- same resume hash can exist in different tenants
+
+### 30.3 DB write semantics
+
+`save_to_db` behavior:
+- checks existing `(resume_hash, tenant_id)`
+- if duplicate and no `force_reprocess`:
+  - reuse existing candidate
+  - still creates a new job + candidate_job_score
+- candidate-level heavy inserts are only done for new candidate
+- candidate_scores behaves as upsert
+
+### 30.4 Deletion semantics and data lifecycle
+
+Shortlist delete endpoint:
+- removes job-scoped records
+- candidate retained if still linked to remaining tenant jobs
+- candidate fully removed only when no remaining tenant jobs
+
+Implication:
+- candidate-level data durability is tied to job references in each tenant.
+
+---
+
+## 31) Semantic Index and Qdrant Behavior
+
+### 31.1 Enablement and initialization
+
+Controlled by:
+- `QDRANT_ENABLED`
+
+On startup:
+- collection created if missing
+- payload indexes attempted for `role` and `tenant_id`
+
+### 31.2 Embedding model used
+
+No external embedding model is required.
+
+Vectorization strategy:
+- deterministic hashed sparse vector over canonical skill tokens
+- dimensionality from `QDRANT_VECTOR_SIZE` (min 64, default 384)
+
+### 31.3 Token hygiene
+
+Skills indexed are:
+- canonicalized
+- implication-expanded
+- filtered against semantic-generic tokens
+- cleaned to remove malformed/noisy tokens
+
+### 31.4 Upsert payload fields
+
+Base fields:
+- `filename`
+- `role`
+- `skills`
+
+Extended fields from shortlist path:
+- `resume_hash`
+- `trace_id`
+- `tenant_id`
+- score summaries (GitHub/platform/experience/fit breakdown)
+
+### 31.5 Search filters and output
+
+Search supports:
+- tenant filter
+- role filter
+- top_k bound (1..200)
+- optional score threshold
+
+Returns:
+- rank/id/filename/role/resume hash/trace id
+- normalized score (`score_100`)
+- relevance band (`high`/`medium`/`low`)
+- matched query tokens
+- skill previews
+- payload score summaries
+
+### 31.6 Error resilience
+
+If strict filter query returns index-required errors on some clusters:
+- code falls back to relaxed filter path to avoid total endpoint failure.
+
+---
+
+## 32) Security and Access Control (As Implemented)
+
+### 32.1 Auth implementation status
+
+Implemented:
+- bearer token requirement for protected routes
+- HS256 support for internal tokens
+- Firebase ID token verification fallback
+- tenant and role extraction
+
+Not implemented in current code:
+- per-endpoint fine-grained RBAC enforcement beyond auth presence
+- membership table checks in request path
+
+### 32.2 Protected route behavior
+
+Protected prefixes:
+- `/hiring/*`
+- `/resume/*`
+
+Public routes:
+- `/`
+- `/chat/respond` (currently public in middleware scope)
+
+### 32.3 Token verification details
+
+HS256 path:
+- `jwt.decode(token, AUTH_JWT_SECRET, algorithms=[AUTH_JWT_ALGORITHM])`
+
+Firebase path:
+- JWKS endpoint: Google securetoken keys
+- issuer check: `https://securetoken.google.com/<project_id>`
+- audience check: `<project_id>`
+
+### 32.4 Tenant binding model
+
+Tenant id derivation order:
+1. explicit `tenant_id` claim
+2. Firebase tenant claim
+3. default tenant env value
+
+Tenant use points:
+- DB query filters
+- DB write columns
+- Qdrant payload and search filters
+
+---
+
+## 33) Frontend Runtime Architecture (Deep)
+
+### 33.1 App shell and routing
+
+Top-level route groups:
+- Public layout routes:
+  - `/`
+  - `/product`
+  - `/features`
+  - `/about`
+  - `/company/team`
+  - `/contact`
+  - `/login`
+  - `/signup`
+  - `/reset-password`
+- Dashboard layout routes:
+  - `/dashboard`
+  - `/dashboard/shortlist`
+  - `/dashboard/history`
+  - `/dashboard/history/:traceId`
+  - `/dashboard/search`
+  - `/dashboard/candidate/:id`
+  - `/dashboard/settings`
+
+### 33.2 Global fetch interception
+
+`frontend/src/main.jsx` wraps `window.fetch`:
+- only intercepts URLs starting with `/hiring` or `/resume`
+- waits for Firebase auth restoration (`authReady`)
+- retrieves current user ID token
+- injects `Authorization` header if token available
+
+Impact:
+- prevents startup race where protected calls fire before auth restoration.
+
+### 33.3 Dashboard pages and backend integration
+
+Dashboard Hub:
+- fetches `/hiring/dashboard-metrics`
+- displays summary metrics and recent shortlist cards
+- supports shortlist deletion via `DELETE /hiring/shortlist/{id}`
+
+All Shortlists:
+- fetches `/hiring/shortlists`
+- formats dates robustly for browser differences
+- supports shortlist deletion and detail navigation
+
+Past Shortlist:
+- fetches `/hiring/shortlist/{traceId}`
+- shows ranked candidates and drill-down score metrics
+
+Shortlist Page:
+- 3-step UX flow:
+  1. upload
+  2. configure
+  3. results/loading
+- submits multipart payload to `/hiring/shortlist`
+- polls `/hiring/shortlist/progress/{trace_id}` every ~1.5s
+- renders progressive pipeline status and final rankings
+
+Semantic Search:
+- posts to `/hiring/semantic-search`
+- visualizes semantic score bands and matched query tokens
+
+### 33.4 Auth pages
+
+Login:
+- email/password sign-in
+- Google popup sign-in
+
+Signup:
+- email/password account creation
+- profile display name update
+- Google popup sign-up
+
+Backend trust model:
+- frontend auth is Firebase-based
+- backend accepts Firebase tokens through verification fallback path
+
+### 33.5 Contact/demo flow
+
+Contact page:
+- client-side form validation
+- EmailJS submission via configured public keys
+- separate action intents: `Book Demo` and `Send Inquiry`
+
+### 33.6 Chat widget behavior
+
+Chat widget:
+- available in public layout
+- sends requests to `/chat/respond`
+- supports option-based flow and free text
+- supports browser speech recognition input
+
+---
+
+## 34) Exhaustive Environment Variable Reference (Current Usage)
+
+This catalog is generated from current code usage and frontend references.
+
+### 34.1 Backend Auth and Security
+
+- `AUTH_REQUIRED`
+- `AUTH_JWT_SECRET`
+- `AUTH_JWT_ALGORITHM`
+- `AUTH_DEFAULT_TENANT`
+- `FIREBASE_PROJECT_ID`
+
+### 34.2 Backend Core Runtime
+
+- `DATABASE_URL`
+- `LOG_LEVEL`
+- `CORS_ALLOWED_ORIGINS`
+- `RESUME_CONCURRENCY`
+- `GITHUB_REPO_CONCURRENCY`
+- `SHORTLIST_PROGRESS_TTL_SECONDS`
+- `SHORTLIST_SCORE_DECIMALS`
+
+### 34.3 AI and Model Settings
+
+- `OPENAI_API_KEY`
+- `CHATBOT_AI_MODEL`
+- `NOTES_AI_MODEL`
+- `NOTES_AI_TIMEOUT_SECONDS`
+- `GITHUB_AI_ADJUSTMENT_ENABLED`
+- `GITHUB_AI_MODEL`
+
+Structured extraction controls:
+- `RESUME_STRUCTURED_MODEL`
+- `RESUME_STRUCTURED_TIMEOUT_SECONDS`
+- `RESUME_STRUCTURED_CHUNK_TIMEOUT_SECONDS`
+- `RESUME_STRUCTURED_MAX_CHUNK_CHARS`
+- `RESUME_STRUCTURED_MAX_CHUNKS`
+- `RESUME_STRUCTURED_RETRIES`
+- `RESUME_OCR_MIN_ALPHA_CHARS_PER_PAGE`
+- `RESUME_PARSER_MIN_ALPHA_CHARS`
+
+### 34.4 Scoring Policy and Thresholds
+
+Version tags:
+- `SHORTLIST_API_VERSION`
+- `SHORTLIST_SCORING_VERSION`
+- `SHORTLIST_POLICY_VERSION`
+
+Behavior flags:
+- `SHORTLIST_INCLUDE_LEGACY_KEYS`
+- `LOW_CONFIDENCE_REVIEW_ONLY`
+- `COMPANY_SIGNAL_MAX_CONTRIB`
+
+Job thresholds:
+- `JOB_MIN_SKILL_MATCH_PCT`
+- `JOB_MIN_GITHUB_SCORE_100`
+- `JOB_MIN_EXPERIENCE_QUALITY_SCORE_100`
+- `JOB_MIN_CONFIDENCE_SCORE_100`
+
+Internship thresholds:
+- `INTERN_MIN_SKILL_MATCH_PCT`
+- `INTERN_MIN_CONFIDENCE_SCORE_100`
+
+Job weights:
+- `JOB_WEIGHT_SKILLS`
+- `JOB_WEIGHT_GITHUB`
+- `JOB_WEIGHT_EXPERIENCE`
+- `JOB_WEIGHT_PLATFORM`
+- `JOB_WEIGHT_PROJECTS`
+- `JOB_WEIGHT_PROFILE`
+- `JOB_WEIGHT_EXPERIENCE_QUALITY`
+- `JOB_WEIGHT_EXPERIENCE_RELEVANCE`
+- `JOB_WEIGHT_ACHIEVEMENTS`
+
+Internship weights:
+- `INTERN_WEIGHT_SKILLS`
+- `INTERN_WEIGHT_GITHUB`
+- `INTERN_WEIGHT_EXPERIENCE`
+- `INTERN_WEIGHT_PLATFORM`
+- `INTERN_WEIGHT_PROJECTS`
+- `INTERN_WEIGHT_PROFILE`
+- `INTERN_WEIGHT_EXPERIENCE_QUALITY`
+- `INTERN_WEIGHT_EXPERIENCE_RELEVANCE`
+- `INTERN_WEIGHT_ACHIEVEMENTS`
+
+Semantic blending:
+- `SHORTLIST_JD_SEMANTIC_WEIGHT`
+
+### 34.5 Qdrant Variables
+
+- `QDRANT_ENABLED`
+- `QDRANT_URL`
+- `QDRANT_API_KEY`
+- `QDRANT_COLLECTION`
+- `QDRANT_VECTOR_SIZE`
+- `QDRANT_DISTANCE`
+- `QDRANT_TIMEOUT_SECONDS`
+
+### 34.6 Notification and Email Variables
+
+Shortlist notification behavior:
+- `SHORTLIST_AUTO_SEND_EMAILS`
+- `SHORTLIST_INTERVIEW_BASE_URL`
+
+Resend provider:
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
+
+SMTP provider:
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASSWORD`
+- `SMTP_FROM_EMAIL`
+- `SMTP_USE_TLS`
+
+### 34.7 GitHub Integration
+
+- `GITHUB_PAT`
+
+### 34.8 Frontend Variables
+
+Backend connection:
+- `VITE_API_BASE_URL`
+
+Firebase:
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
+- `VITE_FIREBASE_MEASUREMENT_ID`
+
+EmailJS:
+- `VITE_EMAILJS_SERVICE_ID`
+- `VITE_EMAILJS_TEMPLATE_ID`
+- `VITE_EMAILJS_PUBLIC_KEY`
+
+---
+
+## 35) Test Coverage Reality and Verification Status
+
+### 35.1 Test modules present
+
+Core tests currently present:
+- `backend/tests/test_must_have_semantic.py`
+- `backend/tests/services/test_resume_parser.py`
+- `backend/tests/services/test_shortlist_policy.py`
+- `backend/tests/scoring/test_engine_v2.py`
+- `backend/tests/constants/test_skill_constants_quality.py`
+
+### 35.2 What these tests cover
+
+Must-have semantic behavior:
+- implication directionality
+- typo canonicalization
+- ambiguous token handling (`c`, `go`)
+
+Resume parser behavior:
+- handle parsing
+- role propagation into GitHub scorer
+- error preservation when repo analysis fails
+
+Policy behavior:
+- threshold construction
+- experience quality gate
+- experience relevance comparison
+
+Legacy scoring module behavior:
+- weighted skill parsing
+- strict vs non-strict must-have behavior
+- low-confidence review path
+
+Constants hygiene:
+- duplicate alias key guard
+- conflict and risky alias checks
+
+### 35.3 Runtime test execution snapshot in this environment
+
+Execution attempted:
+- command: `python -m pytest -q`
+- working directory: `backend`
+
+Observed blocker:
+- `ModuleNotFoundError: No module named 'jwt'`
+
+Impact:
+- suite fails during collection in this shell because dependencies from `requirements.txt` are not installed in this runtime environment.
+
+Operational interpretation:
+- tests exist and target important policy logic
+- environment currently lacks required Python packages for execution
+
+---
+
+## 36) Current Gaps, Risks, and Implementation Debt (Honest Register)
+
+This section is intentionally direct so engineering decisions remain grounded.
+
+### 36.1 Auth and authorization depth
+
+Current strength:
+- robust token verification and tenant binding for protected routes.
+
+Current gap:
+- role-based authorization matrix is not deeply enforced at route/action level.
+
+### 36.2 In-memory progress store
+
+Current design:
+- shortlist progress is maintained in process memory.
+
+Risk:
+- process restart clears progress state
+- not horizontally shareable across multi-instance deployments
+
+### 36.3 Mixed scoring layers
+
+Current state:
+- large production scoring logic in `main.py`
+- legacy alternate scoring logic still exists in `backend/app/scoring/engine.py`
+
+Risk:
+- contributor confusion about canonical scoring path
+- future policy drift if both evolve independently
+
+### 36.4 Email side effects
+
+Current behavior:
+- shortlist endpoint can trigger outbound emails in request flow when enabled.
+
+Risk:
+- user request latency can increase
+- transient provider failures affect request path complexity
+
+### 36.5 GitHub analysis operational load
+
+Current behavior:
+- local clone + `git blame` for ownership audit.
+
+Risk:
+- expensive for many repos
+- relies on git availability in runtime
+- large repo safeguards exist but operational variance remains
+
+### 36.6 Frontend route guard model
+
+Current behavior:
+- dashboard routes are navigable from client side.
+
+Assumption:
+- backend protected APIs enforce security even if route UI is opened.
+
+Potential improvement:
+- explicit frontend protected-route guard with auth state redirect behavior.
+
+### 36.7 Contact page dependency
+
+Current behavior:
+- contact workflow depends on EmailJS keys.
+
+Risk:
+- misconfiguration leads to user-visible send failure.
+
+---
+
+## 37) Runbook Commands (Current, Practical)
+
+### 37.1 Backend setup
+
+Typical backend bootstrap:
+1. create/activate virtualenv
+2. install dependencies from `backend/requirements.txt`
+3. configure `backend/.env`
+4. run migrations (`alembic upgrade head`)
+5. launch API (`uvicorn app.main:app --reload`)
+
+### 37.2 Frontend setup
+
+Typical frontend bootstrap:
+1. install dependencies in `frontend`
+2. configure frontend env vars (`VITE_*`)
+3. run dev server (`npm run dev`)
+
+Proxy behavior in development:
+- `/hiring`, `/resume`, `/chat` are proxied to `http://localhost:8000`.
+
+### 37.3 Quick diagnostic checks
+
+Backend:
+- check root route
+- check protected route with/without bearer token
+- verify DB connectivity logs on startup
+
+Shortlist flow:
+- run shortlist with small PDF set
+- poll progress endpoint
+- inspect DB shortlist/history endpoints
+
+Semantic:
+- confirm `QDRANT_ENABLED` behavior
+- run semantic search with known skills
+
+### 37.4 Data integrity checks
+
+Database sanity:
+- confirm tenant fields are non-null in `candidates` and `jobs`
+- confirm unique constraint on `(tenant_id, resume_hash)`
+- confirm trace ids present for shortlist groups
+
+Deletion sanity:
+- delete shortlist and verify dependent row cleanup
+
+---
+
+## 38) Documentary Maintenance Protocol
+
+To keep this document accurate as code evolves:
+
+After any backend endpoint change:
+- update endpoint contracts and failure modes
+
+After any scoring/policy change:
+- update formula sections
+- update thresholds and weight defaults
+- update rejection logic notes
+
+After migration/model changes:
+- update table and migration chain sections
+
+After frontend route or API-call changes:
+- update route map and integration behavior sections
+
+After test updates:
+- update coverage matrix and verification status
+
+Cadence recommendation:
+- mandatory doc reconciliation before merge for:
+  - API contract changes
+  - schema changes
+  - scoring policy changes
+  - auth behavior changes
+
+---
+
+End of current as-built supplement.
