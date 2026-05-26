@@ -16,13 +16,6 @@ const members = [
     bio2: 'His technical stack includes Ruby, AWS, and MongoDB, enabling scalable AI-backed applications with real-world impact.',
     expertise: ['GenAI', 'Python', 'Ruby', 'Database Management', 'AWS', 'Backend Development', 'Data Analysis'],
   },
-  {
-    name: 'Vikram J Purohit',
-    roles: ['Co-Founder', 'Backend Developer', 'ML Engineer'],
-    bio1: 'Builds production-grade backend systems and ML-driven product capabilities focused on reliability, scalability, and measurable hiring impact.',
-    bio2: 'Drives platform execution across data pipelines, model integration, and deployment quality to keep Kovidam dependable for enterprise teams.',
-    expertise: ['Backend Development', 'Machine Learning', 'Distributed Systems', 'MLOps', 'Performance Tuning'],
-  },
 ]
 
 export default function TeamPage() {

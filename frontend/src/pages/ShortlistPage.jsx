@@ -628,8 +628,8 @@ export default function ShortlistPage() {
             style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
           >
             {loading ? (
-              <div style={{ position: 'relative', flex: 1, minHeight: '560px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden', background: 'radial-gradient(1200px 400px at 20% -10%, rgba(99,102,241,0.16), transparent), rgba(12, 12, 18, 0.56)' }}>
-                <div style={{ position: 'absolute', inset: 0, padding: '1.25rem', filter: 'blur(2px)', opacity: 0.86, transform: 'scale(1.005)' }}>
+              <div style={{ position: 'relative', flex: 1, minHeight: '560px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden', background: 'radial-gradient(1200px 420px at 20% -10%, rgba(99,102,241,0.2), transparent), rgba(12, 12, 18, 0.62)' }}>
+                <div style={{ position: 'absolute', inset: 0, padding: '1.25rem', filter: 'blur(1.2px)', opacity: 0.92, transform: 'scale(1.003)' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '0.9rem' }}>
                     {(shortlistProgress?.completed_resumes?.length ? shortlistProgress.completed_resumes : Array.from({ length: 6 })).slice(-6).map((item, idx) => (
                       <div key={`${item?.filename || 'placeholder'}-${idx}`} style={{ borderRadius: '14px', border: `1px solid ${item?.ok === false ? 'rgba(248,113,113,0.32)' : 'rgba(129,140,248,0.28)'}`, background: item?.ok === false ? 'rgba(127, 29, 29, 0.25)' : 'rgba(30, 27, 75, 0.40)', padding: '0.95rem 1rem', minHeight: '82px' }}>
@@ -654,39 +654,64 @@ export default function ShortlistPage() {
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backdropFilter: 'blur(1.4px)',
+                  backdropFilter: 'blur(1px)',
                   background: 'linear-gradient(180deg, rgba(2,6,23,0.28) 0%, rgba(2,6,23,0.58) 100%)'
                 }}>
-                  <div style={{ width: 'min(700px, 92%)', borderRadius: '20px', border: '1px solid rgba(129,140,248,0.32)', background: 'linear-gradient(145deg, rgba(10, 12, 26, 0.86), rgba(17, 24, 39, 0.80))', boxShadow: '0 25px 60px rgba(0,0,0,0.4)', padding: '2rem 1.6rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <div style={{ position: 'relative', width: '96px', height: '96px', marginBottom: '1.5rem' }}>
-                      <div style={{ position: 'absolute', inset: 0, border: '4px solid rgba(79, 70, 229, 0.2)', borderRadius: '50%' }} />
-                      <div style={{ position: 'absolute', inset: 0, border: '4px solid transparent', borderTopColor: '#818cf8', borderRightColor: '#818cf8', borderRadius: '50%', animation: 'spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite' }} />
-                      <div style={{ position: 'absolute', inset: '20px', border: '4px solid transparent', borderBottomColor: '#c7d2fe', borderLeftColor: '#c7d2fe', borderRadius: '50%', animation: 'spin 2s linear infinite reverse' }} />
-                      <Zap size={32} color="#818cf8" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', animation: 'pulse 2s infinite' }} />
-                    </div>
-                    <h3 style={{ fontSize: '1.5rem', color: '#e2e8f0', marginBottom: '0.75rem', fontWeight: '600' }}>Analyzing Candidates</h3>
-                    <p style={{ color: '#94a3b8', fontSize: '1.05rem', marginBottom: '0.4rem' }}>
-                      Processing {files.length || 0} resume{(files.length || 0) === 1 ? '' : 's'} | Elapsed: {Math.floor(loadingElapsedSec / 60)}m {loadingElapsedSec % 60}s
-                    </p>
-                    <p style={{ color: '#c7d2fe', fontSize: '1rem', marginBottom: '0.6rem' }}>
-                      {loadingStages[loadingStageIdx]}
-                    </p>
-                    {shortlistProgress && (
-                      <p style={{ margin: 0, color: '#a5b4fc', fontSize: '0.92rem' }}>
-                        Processed {shortlistProgress.processed || 0}/{shortlistProgress.uploaded || files.length || 0}
-                        {' '} | Ranked so far: {shortlistProgress.ranked_so_far || 0}
-                        {' '} | Failed: {shortlistProgress.failed_so_far || 0}
+                  <div style={{ width: 'min(860px, 94%)', borderRadius: '20px', border: '1px solid rgba(129,140,248,0.35)', background: 'linear-gradient(145deg, rgba(10, 12, 26, 0.9), rgba(17, 24, 39, 0.86))', boxShadow: '0 25px 60px rgba(0,0,0,0.42)', padding: '1.4rem', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.2rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', marginBottom: '0.7rem' }}>
+                        <div style={{ position: 'relative', width: '68px', height: '68px' }}>
+                          <div style={{ position: 'absolute', inset: 0, border: '3px solid rgba(79, 70, 229, 0.2)', borderRadius: '50%' }} />
+                          <div style={{ position: 'absolute', inset: 0, border: '3px solid transparent', borderTopColor: '#818cf8', borderRightColor: '#818cf8', borderRadius: '50%', animation: 'spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite' }} />
+                          <Zap size={24} color="#818cf8" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', animation: 'pulse 2s infinite' }} />
+                        </div>
+                        <div>
+                          <h3 style={{ fontSize: '1.32rem', color: '#e2e8f0', margin: 0, fontWeight: 650 }}>Shortlist In Progress</h3>
+                          <p style={{ color: '#94a3b8', fontSize: '0.93rem', margin: '0.3rem 0 0 0' }}>
+                            {loadingStages[loadingStageIdx]}
+                          </p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                        <span style={{ background: 'rgba(99,102,241,0.16)', color: '#c7d2fe', border: '1px solid rgba(99,102,241,0.35)', borderRadius: '999px', padding: '0.34rem 0.65rem', fontSize: '0.78rem' }}>
+                          Resumes: {files.length || 0}
+                        </span>
+                        <span style={{ background: 'rgba(16,185,129,0.13)', color: '#86efac', border: '1px solid rgba(16,185,129,0.35)', borderRadius: '999px', padding: '0.34rem 0.65rem', fontSize: '0.78rem' }}>
+                          Ranked: {shortlistProgress?.ranked_so_far || 0}
+                        </span>
+                        <span style={{ background: 'rgba(248,113,113,0.13)', color: '#fca5a5', border: '1px solid rgba(248,113,113,0.35)', borderRadius: '999px', padding: '0.34rem 0.65rem', fontSize: '0.78rem' }}>
+                          Failed: {shortlistProgress?.failed_so_far || 0}
+                        </span>
+                        <span style={{ background: 'rgba(34,211,238,0.13)', color: '#67e8f9', border: '1px solid rgba(34,211,238,0.35)', borderRadius: '999px', padding: '0.34rem 0.65rem', fontSize: '0.78rem' }}>
+                          Elapsed: {Math.floor(loadingElapsedSec / 60)}m {loadingElapsedSec % 60}s
+                        </span>
+                      </div>
+                      <div style={{ width: '100%', marginTop: '0.2rem', height: '9px', borderRadius: '999px', background: 'rgba(255,255,255,0.09)', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            width: `${Math.min(100, Math.max(0, ((shortlistProgress?.processed || 0) / (shortlistProgress?.uploaded || files.length || 1)) * 100))}%`,
+                            height: '100%',
+                            background: 'linear-gradient(90deg, #6366f1, #22d3ee)',
+                            transition: 'width 0.45s ease'
+                          }}
+                        />
+                      </div>
+                      <p style={{ margin: '0.48rem 0 0 0', color: '#a5b4fc', fontSize: '0.86rem' }}>
+                        Processed {shortlistProgress?.processed || 0}/{shortlistProgress?.uploaded || files.length || 0}
                       </p>
-                    )}
-                    <div style={{ width: '100%', marginTop: '0.85rem', height: '8px', borderRadius: '999px', background: 'rgba(255,255,255,0.09)', overflow: 'hidden' }}>
-                      <div
-                        style={{
-                          width: `${Math.min(100, Math.max(0, ((shortlistProgress?.processed || 0) / (shortlistProgress?.uploaded || files.length || 1)) * 100))}%`,
-                          height: '100%',
-                          background: 'linear-gradient(90deg, #6366f1, #22d3ee)',
-                          transition: 'width 0.45s ease'
-                        }}
-                      />
+                    </div>
+                    <div style={{ borderLeft: '1px solid rgba(148,163,184,0.15)', paddingLeft: '1rem' }}>
+                      <p style={{ margin: '0 0 0.55rem 0', color: '#e2e8f0', fontSize: '0.9rem', fontWeight: 600 }}>Pipeline Stages</p>
+                      {loadingStages.map((stage, idx) => {
+                        const active = idx === loadingStageIdx;
+                        const done = idx < loadingStageIdx;
+                        return (
+                          <div key={stage} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.45rem' }}>
+                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: done ? '#22c55e' : active ? '#818cf8' : 'rgba(148,163,184,0.4)', boxShadow: active ? '0 0 14px rgba(129,140,248,0.8)' : 'none' }} />
+                            <span style={{ fontSize: '0.82rem', color: active ? '#dbeafe' : '#94a3b8' }}>{stage}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
