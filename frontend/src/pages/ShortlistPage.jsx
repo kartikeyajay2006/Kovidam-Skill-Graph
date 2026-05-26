@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   UploadCloud, 
@@ -39,6 +39,9 @@ export default function ShortlistPage() {
   const [mustHaveSkills, setMustHaveSkills] = useState([]);
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingElapsedSec, setLoadingElapsedSec] = useState(0);
+  const [loadingStageIdx, setLoadingStageIdx] = useState(0);
+  const [shortlistProgress, setShortlistProgress] = useState(null);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -46,6 +49,32 @@ export default function ShortlistPage() {
   const [autoSendEmails, setAutoSendEmails] = useState(false);
   
   const fileInputRef = useRef(null);
+  const loadingStages = [
+    'Validating uploaded resumes...',
+    'Extracting profile links, skills, and projects...',
+    'Analyzing GitHub and coding platform signals...',
+    'Matching role requirements and must-have skills...',
+    'Ranking candidates and generating shortlist insights...',
+  ];
+
+  useEffect(() => {
+    if (!loading) return;
+    setLoadingElapsedSec(0);
+    setLoadingStageIdx(0);
+
+    const timer = setInterval(() => {
+      setLoadingElapsedSec((prev) => prev + 1);
+    }, 1000);
+
+    const stageTimer = setInterval(() => {
+      setLoadingStageIdx((prev) => (prev + 1) % loadingStages.length);
+    }, 3500);
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(stageTimer);
+    };
+  }, [loading]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -81,21 +110,42 @@ export default function ShortlistPage() {
     setLoading(true);
     setError(null);
     setResults(null);
+    setShortlistProgress(null);
     setStep(3); // Move to results step immediately to show loading
 
     const data = new FormData();
+    const clientTraceId =
+      (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
     for (const key in formData) {
       data.append(key, formData[key]);
     }
     data.append('required_skills_csv', requiredSkills.join(','));
     data.append('must_have_skills_csv', mustHaveSkills.join(','));
     data.append('send_shortlist_emails', autoSendEmails);
+    data.append('client_trace_id', clientTraceId);
     
     files.forEach((file) => {
       data.append('files', file);
     });
 
+    let progressTimer = null;
     try {
+      const fetchProgress = async () => {
+        try {
+          const progressRes = await fetch(`${API_BASE_URL}/hiring/shortlist/progress/${clientTraceId}`);
+          if (!progressRes.ok) return;
+          const progressJson = await progressRes.json();
+          setShortlistProgress(progressJson);
+        } catch {
+          // Best-effort progress polling; shortlist request remains source of truth.
+        }
+      };
+      await fetchProgress();
+      progressTimer = setInterval(fetchProgress, 1500);
+
       const response = await fetch(`${API_BASE_URL}/hiring/shortlist`, {
         method: 'POST',
         body: data,
@@ -124,6 +174,7 @@ export default function ShortlistPage() {
       setError(err.message);
       setStep(2); // Go back to config on error
     } finally {
+      if (progressTimer) clearInterval(progressTimer);
       setLoading(false);
     }
   };
@@ -577,15 +628,68 @@ export default function ShortlistPage() {
             style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
           >
             {loading ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: '500px', background: 'rgba(12, 12, 18, 0.4)', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <div style={{ position: 'relative', width: '100px', height: '100px', marginBottom: '2.5rem' }}>
-                  <div style={{ position: 'absolute', inset: 0, border: '4px solid rgba(79, 70, 229, 0.2)', borderRadius: '50%' }} />
-                  <div style={{ position: 'absolute', inset: 0, border: '4px solid transparent', borderTopColor: '#818cf8', borderRightColor: '#818cf8', borderRadius: '50%', animation: 'spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite' }} />
-                  <div style={{ position: 'absolute', inset: '20px', border: '4px solid transparent', borderBottomColor: '#c7d2fe', borderLeftColor: '#c7d2fe', borderRadius: '50%', animation: 'spin 2s linear infinite reverse' }} />
-                  <Zap size={32} color="#818cf8" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', animation: 'pulse 2s infinite' }} />
+              <div style={{ position: 'relative', flex: 1, minHeight: '560px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.07)', overflow: 'hidden', background: 'radial-gradient(1200px 400px at 20% -10%, rgba(99,102,241,0.16), transparent), rgba(12, 12, 18, 0.56)' }}>
+                <div style={{ position: 'absolute', inset: 0, padding: '1.25rem', filter: 'blur(2px)', opacity: 0.86, transform: 'scale(1.005)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '0.9rem' }}>
+                    {(shortlistProgress?.completed_resumes?.length ? shortlistProgress.completed_resumes : Array.from({ length: 6 })).slice(-6).map((item, idx) => (
+                      <div key={`${item?.filename || 'placeholder'}-${idx}`} style={{ borderRadius: '14px', border: `1px solid ${item?.ok === false ? 'rgba(248,113,113,0.32)' : 'rgba(129,140,248,0.28)'}`, background: item?.ok === false ? 'rgba(127, 29, 29, 0.25)' : 'rgba(30, 27, 75, 0.40)', padding: '0.95rem 1rem', minHeight: '82px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: '#c7d2fe', fontSize: '0.78rem' }}>{item?.ok === false ? 'Failed' : 'Parsed'}</span>
+                          <span style={{ color: '#e2e8f0', fontSize: '0.78rem', fontWeight: 600 }}>
+                            {item?.ok === false ? '--' : (item?.fit_score_100 ? `${Number(item.fit_score_100).toFixed(2)}%` : '--')}
+                          </span>
+                        </div>
+                        <p style={{ margin: '0.45rem 0 0 0', color: '#e2e8f0', fontSize: '0.88rem', lineHeight: 1.25 }}>
+                          {item?.filename || 'Waiting for resume parsing...'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <h3 style={{ fontSize: '1.5rem', color: '#e2e8f0', marginBottom: '0.75rem', fontWeight: '600' }}>Analyzing Candidates</h3>
-                <p style={{ color: '#94a3b8', fontSize: '1.1rem' }}>Extracting skills, matching semantics, and evaluating profiles...</p>
+
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backdropFilter: 'blur(1.4px)',
+                  background: 'linear-gradient(180deg, rgba(2,6,23,0.28) 0%, rgba(2,6,23,0.58) 100%)'
+                }}>
+                  <div style={{ width: 'min(700px, 92%)', borderRadius: '20px', border: '1px solid rgba(129,140,248,0.32)', background: 'linear-gradient(145deg, rgba(10, 12, 26, 0.86), rgba(17, 24, 39, 0.80))', boxShadow: '0 25px 60px rgba(0,0,0,0.4)', padding: '2rem 1.6rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', width: '96px', height: '96px', marginBottom: '1.5rem' }}>
+                      <div style={{ position: 'absolute', inset: 0, border: '4px solid rgba(79, 70, 229, 0.2)', borderRadius: '50%' }} />
+                      <div style={{ position: 'absolute', inset: 0, border: '4px solid transparent', borderTopColor: '#818cf8', borderRightColor: '#818cf8', borderRadius: '50%', animation: 'spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite' }} />
+                      <div style={{ position: 'absolute', inset: '20px', border: '4px solid transparent', borderBottomColor: '#c7d2fe', borderLeftColor: '#c7d2fe', borderRadius: '50%', animation: 'spin 2s linear infinite reverse' }} />
+                      <Zap size={32} color="#818cf8" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', animation: 'pulse 2s infinite' }} />
+                    </div>
+                    <h3 style={{ fontSize: '1.5rem', color: '#e2e8f0', marginBottom: '0.75rem', fontWeight: '600' }}>Analyzing Candidates</h3>
+                    <p style={{ color: '#94a3b8', fontSize: '1.05rem', marginBottom: '0.4rem' }}>
+                      Processing {files.length || 0} resume{(files.length || 0) === 1 ? '' : 's'} | Elapsed: {Math.floor(loadingElapsedSec / 60)}m {loadingElapsedSec % 60}s
+                    </p>
+                    <p style={{ color: '#c7d2fe', fontSize: '1rem', marginBottom: '0.6rem' }}>
+                      {loadingStages[loadingStageIdx]}
+                    </p>
+                    {shortlistProgress && (
+                      <p style={{ margin: 0, color: '#a5b4fc', fontSize: '0.92rem' }}>
+                        Processed {shortlistProgress.processed || 0}/{shortlistProgress.uploaded || files.length || 0}
+                        {' '} | Ranked so far: {shortlistProgress.ranked_so_far || 0}
+                        {' '} | Failed: {shortlistProgress.failed_so_far || 0}
+                      </p>
+                    )}
+                    <div style={{ width: '100%', marginTop: '0.85rem', height: '8px', borderRadius: '999px', background: 'rgba(255,255,255,0.09)', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${Math.min(100, Math.max(0, ((shortlistProgress?.processed || 0) / (shortlistProgress?.uploaded || files.length || 1)) * 100))}%`,
+                          height: '100%',
+                          background: 'linear-gradient(90deg, #6366f1, #22d3ee)',
+                          transition: 'width 0.45s ease'
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
                 <style>{`
                   @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
                   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }

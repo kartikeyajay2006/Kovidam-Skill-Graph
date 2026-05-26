@@ -47,6 +47,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 # Limit in-process resume parsing concurrency. Default: 2 at a time.
 RESUME_CONCURRENCY = max(1, int(os.getenv("RESUME_CONCURRENCY", "2")))
 resume_semaphore = asyncio.Semaphore(RESUME_CONCURRENCY)
+SHORTLIST_PROGRESS_TTL_SECONDS = max(60, int(os.getenv("SHORTLIST_PROGRESS_TTL_SECONDS", "3600")))
 NOTES_AI_TIMEOUT_SECONDS = float(os.getenv("NOTES_AI_TIMEOUT_SECONDS", "1.8"))
 API_VERSION = os.getenv("SHORTLIST_API_VERSION", "v1.0.0")
 SCORING_VERSION = os.getenv("SHORTLIST_SCORING_VERSION", "v2.1.0")
@@ -54,6 +55,7 @@ POLICY_VERSION = os.getenv("SHORTLIST_POLICY_VERSION", "v2.1.0")
 SCORE_DECIMALS = max(2, min(6, int(os.getenv("SHORTLIST_SCORE_DECIMALS", "4"))))
 SHORTLIST_INCLUDE_LEGACY_KEYS = os.getenv("SHORTLIST_INCLUDE_LEGACY_KEYS", "true").lower() == "true"
 SHORTLIST_AUTO_SEND_EMAILS = os.getenv("SHORTLIST_AUTO_SEND_EMAILS", "false").lower() == "true"
+shortlist_progress_store: dict[str, dict] = {}
 qdrant_index = QdrantResumeIndex()
 from app.constants.companies import COMPANY_SIGNAL_TIERS
 from app.constants.keywords import (
@@ -114,6 +116,25 @@ app.add_middleware(
 )
 
 PROTECTED_PATH_PREFIXES = ("/hiring", "/resume")
+
+
+def _shortlist_progress_cleanup() -> None:
+    now = time.time()
+    expired = [
+        trace_id
+        for trace_id, payload in shortlist_progress_store.items()
+        if (now - float(payload.get("updated_at_epoch", now))) > SHORTLIST_PROGRESS_TTL_SECONDS
+    ]
+    for trace_id in expired:
+        shortlist_progress_store.pop(trace_id, None)
+
+
+def _set_shortlist_progress(trace_id: str, patch: dict) -> None:
+    _shortlist_progress_cleanup()
+    current = shortlist_progress_store.get(trace_id, {})
+    current.update(patch)
+    current["updated_at_epoch"] = time.time()
+    shortlist_progress_store[trace_id] = current
 
 
 @app.middleware("http")
@@ -2640,6 +2661,7 @@ async def hiring_shortlist(
     force_reprocess: bool = Form(default=False),
     send_shortlist_emails: bool = Form(default=False),
     interview_base_url: str = Form(default=""),
+    client_trace_id: str = Form(default=""),
 ):
     started_at = time.time()
     auth = _get_auth_context(request)
@@ -2659,12 +2681,30 @@ async def hiring_shortlist(
     )
     thresholds = _role_thresholds(role, min_experience_years)
 
-    trace_id = str(uuid.uuid4())
+    trace_id = (client_trace_id or "").strip() or str(uuid.uuid4())
+    _set_shortlist_progress(
+        trace_id,
+        {
+            "trace_id": trace_id,
+            "status": "running",
+            "stage": "queued",
+            "uploaded": len(files),
+            "processed": 0,
+            "ranked_so_far": 0,
+            "failed_so_far": 0,
+            "shortlisted_so_far": [],
+            "completed_resumes": [],
+            "last_completed_filename": None,
+            "error": None,
+            "result": None,
+        },
+    )
 
-    tasks = [
-        asyncio.create_task(_process_resume_file(
-            file, 
-            role, 
+    candidates = []
+    async def _run_one_shortlist_file(file: UploadFile):
+        outcome = await _process_resume_file(
+            file,
+            role,
             trace_id,
             auth.tenant_id,
             force_reprocess=force_reprocess,
@@ -2673,38 +2713,81 @@ async def hiring_shortlist(
             min_experience_years=min_experience_years,
             required_skills=required_skills,
             must_have_skills=must_have_skills,
-            thresholds=thresholds
-        ))
-        for file in files
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+            thresholds=thresholds,
+        )
+        return file, outcome
 
-    candidates = []
-    for file, outcome in zip(files, results):
+    tasks = [asyncio.create_task(_run_one_shortlist_file(file)) for file in files]
+
+    _set_shortlist_progress(trace_id, {"stage": "processing_resumes"})
+    processed = 0
+    completed_resumes: list[dict] = []
+    for task in asyncio.as_completed(tasks):
+        try:
+            file, outcome = await task
+        except Exception as exc:
+            file = None
+            outcome = exc
+
         if isinstance(outcome, Exception):
+            completed_resumes.append({
+                "filename": file.filename if file else "unknown",
+                "ok": False,
+                "fit_score_100": 0.0,
+            })
             candidates.append({
-                "filename": file.filename,
+                "filename": file.filename if file else "unknown",
                 "ok": False,
                 "error": str(outcome),
             })
-            continue
+        else:
+            extracted = outcome.get("extracted", {})
+            fit = outcome.get("fit", {})
+            completed_resumes.append({
+                "filename": outcome.get("filename") or (file.filename if file else "unknown"),
+                "ok": True,
+                "fit_score_100": _rscore(_to_float((fit or {}).get("fit_score_100"), 0.0)),
+            })
+            candidates.append({
+                "filename": outcome.get("filename") or file.filename,
+                "ok": True,
+                "saved_json_path": outcome.get("saved_json_path"),
+                "resume_hash": outcome.get("resume_hash"),
+                "extracted": extracted,
+                "eligible": True,
+                "rejection_reasons": [],
+                "fit": fit,
+                "profiles": extracted.get("profiles", {}),
+                "github_summary": extracted.get("github_analysis", {}).get("summary", {}),
+                "platform_stats": extracted.get("platform_stats", {}),
+            })
 
-        extracted = outcome.get("extracted", {})
-        fit = outcome.get("fit", {})
-        candidates.append({
-            "filename": outcome.get("filename") or file.filename,
-            "ok": True,
-            "saved_json_path": outcome.get("saved_json_path"),
-            "resume_hash": outcome.get("resume_hash"),
-            "extracted": extracted,
-            "eligible": True,
-            "rejection_reasons": [],
-            "fit": fit,
-            "profiles": extracted.get("profiles", {}),
-            "github_summary": extracted.get("github_analysis", {}).get("summary", {}),
-            "platform_stats": extracted.get("platform_stats", {}),
-        })
+        processed += 1
+        running_ranked = sorted(
+            [c for c in candidates if c.get("ok")],
+            key=lambda c: (c.get("fit", {}).get("fit_score_100", 0.0) or 0.0),
+            reverse=True,
+        )
+        shortlisted_so_far = [
+            {
+                "filename": c.get("filename"),
+                "fit_score_100": _rscore(_to_float((c.get("fit", {}) or {}).get("fit_score_100"), 0.0)),
+            }
+            for c in running_ranked[:10]
+        ]
+        _set_shortlist_progress(
+            trace_id,
+            {
+                "processed": processed,
+                "ranked_so_far": len(running_ranked),
+                "failed_so_far": len([c for c in candidates if not c.get("ok")]),
+                "shortlisted_so_far": shortlisted_so_far,
+                "completed_resumes": completed_resumes[-30:],
+                "last_completed_filename": file.filename if file else "unknown",
+            },
+        )
 
+    _set_shortlist_progress(trace_id, {"stage": "semantic_rerank"})
     semantic_map = await _qdrant_jd_semantic_map(
         query_skills=semantic_query_skills,
         tenant_id=auth.tenant_id,
@@ -2872,7 +2955,32 @@ async def hiring_shortlist(
             "policy_version": POLICY_VERSION,
         },
     )
+    _set_shortlist_progress(
+        trace_id,
+        {
+            "status": "completed",
+            "stage": "completed",
+            "processed": len(files),
+            "ranked_so_far": len(ranked),
+            "failed_so_far": len(failed),
+            "shortlisted_so_far": [
+                {"filename": c.get("filename"), "fit_score_100": c.get("fit_score_100")}
+                for c in shortlisted_table[:10]
+            ],
+            "completed_resumes": completed_resumes[-30:],
+            "result": response_payload,
+        },
+    )
     return response_payload
+
+
+@app.get("/hiring/shortlist/progress/{trace_id}")
+async def shortlist_progress(trace_id: str, request: Request):
+    _ = _get_auth_context(request)
+    payload = shortlist_progress_store.get(trace_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Trace ID not found or expired")
+    return payload
 
 
 @app.post("/hiring/semantic-search")
