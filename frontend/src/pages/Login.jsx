@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth'
+import { Eye, EyeOff } from 'lucide-react'
 import { auth, googleProvider } from '../firebase'
 import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Auth.css'
@@ -11,8 +12,18 @@ export default function Login() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const AUTH_UI_DEBUG = import.meta.env.VITE_AUTH_UI_DEBUG === 'true'
+
+  const handleForgotPassword = () => {
+    const query = new URLSearchParams({
+      intent: 'forgot-password',
+      email: email.trim(),
+    })
+    navigate(`/contact?${query.toString()}`)
+  }
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -20,7 +31,10 @@ export default function Login() {
     setIsLoading(true)
 
     try {
-      await signInWithEmailAndPassword(auth, email, password)
+      const cred = await signInWithEmailAndPassword(auth, email, password)
+      if (AUTH_UI_DEBUG) {
+        console.info('[auth-ui] login_success_email', { uid: cred.user.uid, email: cred.user.email })
+      }
       navigate('/dashboard')
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.')
@@ -33,7 +47,10 @@ export default function Login() {
     setError('')
     setIsLoading(true)
     try {
-      await signInWithPopup(auth, googleProvider)
+      const cred = await signInWithPopup(auth, googleProvider)
+      if (AUTH_UI_DEBUG) {
+        console.info('[auth-ui] login_success_google', { uid: cred.user.uid, email: cred.user.email })
+      }
       navigate('/dashboard')
     } catch (err) {
       setError(err.message || 'Google sign-in failed. Please try again.')
@@ -75,16 +92,32 @@ export default function Login() {
           <div className="auth-input-group">
             <label style={{ display: 'flex', justifyContent: 'space-between' }}>
               Password
-              <span style={{ color: 'var(--accent-indigo)', cursor: 'pointer', fontSize: '0.8rem' }}>Forgot?</span>
+              <span
+                style={{ color: 'var(--accent-indigo)', cursor: 'pointer', fontSize: '0.8rem' }}
+                onClick={handleForgotPassword}
+              >
+                Forgot?
+              </span>
             </label>
-            <input
-              type="password"
-              className="auth-input"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="auth-password-wrap">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                className="auth-input auth-password-input"
+                placeholder="Enter password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="auth-password-toggle"
+                onClick={() => setShowPassword((value) => !value)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
           {error ? <p style={{ color: '#ff6b6b', margin: 0 }}>{error}</p> : null}
 

@@ -72,6 +72,15 @@ export default function Navbar() {
         >
           Book a Demo
         </motion.button>
+        <motion.button
+          className="btn-premium btn-sm"
+          style={{ background: 'rgba(79, 70, 229, 0.22)', border: '1px solid rgba(129,140,248,0.35)', color: 'white' }}
+          whileHover={{ scale: 1.02, background: 'rgba(79, 70, 229, 0.35)' }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => navigate('/signup')}
+        >
+          Sign Up
+        </motion.button>
         <motion.button 
           className="btn-premium btn-sm"
           style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white' }}

@@ -15,8 +15,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig)
 const auth = getAuth(app)
 const googleProvider = new GoogleAuthProvider()
+const AUTH_UI_DEBUG = import.meta.env.VITE_AUTH_UI_DEBUG === 'true'
 const authReady = new Promise((resolve) => {
-  const unsub = onAuthStateChanged(auth, () => {
+  const unsub = onAuthStateChanged(auth, (user) => {
+    if (AUTH_UI_DEBUG) {
+      console.info('[auth-ui] auth_ready_state', { uid: user?.uid || null, email: user?.email || null })
+    }
     unsub()
     resolve()
   })

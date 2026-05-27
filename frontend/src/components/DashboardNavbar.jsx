@@ -2,13 +2,44 @@ import React, { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LayoutDashboard, Briefcase, Search, Settings, LogOut } from 'lucide-react'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { auth } from '../firebase'
+import { loadAuthProfile } from '../utils/authProfile'
 import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Navbar.css'
 
 export default function DashboardNavbar() {
   const [isHovered, setIsHovered] = useState(false)
+  const [authUser, setAuthUser] = useState(null)
+  const [profile, setProfile] = useState({})
   const navigate = useNavigate()
   const location = useLocation()
+  const AUTH_UI_DEBUG = import.meta.env.VITE_AUTH_UI_DEBUG === 'true'
+
+  React.useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user || null)
+      setProfile(loadAuthProfile(user?.uid))
+      if (AUTH_UI_DEBUG) {
+        console.info('[auth-ui] navbar_auth_state', { uid: user?.uid || null })
+      }
+    })
+    return () => unsub()
+  }, [AUTH_UI_DEBUG])
+
+  const displayName = authUser?.displayName || profile.fullName || authUser?.email || 'Not signed in'
+  const companyLabel = profile.companyName || 'No company linked'
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth)
+      navigate('/login')
+    } catch (err) {
+      if (AUTH_UI_DEBUG) {
+        console.error('[auth-ui] signout_failed', err)
+      }
+    }
+  }
   
   const navItems = [
     { name: 'Hub', icon: LayoutDashboard, path: '/dashboard' },
@@ -69,15 +100,19 @@ export default function DashboardNavbar() {
       </motion.nav>
 
       <div className="header-action">
+        <div style={{ textAlign: 'right', marginRight: '0.75rem', lineHeight: 1.2 }}>
+          <div style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>{displayName}</div>
+          <div style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{companyLabel}</div>
+        </div>
         <motion.button 
           className="btn-premium btn-sm"
           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}
           whileHover={{ scale: 1.02, background: 'rgba(255,255,255,0.1)' }}
           whileTap={{ scale: 0.98 }}
-          onClick={() => navigate('/')}
+          onClick={handleSignOut}
         >
           <LogOut size={16} />
-          <span>Exit Medha</span>
+          <span>Sign Out</span>
         </motion.button>
       </div>
     </header>

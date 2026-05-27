@@ -1,6 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../firebase';
+import { loadAuthProfile } from '../utils/authProfile';
 import {
   Users, 
   Briefcase, 
@@ -27,6 +30,8 @@ export default function DashboardHub() {
   const [recentShortlists, setRecentShortlists] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [deletingId, setDeletingId] = React.useState(null);
+  const [viewerName, setViewerName] = React.useState('Not signed in');
+  const [companyName, setCompanyName] = React.useState('No company linked');
 
   const formatDate = (dateString) => {
     if (!dateString || dateString === "Recently") return "Recently";
@@ -58,6 +63,15 @@ export default function DashboardHub() {
       return dateString;
     }
   };
+
+  React.useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      const profile = loadAuthProfile(user?.uid)
+      setViewerName(user?.displayName || profile.fullName || user?.email || 'Not signed in')
+      setCompanyName(profile.companyName || 'No company linked')
+    })
+    return () => unsub()
+  }, [])
 
   React.useEffect(() => {
     fetch(`${API_BASE_URL}/hiring/dashboard-metrics`)
@@ -101,7 +115,6 @@ export default function DashboardHub() {
   };
 
   // Use the fetched data
-  const companyName = "Acme Corp"; // Can also be fetched later
   const metrics = [
     { id: 1, label: "Total Candidates Analyzed", value: metricsData.total_candidates.toLocaleString(), icon: Users, color: "#818cf8", bg: "rgba(129, 140, 248, 0.15)" },
     { id: 2, label: "Shortlists Completed", value: metricsData.shortlists_completed.toLocaleString(), icon: CheckCircle2, color: "#34d399", bg: "rgba(52, 211, 153, 0.15)" },
@@ -128,7 +141,7 @@ export default function DashboardHub() {
             Welcome back, <span style={{ color: '#818cf8' }}>{companyName}</span>
           </h1>
           <p style={{ margin: '0.5rem 0 0 0', color: '#94a3b8', fontSize: '1.1rem' }}>
-            Here is what's happening with your hiring pipeline today.
+            Signed in as {viewerName}. Here is what is happening with your hiring pipeline today.
           </p>
         </div>
       </motion.div>

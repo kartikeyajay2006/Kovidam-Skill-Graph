@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import emailjs from '@emailjs/browser'
 import {
   CalendarDays,
@@ -28,6 +29,9 @@ const INITIAL_FORM = {
 }
 
 export default function ContactPage() {
+  const [searchParams] = useSearchParams()
+  const contactIntent = searchParams.get('intent') || ''
+  const isPasswordHelp = contactIntent === 'forgot-password'
   const [form, setForm] = useState(INITIAL_FORM)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -46,6 +50,16 @@ export default function ContactPage() {
     return `${yyyy}-${mm}-${dd}`
   }, [])
 
+  useEffect(() => {
+    if (!isPasswordHelp) return
+    const email = searchParams.get('email') || ''
+    setForm((prev) => ({
+      ...prev,
+      workEmail: email,
+      message: 'I need help accessing my Kovidam account. Please help me recover or reset my login.',
+    }))
+  }, [isPasswordHelp, searchParams])
+
   const onChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }))
     if (error) setError('')
@@ -56,6 +70,11 @@ export default function ContactPage() {
     if (!form.fullName.trim()) return 'Please enter your full name.'
     if (!form.workEmail.trim()) return 'Please enter your work email.'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.workEmail)) return 'Please enter a valid email address.'
+    if (isPasswordHelp) {
+      if (!form.consent) return 'Please agree to be contacted regarding your account access request.'
+      if (!templateId || !publicKey) return 'EmailJS is not configured. Add template and public key in frontend env.'
+      return ''
+    }
     if (!form.phoneNumber.trim()) return 'Please enter your phone number.'
     if (!/^[+0-9()\-\s]{7,20}$/.test(form.phoneNumber)) return 'Please enter a valid phone number.'
     if (!form.preferredDate) return 'Please choose your preferred date.'
@@ -113,7 +132,7 @@ export default function ContactPage() {
     setSuccess('')
     try {
       await emailjs.send(serviceId, templateId, buildTemplateParams(actionType), { publicKey })
-      setSuccess('Request sent successfully. We will confirm your slot by email.')
+      setSuccess(isPasswordHelp ? 'Account help request sent. We will contact you by email.' : 'Request sent successfully. We will confirm your slot by email.')
       setForm(INITIAL_FORM)
     } catch (err) {
       const status = err?.status
@@ -147,8 +166,9 @@ export default function ContactPage() {
         <div className="contact-left">
           <h2>Schedule a <span>Demo</span></h2>
           <p>
-            Learn how Kovidam AI hiring intelligence helps you find the best engineering
-            talent faster and with confidence.
+            {isPasswordHelp
+              ? 'Tell us which account needs help and our team will follow up with access support.'
+              : 'Learn how Kovidam AI hiring intelligence helps you find the best engineering talent faster and with confidence.'}
           </p>
 
           <div className="contact-badges">
@@ -187,7 +207,7 @@ export default function ContactPage() {
             <div className="head-icon"><CalendarDays size={24} /></div>
             <div>
               <h3>Book Your Demo Slot</h3>
-              <p>Fill in the details below and we will take care of the rest.</p>
+              <p>{isPasswordHelp ? 'Account access support request' : 'Fill in the details below and we will take care of the rest.'}</p>
             </div>
           </div>
 
@@ -205,7 +225,7 @@ export default function ContactPage() {
             </label>
 
             <label className="premium-input-group">
-              <span>Phone Number *</span>
+              <span>Phone Number {isPasswordHelp ? '' : '*'}</span>
               <Phone className="premium-input-icon" />
               <input className="premium-input" value={form.phoneNumber} onChange={(e) => onChange('phoneNumber', e.target.value)} placeholder="+91 98765 43210" />
             </label>
@@ -218,20 +238,20 @@ export default function ContactPage() {
 
             <div className="date-time-wrap">
               <label className="premium-input-group">
-                <span>Preferred Date *</span>
+                <span>Preferred Date {isPasswordHelp ? '' : '*'}</span>
                 <input type="date" min={minDate} className="premium-input plain-input" value={form.preferredDate} onChange={(e) => onChange('preferredDate', e.target.value)} />
                 <CalendarDays className="field-end-icon" size={16} />
               </label>
-              <small>We will confirm your slot by email</small>
+              <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
             </div>
 
             <div className="date-time-wrap">
               <label className="premium-input-group">
-                <span>Preferred Time *</span>
+                <span>Preferred Time {isPasswordHelp ? '' : '*'}</span>
                 <input type="time" className="premium-input plain-input" value={form.preferredTime} onChange={(e) => onChange('preferredTime', e.target.value)} />
                 <Clock3 className="field-end-icon" size={16} />
               </label>
-              <small>We will confirm your slot by email</small>
+              <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
             </div>
           </div>
 
@@ -266,8 +286,8 @@ export default function ContactPage() {
 
 
           <div className="contact-actions">
-            <button className="btn-premium btn-primary" disabled={isSubmitting} onClick={() => void submit('Book Demo')}>
-              <CalendarDays size={18} /> {isSubmitting ? 'Sending...' : 'Book Demo'}
+            <button className="btn-premium btn-primary" disabled={isSubmitting} onClick={() => void submit(isPasswordHelp ? 'Account Access Help' : 'Book Demo')}>
+              <CalendarDays size={18} /> {isSubmitting ? 'Sending...' : (isPasswordHelp ? 'Request Account Help' : 'Book Demo')}
             </button>
             <button className="btn-premium btn-secondary" disabled={isSubmitting} onClick={() => void submit('Send Inquiry')}>
               <Send size={18} /> {isSubmitting ? 'Sending...' : 'Send Inquiry'}
