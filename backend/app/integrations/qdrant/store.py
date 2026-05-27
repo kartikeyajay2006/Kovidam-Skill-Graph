@@ -31,6 +31,10 @@ def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().lower())
 
 
+def _normalize_keyword(value: Any) -> str:
+    return _normalize_text(str(value or ""))
+
+
 def _canonical_skill(skill: str) -> str:
     norm = _normalize_text(skill)
     norm = re.sub(r"[_|/]+", " ", norm)
@@ -179,17 +183,25 @@ class QdrantResumeIndex:
     ) -> dict[str, Any]:
         client = self._ensure_client()
         if client is None:
+            logger.warning(
+                "qdrant_upsert_skipped_client_missing",
+                extra={"event": "qdrant_upsert_skipped_client_missing", "enabled": self.enabled},
+            )
             return {"enabled": self.enabled, "indexed": False}
 
         skill_tokens = self.build_skill_tokens(raw_skills)
         vector = _vectorize_skill_tokens(skill_tokens, self.vector_dim)
         payload = {
             "filename": filename,
-            "role": role,
+            "role": _normalize_keyword(role),
             "skills": skill_tokens,
         }
         if payload_extra:
             payload.update(payload_extra)
+        # Keep keyword-filtered fields normalized so filters are stable/case-insensitive.
+        for key in ("role", "tenant_id", "user_id"):
+            if key in payload:
+                payload[key] = _normalize_keyword(payload.get(key))
 
         qdrant_point_id = self._to_qdrant_point_id(point_id)
         client.upsert(
@@ -202,6 +214,18 @@ class QdrantResumeIndex:
                     payload=payload,
                 )
             ],
+        )
+        logger.info(
+            "qdrant_upsert_ok",
+            extra={
+                "event": "qdrant_upsert_ok",
+                "collection": self.collection,
+                "point_id": qdrant_point_id,
+                "tenant_id": payload.get("tenant_id"),
+                "user_id": payload.get("user_id"),
+                "role": payload.get("role"),
+                "skills_indexed": len(skill_tokens),
+            },
         )
         return {
             "enabled": True,
@@ -232,12 +256,16 @@ class QdrantResumeIndex:
     ) -> dict[str, Any]:
         client = self._ensure_client()
         if client is None:
+            logger.warning(
+                "qdrant_search_skipped_client_missing",
+                extra={"event": "qdrant_search_skipped_client_missing", "enabled": self.enabled},
+            )
             return {"enabled": self.enabled, "ready": False, "hits": []}
 
         query_tokens = self.build_skill_tokens(query_skills)
         vector = _vectorize_skill_tokens(query_tokens, self.vector_dim)
         must_conditions = []
-        role_norm = _normalize_text(role or "")
+        role_norm = _normalize_keyword(role or "")
         if role_norm:
             must_conditions.append(
                 qmodels.FieldCondition(
@@ -245,7 +273,7 @@ class QdrantResumeIndex:
                     match=qmodels.MatchValue(value=role_norm),
                 )
             )
-        tenant_norm = _normalize_text(tenant_id or "")
+        tenant_norm = _normalize_keyword(tenant_id or "")
         if tenant_norm:
             must_conditions.append(
                 qmodels.FieldCondition(
@@ -253,7 +281,7 @@ class QdrantResumeIndex:
                     match=qmodels.MatchValue(value=tenant_norm),
                 )
             )
-        user_norm = _normalize_text(user_id or "")
+        user_norm = _normalize_keyword(user_id or "")
         if user_norm:
             must_conditions.append(
                 qmodels.FieldCondition(
@@ -264,6 +292,19 @@ class QdrantResumeIndex:
         qfilter = qmodels.Filter(must=must_conditions) if must_conditions else None
         limit = max(1, min(top_k, 200))
         score_threshold = min_score if min_score > 0 else None
+        logger.info(
+            "qdrant_search_start",
+            extra={
+                "event": "qdrant_search_start",
+                "collection": self.collection,
+                "role_norm": role_norm or None,
+                "tenant_norm": tenant_norm or None,
+                "user_norm": user_norm or None,
+                "query_tokens_count": len(query_tokens),
+                "top_k": limit,
+                "score_threshold": score_threshold,
+            },
+        )
         try:
             if hasattr(client, "search"):
                 result = client.search(
@@ -321,6 +362,68 @@ class QdrantResumeIndex:
                 result = getattr(response, "points", response)
             else:
                 raise
+        # Backward-compat: older points may have non-normalized payload fields.
+        # Retry once with raw (trimmed) values if normalized filter yields no hits.
+        if not result and any([role, tenant_id, user_id]):
+            raw_must = []
+            role_raw = str(role or "").strip()
+            tenant_raw = str(tenant_id or "").strip()
+            user_raw = str(user_id or "").strip()
+            if role_raw:
+                raw_must.append(
+                    qmodels.FieldCondition(
+                        key="role",
+                        match=qmodels.MatchValue(value=role_raw),
+                    )
+                )
+            if tenant_raw:
+                raw_must.append(
+                    qmodels.FieldCondition(
+                        key="tenant_id",
+                        match=qmodels.MatchValue(value=tenant_raw),
+                    )
+                )
+            if user_raw:
+                raw_must.append(
+                    qmodels.FieldCondition(
+                        key="user_id",
+                        match=qmodels.MatchValue(value=user_raw),
+                    )
+                )
+            raw_filter = qmodels.Filter(must=raw_must) if raw_must else None
+            try:
+                if hasattr(client, "search"):
+                    result = client.search(
+                        collection_name=self.collection,
+                        query_vector=vector,
+                        query_filter=raw_filter,
+                        with_payload=True,
+                        limit=limit,
+                        score_threshold=score_threshold,
+                    )
+                else:
+                    response = client.query_points(
+                        collection_name=self.collection,
+                        query=vector,
+                        query_filter=raw_filter,
+                        with_payload=True,
+                        limit=limit,
+                        score_threshold=score_threshold,
+                    )
+                    result = getattr(response, "points", response)
+                logger.info(
+                    "qdrant_raw_filter_fallback_used",
+                    extra={
+                        "event": "qdrant_raw_filter_fallback_used",
+                        "collection": self.collection,
+                        "role_raw": role_raw or None,
+                        "tenant_raw": tenant_raw or None,
+                        "user_raw": user_raw or None,
+                    },
+                )
+            except Exception:
+                pass
+
         hits = []
         for idx, item in enumerate(result, start=1):
             payload = item.payload or {}

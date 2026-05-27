@@ -877,6 +877,18 @@ async def _process_resume_file(
             force_reprocess=force_reprocess,
         )
         db_status = (db_result or {}).get("status") if isinstance(db_result, dict) else None
+        _json_log(
+            "resume_persist_db_result",
+            {
+                "filename": file.filename,
+                "trace_id": trace_id,
+                "resume_hash": resume_hash,
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "db_status": db_status,
+                "db_result": db_result,
+            },
+        )
         if db_status not in {"inserted", "duplicate"}:
             raise RuntimeError(
                 f"Database persistence failed for {file.filename}: db_result={db_result!r}"
@@ -912,6 +924,17 @@ async def _process_resume_file(
                 "project_evidence_score_100": _to_float(fit.get("breakdown", {}).get("project_evidence_score_100"), 0.0),
                 "profile_completeness_score_100": _to_float(fit.get("breakdown", {}).get("profile_completeness_score_100"), 0.0),
                 "fit_score_100": _to_float(fit.get("fit_score_100"), 0.0)
+            },
+        )
+        _json_log(
+            "resume_persist_qdrant_result",
+            {
+                "filename": file.filename,
+                "trace_id": trace_id,
+                "resume_hash": resume_hash,
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "qdrant_result": qdrant_result,
             },
         )
 
