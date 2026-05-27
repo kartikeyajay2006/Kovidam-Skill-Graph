@@ -19,7 +19,10 @@ import {
   FilePlus,
   Files,
   Users,
-  Mail
+  Mail,
+  BellRing,
+  BellOff,
+  Info
 } from 'lucide-react';
 import TagInput from '../components/TagInput';
 
@@ -47,8 +50,19 @@ export default function ShortlistPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedCandidateIndex, setSelectedCandidateIndex] = useState(null);
   const [autoSendEmails, setAutoSendEmails] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
+    return Notification.permission;
+  });
+  const [notificationPromptSeen, setNotificationPromptSeen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('kovidam_notification_prompt_seen') === '1';
+  });
+  const [notifyToast, setNotifyToast] = useState(null);
   
   const fileInputRef = useRef(null);
+  const completionNotifiedRef = useRef(false);
+  const notifyToastTimerRef = useRef(null);
   const loadingStages = [
     'Validating uploaded resumes...',
     'Extracting profile links, skills, and projects...',
@@ -75,6 +89,106 @@ export default function ShortlistPage() {
       clearInterval(stageTimer);
     };
   }, [loading]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    setNotificationPermission(Notification.permission);
+  }, []);
+
+  const showNotifyToast = (type, title, message) => {
+    if (notifyToastTimerRef.current) {
+      clearTimeout(notifyToastTimerRef.current);
+    }
+    setNotifyToast({ type, title, message });
+    notifyToastTimerRef.current = setTimeout(() => {
+      setNotifyToast(null);
+    }, 4400);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (notifyToastTimerRef.current) clearTimeout(notifyToastTimerRef.current);
+    };
+  }, []);
+
+  const requestNotificationPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      window.localStorage.setItem('kovidam_notification_prompt_seen', '1');
+      setNotificationPromptSeen(true);
+      if (permission === 'granted') {
+        showNotifyToast('success', 'Notifications enabled', 'You will get an alert when shortlist processing completes.');
+      } else if (permission === 'denied') {
+        showNotifyToast('warning', 'Notifications blocked', 'Browser notifications are blocked. You can enable them from site settings.');
+      } else {
+        showNotifyToast('info', 'Notification request dismissed', 'You can enable notifications anytime from the progress panel.');
+      }
+    } catch {
+      showNotifyToast('error', 'Notification setup failed', 'Could not request notification permission in this browser session.');
+    }
+  };
+
+  const notifyShortlistCompletion = (payload) => {
+    if (completionNotifiedRef.current) return;
+
+    const ranked = payload?.counts?.ranked ?? 0;
+    const uploaded = payload?.counts?.uploaded ?? files.length ?? 0;
+    const failed = payload?.counts?.failed ?? 0;
+    const title = `${formData.company_name || 'Kovidam'} shortlist completed`;
+    const body = `Processed ${uploaded} resumes • Ranked ${ranked} • Failed ${failed}`;
+
+    showNotifyToast(
+      failed > 0 ? 'warning' : 'success',
+      'Shortlist completed',
+      `Processed ${uploaded} resumes. Ranked ${ranked}${failed > 0 ? `, failed ${failed}` : ''}.`
+    );
+
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      completionNotifiedRef.current = true;
+      return;
+    }
+    if (Notification.permission !== 'granted') {
+      completionNotifiedRef.current = true;
+      return;
+    }
+
+    try {
+      const n = new Notification(title, {
+        body,
+        tag: 'kovidam-shortlist-complete',
+        requireInteraction: failed > 0,
+        renotify: true,
+      });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+      completionNotifiedRef.current = true;
+    } catch {
+      // Ignore notification runtime errors.
+    }
+  };
+
+  const notifyShortlistFailure = (message) => {
+    showNotifyToast('error', 'Shortlist failed', message || 'Something went wrong while processing resumes.');
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    try {
+      const n = new Notification(`${formData.company_name || 'Kovidam'} shortlist failed`, {
+        body: message || 'Something went wrong while processing resumes.',
+        tag: 'kovidam-shortlist-failed',
+        requireInteraction: true,
+      });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    } catch {
+      // Ignore notification runtime errors.
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -107,6 +221,7 @@ export default function ShortlistPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    completionNotifiedRef.current = false;
     setLoading(true);
     setError(null);
     setResults(null);
@@ -170,8 +285,10 @@ export default function ShortlistPage() {
         throw new Error("Server returned empty response");
       }
       setResults(json);
+      notifyShortlistCompletion(json);
     } catch (err) {
       setError(err.message);
+      notifyShortlistFailure(err.message);
       setStep(2); // Go back to config on error
     } finally {
       if (progressTimer) clearInterval(progressTimer);
@@ -657,7 +774,7 @@ export default function ShortlistPage() {
                   backdropFilter: 'blur(1px)',
                   background: 'linear-gradient(180deg, rgba(2,6,23,0.28) 0%, rgba(2,6,23,0.58) 100%)'
                 }}>
-                  <div style={{ width: 'min(860px, 94%)', borderRadius: '20px', border: '1px solid rgba(129,140,248,0.35)', background: 'linear-gradient(145deg, rgba(10, 12, 26, 0.9), rgba(17, 24, 39, 0.86))', boxShadow: '0 25px 60px rgba(0,0,0,0.42)', padding: '1.4rem', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.2rem' }}>
+                  <div style={{ width: 'min(1060px, 96%)', borderRadius: '24px', border: '1px solid rgba(129,140,248,0.40)', background: 'linear-gradient(145deg, rgba(10, 12, 26, 0.92), rgba(17, 24, 39, 0.9))', boxShadow: '0 32px 78px rgba(0,0,0,0.52)', padding: '1.85rem 1.9rem', display: 'grid', gridTemplateColumns: '1.35fr 1fr', gap: '1.4rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', marginBottom: '0.7rem' }}>
                         <div style={{ position: 'relative', width: '68px', height: '68px' }}>
@@ -672,6 +789,28 @@ export default function ShortlistPage() {
                           </p>
                         </div>
                       </div>
+                      {notificationPermission !== 'unsupported' && (
+                        <div style={{ marginBottom: '0.8rem', border: `1px solid ${notificationPermission === 'granted' ? 'rgba(16,185,129,0.34)' : notificationPermission === 'denied' ? 'rgba(248,113,113,0.34)' : 'rgba(129,140,248,0.3)'}`, background: notificationPermission === 'granted' ? 'rgba(5,46,22,0.38)' : notificationPermission === 'denied' ? 'rgba(69,10,10,0.34)' : 'rgba(49,46,129,0.24)', borderRadius: '11px', padding: '0.65rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
+                          <span style={{ color: notificationPermission === 'granted' ? '#86efac' : notificationPermission === 'denied' ? '#fecaca' : '#c7d2fe', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                            {notificationPermission === 'granted' ? <BellRing size={14} /> : notificationPermission === 'denied' ? <BellOff size={14} /> : <Info size={14} />}
+                            {notificationPermission === 'granted'
+                              ? 'Desktop alerts are enabled. You will be notified as soon as shortlist completes.'
+                              : notificationPermission === 'denied'
+                                ? 'Desktop alerts are blocked by browser. Enable notifications from site settings.'
+                                : 'Get a desktop alert when all resumes finish processing.'}
+                          </span>
+                          {notificationPermission !== 'granted' && notificationPermission !== 'denied' && (
+                            <button
+                              type="button"
+                              onClick={requestNotificationPermission}
+                              className="btn-premium"
+                              style={{ padding: '0.38rem 0.72rem', fontSize: '0.76rem', whiteSpace: 'nowrap' }}
+                            >
+                              {notificationPromptSeen ? 'Enable Alerts' : 'Allow Notifications'}
+                            </button>
+                          )}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
                         <span style={{ background: 'rgba(99,102,241,0.16)', color: '#c7d2fe', border: '1px solid rgba(99,102,241,0.35)', borderRadius: '999px', padding: '0.34rem 0.65rem', fontSize: '0.78rem' }}>
                           Resumes: {files.length || 0}
@@ -997,6 +1136,87 @@ export default function ShortlistPage() {
             ) : null}
           </motion.div>
         )}
+
+        <AnimatePresence>
+          {notifyToast && (
+            <motion.div
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+              style={{
+                position: 'fixed',
+                right: '1.2rem',
+                bottom: '1.2rem',
+                zIndex: 80,
+                width: 'min(380px, calc(100vw - 2rem))',
+                borderRadius: '14px',
+                border: `1px solid ${
+                  notifyToast.type === 'success'
+                    ? 'rgba(16,185,129,0.45)'
+                    : notifyToast.type === 'error'
+                      ? 'rgba(248,113,113,0.45)'
+                      : notifyToast.type === 'warning'
+                        ? 'rgba(251,191,36,0.45)'
+                        : 'rgba(129,140,248,0.45)'
+                }`,
+                background: 'linear-gradient(145deg, rgba(7, 11, 26, 0.96), rgba(17, 24, 39, 0.94))',
+                boxShadow: '0 26px 52px rgba(0,0,0,0.4)',
+                padding: '0.85rem 0.95rem',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.7rem',
+              }}
+            >
+              <div
+                style={{
+                  marginTop: '0.15rem',
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '999px',
+                  background:
+                    notifyToast.type === 'success'
+                      ? '#34d399'
+                      : notifyToast.type === 'error'
+                        ? '#f87171'
+                        : notifyToast.type === 'warning'
+                          ? '#fbbf24'
+                          : '#818cf8',
+                  boxShadow:
+                    notifyToast.type === 'success'
+                      ? '0 0 12px rgba(52,211,153,0.9)'
+                      : notifyToast.type === 'error'
+                        ? '0 0 12px rgba(248,113,113,0.9)'
+                        : notifyToast.type === 'warning'
+                          ? '0 0 12px rgba(251,191,36,0.9)'
+                          : '0 0 12px rgba(129,140,248,0.9)',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, color: '#e2e8f0', fontWeight: 650, fontSize: '0.92rem' }}>{notifyToast.title}</p>
+                <p style={{ margin: '0.2rem 0 0 0', color: '#94a3b8', fontSize: '0.83rem', lineHeight: 1.35 }}>{notifyToast.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotifyToast(null)}
+                style={{
+                  marginLeft: 'auto',
+                  border: 'none',
+                  background: 'transparent',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem',
+                  padding: 0,
+                  lineHeight: 1,
+                }}
+                aria-label="Dismiss notification"
+              >
+                ×
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
       </AnimatePresence>
     </div>
