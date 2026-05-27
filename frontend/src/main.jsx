@@ -6,10 +6,17 @@ import './index.css'
 import { auth, authReady } from './firebase'
 
 const originalFetch = window.fetch.bind(window)
+const AUTH_FETCH_DEBUG = import.meta.env.VITE_AUTH_FETCH_DEBUG === 'true'
 
 window.fetch = async (input, init = {}) => {
   const requestUrl = typeof input === 'string' ? input : input?.url || ''
-  const isBackendRoute = requestUrl.startsWith('/hiring') || requestUrl.startsWith('/resume')
+  let pathname = ''
+  try {
+    pathname = new URL(requestUrl, window.location.origin).pathname || ''
+  } catch {
+    pathname = requestUrl
+  }
+  const isBackendRoute = pathname.startsWith('/hiring') || pathname.startsWith('/resume')
   if (!isBackendRoute) {
     return originalFetch(input, init)
   }
@@ -30,6 +37,9 @@ window.fetch = async (input, init = {}) => {
   const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined) || {})
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
+  } else if (AUTH_FETCH_DEBUG) {
+    // Useful while diagnosing missing bearer-token issues on protected routes.
+    console.warn('[auth-fetch] missing token for backend route', { requestUrl, pathname })
   }
 
   return originalFetch(input, {

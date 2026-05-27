@@ -23,6 +23,40 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+def _auto_fix_legacy_constraints(conn) -> None:
+    """
+    Heal legacy schema drift that breaks shortlist persistence.
+    """
+    print("[DB] Checking legacy constraint drift...")
+    # Old global uniqueness on resume_hash breaks tenant/user scoped inserts.
+    conn.execute(text("ALTER TABLE candidates DROP CONSTRAINT IF EXISTS candidates_resume_hash_key"))
+    conn.execute(text("DROP INDEX IF EXISTS candidates_resume_hash_key"))
+    conn.execute(text("DROP INDEX IF EXISTS ix_candidates_resume_hash"))
+
+    # Ensure scoped uniqueness exists for modern multi-tenant behavior.
+    conn.execute(
+        text(
+            """
+            DO $$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1
+                FROM pg_constraint
+                WHERE conname = 'uq_candidates_tenant_user_resume_hash'
+              ) THEN
+                ALTER TABLE candidates
+                ADD CONSTRAINT uq_candidates_tenant_user_resume_hash
+                UNIQUE (tenant_id, user_id, resume_hash);
+              END IF;
+            END
+            $$;
+            """
+        )
+    )
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_candidates_resume_hash ON candidates (resume_hash)"))
+    print("[DB] Legacy constraint check complete.")
+
+
 def init_db() -> None:
     """
     Verify database connectivity at startup.
@@ -36,6 +70,14 @@ def init_db() -> None:
     print("[DB] Verifying database connectivity...")
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
+        auto_fix = os.getenv("DB_AUTO_FIX_LEGACY_CONSTRAINTS", "true").lower() == "true"
+        if auto_fix:
+            try:
+                _auto_fix_legacy_constraints(conn)
+                conn.commit()
+            except Exception as exc:
+                conn.rollback()
+                print(f"[DB] Legacy constraint auto-fix skipped: {exc}")
 
         # Log the current Alembic revision for observability.
         try:

@@ -57,6 +57,7 @@ SHORTLIST_INCLUDE_LEGACY_KEYS = os.getenv("SHORTLIST_INCLUDE_LEGACY_KEYS", "true
 SHORTLIST_AUTO_SEND_EMAILS = os.getenv("SHORTLIST_AUTO_SEND_EMAILS", "false").lower() == "true"
 shortlist_progress_store: dict[str, dict] = {}
 qdrant_index = QdrantResumeIndex()
+DEBUG_DIAGNOSTICS = os.getenv("DEBUG_DIAGNOSTICS", "true").lower() == "true"
 from app.constants.companies import COMPANY_SIGNAL_TIERS
 from app.constants.keywords import (
     EXPERIENCE_KEYWORDS,
@@ -118,6 +119,17 @@ app.add_middleware(
 PROTECTED_PATH_PREFIXES = ("/hiring", "/resume")
 
 
+def _auth_snapshot(auth: AuthContext | None) -> dict:
+    if not auth:
+        return {"auth_present": False}
+    return {
+        "auth_present": True,
+        "user_id": auth.user_id,
+        "tenant_id": auth.tenant_id,
+        "role": auth.role,
+    }
+
+
 def _shortlist_progress_cleanup() -> None:
     now = time.time()
     expired = [
@@ -147,7 +159,31 @@ async def auth_middleware(request: Request, call_next):
         try:
             auth_ctx = authenticate_request(request)
             request.state.auth = auth_ctx
+            if DEBUG_DIAGNOSTICS:
+                logger.info(
+                    json.dumps(
+                        {
+                            "event": "auth_ok",
+                            "path": request.url.path,
+                            "method": request.method,
+                            **_auth_snapshot(auth_ctx),
+                        }
+                    )
+                )
         except HTTPException as exc:
+            if DEBUG_DIAGNOSTICS:
+                logger.warning(
+                    json.dumps(
+                        {
+                            "event": "auth_failed",
+                            "path": request.url.path,
+                            "method": request.method,
+                            "status_code": exc.status_code,
+                            "detail": exc.detail,
+                            "has_auth_header": bool(request.headers.get("authorization")),
+                        }
+                    )
+                )
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     return await call_next(request)
 
@@ -294,6 +330,16 @@ async def get_all_shortlists(request: Request):
             .order_by(func.max(Job.created_at).desc())
             .all()
         )
+        if DEBUG_DIAGNOSTICS:
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "shortlists_query_result",
+                        **_auth_snapshot(auth),
+                        "rows": len(query),
+                    }
+                )
+            )
         
         shortlists = []
         for r in query:
@@ -436,6 +482,17 @@ async def get_past_shortlist(trace_id: str, request: Request):
             .filter(Job.trace_id == trace_id, Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
             .all()
         )
+        if DEBUG_DIAGNOSTICS:
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "shortlist_trace_query_result",
+                        **_auth_snapshot(auth),
+                        "trace_id": trace_id,
+                        "rows": len(query),
+                    }
+                )
+            )
         
         if not query:
             raise HTTPException(status_code=404, detail="Shortlist not found")
@@ -819,6 +876,11 @@ async def _process_resume_file(
             user_id,
             force_reprocess=force_reprocess,
         )
+        db_status = (db_result or {}).get("status") if isinstance(db_result, dict) else None
+        if db_status not in {"inserted", "duplicate"}:
+            raise RuntimeError(
+                f"Database persistence failed for {file.filename}: db_result={db_result!r}"
+            )
         semantic_raw_skills = _collect_candidate_raw_skills(result)
         
         # Extract github score to store in semantic search payload
@@ -2670,6 +2732,20 @@ async def hiring_shortlist(
 ):
     started_at = time.time()
     auth = _get_auth_context(request)
+    if DEBUG_DIAGNOSTICS:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "shortlist_create_start",
+                    **_auth_snapshot(auth),
+                    "uploaded_files": len(files) if files else 0,
+                    "role": role,
+                    "company_name": company_name,
+                    "position_title": position_title,
+                    "client_trace_id": client_trace_id or None,
+                }
+            )
+        )
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
@@ -2980,6 +3056,19 @@ async def hiring_shortlist(
             "result": response_payload,
         },
     )
+    if DEBUG_DIAGNOSTICS:
+        logger.info(
+            json.dumps(
+                {
+                    "event": "shortlist_create_done",
+                    **_auth_snapshot(auth),
+                    "trace_id": trace_id,
+                    "ranked": len(ranked),
+                    "failed": len(failed),
+                    "elapsed_seconds": round(time.time() - started_at, 3),
+                }
+            )
+        )
     return response_payload
 
 
@@ -2992,6 +3081,89 @@ async def shortlist_progress(trace_id: str, request: Request):
     if payload.get("tenant_id") != auth.tenant_id or payload.get("user_id") != auth.user_id:
         raise HTTPException(status_code=404, detail="Trace ID not found or expired")
     return payload
+
+
+@app.get("/debug/whoami")
+async def debug_whoami(request: Request):
+    auth_ctx = getattr(request.state, "auth", None)
+    auth_header = request.headers.get("authorization", "")
+    return {
+        "debug_diagnostics": DEBUG_DIAGNOSTICS,
+        "auth_required": AUTH_REQUIRED,
+        "path": request.url.path,
+        "has_bearer_header": auth_header.lower().startswith("bearer "),
+        "auth_context": _auth_snapshot(auth_ctx),
+        "fallback_if_missing_auth": {"user_id": "local-dev", "tenant_id": "default"} if not AUTH_REQUIRED else None,
+    }
+
+
+@app.get("/debug/db-summary")
+async def debug_db_summary(request: Request):
+    db = SessionLocal()
+    auth = _get_auth_context(request)
+    try:
+        trace_ids = [
+            row[0]
+            for row in (
+                db.query(Job.trace_id)
+                .filter(Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
+                .distinct()
+                .order_by(Job.trace_id.asc())
+                .limit(50)
+                .all()
+            )
+        ]
+        return {
+            "auth": _auth_snapshot(auth),
+            "counts": {
+                "candidates": db.query(Candidate).filter(Candidate.tenant_id == auth.tenant_id, Candidate.user_id == auth.user_id).count(),
+                "jobs": db.query(Job).filter(Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id).count(),
+                "candidate_job_scores": db.query(CandidateJobScore).join(Job, CandidateJobScore.job_id == Job.id).filter(Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id).count(),
+                "distinct_trace_ids": len(trace_ids),
+            },
+            "sample_trace_ids": trace_ids,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/debug/trace/{trace_id}")
+async def debug_trace(trace_id: str, request: Request):
+    db = SessionLocal()
+    auth = _get_auth_context(request)
+    try:
+        jobs = (
+            db.query(Job)
+            .filter(Job.trace_id == trace_id, Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
+            .all()
+        )
+        candidate_ids = [j.candidate_id for j in jobs]
+        candidates = (
+            db.query(Candidate)
+            .filter(Candidate.id.in_(candidate_ids))
+            .all()
+            if candidate_ids
+            else []
+        )
+        return {
+            "auth": _auth_snapshot(auth),
+            "trace_id": trace_id,
+            "job_rows": len(jobs),
+            "candidate_rows": len(candidates),
+            "jobs": [
+                {
+                    "id": j.id,
+                    "candidate_id": j.candidate_id,
+                    "tenant_id": j.tenant_id,
+                    "user_id": j.user_id,
+                    "created_at": j.created_at.isoformat() if j.created_at else None,
+                    "role": j.role,
+                }
+                for j in jobs
+            ],
+        }
+    finally:
+        db.close()
 
 
 @app.post("/hiring/semantic-search")
