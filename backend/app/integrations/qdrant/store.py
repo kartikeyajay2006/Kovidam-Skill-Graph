@@ -145,7 +145,7 @@ class QdrantResumeIndex:
                 ),
             )
         # Ensure payload indexes used by filters exist (required on cloud clusters).
-        for key in ("role", "tenant_id"):
+        for key in ("role", "tenant_id", "user_id"):
             try:
                 client.create_payload_index(
                     collection_name=self.collection,
@@ -225,6 +225,7 @@ class QdrantResumeIndex:
         *,
         query_skills: list[str],
         tenant_id: str | None = None,
+        user_id: str | None = None,
         role: str | None = None,
         top_k: int = 20,
         min_score: float = 0.0,
@@ -250,6 +251,14 @@ class QdrantResumeIndex:
                 qmodels.FieldCondition(
                     key="tenant_id",
                     match=qmodels.MatchValue(value=tenant_norm),
+                )
+            )
+        user_norm = _normalize_text(user_id or "")
+        if user_norm:
+            must_conditions.append(
+                qmodels.FieldCondition(
+                    key="user_id",
+                    match=qmodels.MatchValue(value=user_norm),
                 )
             )
         qfilter = qmodels.Filter(must=must_conditions) if must_conditions else None
@@ -291,6 +300,13 @@ class QdrantResumeIndex:
                         qmodels.FieldCondition(
                             key="tenant_id",
                             match=qmodels.MatchValue(value=tenant_norm),
+                        )
+                    )
+                if user_norm:
+                    fallback_must.append(
+                        qmodels.FieldCondition(
+                            key="user_id",
+                            match=qmodels.MatchValue(value=user_norm),
                         )
                     )
                 fallback_filter = qmodels.Filter(must=fallback_must) if fallback_must else None

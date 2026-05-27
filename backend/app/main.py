@@ -174,8 +174,8 @@ async def dashboard_metrics(request: Request):
     db = SessionLocal()
     auth = _get_auth_context(request)
     try:
-        total_candidates = db.query(Candidate).filter(Candidate.tenant_id == auth.tenant_id).count()
-        shortlists_completed = db.query(Job.trace_id).filter(Job.tenant_id == auth.tenant_id).distinct().count()
+        total_candidates = db.query(Candidate).filter(Candidate.tenant_id == auth.tenant_id, Candidate.user_id == auth.user_id).count()
+        shortlists_completed = db.query(Job.trace_id).filter(Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id).distinct().count()
         
         # In Kovidam, pending reviews isn't tracked in DB explicitly yet
         pending_reviews = 0
@@ -190,7 +190,7 @@ async def dashboard_metrics(request: Request):
                 func.count(Candidate.id).label("matches")
             )
             .join(Candidate, Job.candidate_id == Candidate.id)
-            .filter(Job.tenant_id == auth.tenant_id)
+            .filter(Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
             .group_by(Job.trace_id)
             .order_by(func.max(Job.created_at).desc())
             .limit(5)
@@ -204,7 +204,7 @@ async def dashboard_metrics(request: Request):
                 .join(Job, Candidate.id == Job.candidate_id)
                 .outerjoin(CandidateJobScore, Job.id == CandidateJobScore.job_id)
                 .outerjoin(CandidateScore, Candidate.id == CandidateScore.candidate_id)
-                .filter(Job.trace_id == r.trace_id, Job.tenant_id == auth.tenant_id)
+                .filter(Job.trace_id == r.trace_id, Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
                 .order_by((CandidateJobScore.fit_score).desc().nullslast(), Candidate.filename.asc())
                 .all()
             )
@@ -289,7 +289,7 @@ async def get_all_shortlists(request: Request):
                 func.count(Candidate.id).label("matches")
             )
             .join(Candidate, Job.candidate_id == Candidate.id)
-            .filter(Job.tenant_id == auth.tenant_id)
+            .filter(Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
             .group_by(Job.trace_id)
             .order_by(func.max(Job.created_at).desc())
             .all()
@@ -326,7 +326,7 @@ async def delete_shortlist(trace_id: str, request: Request):
     try:
         jobs_for_trace = (
             db.query(Job.id, Job.candidate_id)
-            .filter(Job.trace_id == trace_id, Job.tenant_id == auth.tenant_id)
+            .filter(Job.trace_id == trace_id, Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
             .all()
         )
         if not jobs_for_trace:
@@ -345,7 +345,7 @@ async def delete_shortlist(trace_id: str, request: Request):
             )
             deleted_jobs = (
                 db.query(Job)
-                .filter(Job.id.in_(job_ids), Job.tenant_id == auth.tenant_id)
+                .filter(Job.id.in_(job_ids), Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
                 .delete(synchronize_session=False)
             )
 
@@ -359,7 +359,7 @@ async def delete_shortlist(trace_id: str, request: Request):
         for candidate_id in candidate_ids:
             remaining_jobs = (
                 db.query(Job.id)
-                .filter(Job.candidate_id == candidate_id, Job.tenant_id == auth.tenant_id)
+                .filter(Job.candidate_id == candidate_id, Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
                 .first()
             )
             if remaining_jobs:
@@ -392,7 +392,7 @@ async def delete_shortlist(trace_id: str, request: Request):
             )
             removed_candidates += (
                 db.query(Candidate)
-                .filter(Candidate.id == candidate_id, Candidate.tenant_id == auth.tenant_id)
+                .filter(Candidate.id == candidate_id, Candidate.tenant_id == auth.tenant_id, Candidate.user_id == auth.user_id)
                 .delete(synchronize_session=False)
             )
 
@@ -433,7 +433,7 @@ async def get_past_shortlist(trace_id: str, request: Request):
             .join(Job, Candidate.id == Job.candidate_id)
             .outerjoin(CandidateJobScore, Job.id == CandidateJobScore.job_id)
             .outerjoin(CandidateScore, Candidate.id == CandidateScore.candidate_id)
-            .filter(Job.trace_id == trace_id, Job.tenant_id == auth.tenant_id)
+            .filter(Job.trace_id == trace_id, Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
             .all()
         )
         
@@ -751,6 +751,7 @@ async def _process_resume_file(
     role: str, 
     trace_id: str,
     tenant_id: str,
+    user_id: str,
     force_reprocess: bool = False,
     company_name: str = "",
     position_title: str = "",
@@ -815,6 +816,7 @@ async def _process_resume_file(
             trace_id,
             resume_hash,
             tenant_id,
+            user_id,
             force_reprocess=force_reprocess,
         )
         semantic_raw_skills = _collect_candidate_raw_skills(result)
@@ -838,6 +840,7 @@ async def _process_resume_file(
                 "resume_hash": resume_hash, 
                 "trace_id": trace_id,
                 "tenant_id": tenant_id,
+                "user_id": user_id,
                 "github_score_100": github_score_100,
                 "comp_coding_score_100": comp_coding_score_100,
                 "experience_years": exp_years,
@@ -1043,6 +1046,7 @@ async def _qdrant_jd_semantic_map(
     *,
     query_skills: list[str],
     tenant_id: str,
+    user_id: str,
     role: str,
     candidates: list[dict],
 ) -> dict[str, dict]:
@@ -1057,6 +1061,7 @@ async def _qdrant_jd_semantic_map(
         qdrant_index.search,
         query_skills=query_skills,
         tenant_id=tenant_id,
+        user_id=user_id,
         role=role,
         top_k=top_k,
         min_score=0.0,
@@ -2600,7 +2605,7 @@ async def extract_resume(
     try:
         auth = _get_auth_context(request)
         trace_id = str(uuid.uuid4())
-        return await _process_resume_file(file, role, trace_id, auth.tenant_id, force_reprocess=force_reprocess)
+        return await _process_resume_file(file, role, trace_id, auth.tenant_id, auth.user_id, force_reprocess=force_reprocess)
     except HTTPException:
         raise
     except Exception as exc:
@@ -2620,7 +2625,7 @@ async def extract_resume_batch(
 
     trace_id = str(uuid.uuid4())
     tasks = [
-        asyncio.create_task(_process_resume_file(file, role, trace_id, auth.tenant_id, force_reprocess=force_reprocess))
+        asyncio.create_task(_process_resume_file(file, role, trace_id, auth.tenant_id, auth.user_id, force_reprocess=force_reprocess))
         for file in files
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -2686,6 +2691,8 @@ async def hiring_shortlist(
         trace_id,
         {
             "trace_id": trace_id,
+            "tenant_id": auth.tenant_id,
+            "user_id": auth.user_id,
             "status": "running",
             "stage": "queued",
             "uploaded": len(files),
@@ -2707,6 +2714,7 @@ async def hiring_shortlist(
             role,
             trace_id,
             auth.tenant_id,
+            auth.user_id,
             force_reprocess=force_reprocess,
             company_name=company_name,
             position_title=position_title,
@@ -2791,6 +2799,7 @@ async def hiring_shortlist(
     semantic_map = await _qdrant_jd_semantic_map(
         query_skills=semantic_query_skills,
         tenant_id=auth.tenant_id,
+        user_id=auth.user_id,
         role=role,
         candidates=[c for c in candidates if c.get("ok")],
     )
@@ -2976,9 +2985,11 @@ async def hiring_shortlist(
 
 @app.get("/hiring/shortlist/progress/{trace_id}")
 async def shortlist_progress(trace_id: str, request: Request):
-    _ = _get_auth_context(request)
+    auth = _get_auth_context(request)
     payload = shortlist_progress_store.get(trace_id)
     if not payload:
+        raise HTTPException(status_code=404, detail="Trace ID not found or expired")
+    if payload.get("tenant_id") != auth.tenant_id or payload.get("user_id") != auth.user_id:
         raise HTTPException(status_code=404, detail="Trace ID not found or expired")
     return payload
 
@@ -2998,6 +3009,7 @@ async def hiring_semantic_search(
         qdrant_index.search,
         query_skills=query_skills,
         tenant_id=auth.tenant_id,
+        user_id=auth.user_id,
         top_k=top_k,
         min_score=min_score,
     )
@@ -3005,6 +3017,7 @@ async def hiring_semantic_search(
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))

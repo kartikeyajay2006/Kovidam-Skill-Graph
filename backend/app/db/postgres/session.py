@@ -9,7 +9,9 @@ from app.config import load_environment
 
 load_environment()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/kovidam")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is required and must point to your cloud Postgres instance.")
 
 engine = create_engine(
     DATABASE_URL,

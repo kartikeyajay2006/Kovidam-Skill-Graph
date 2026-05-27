@@ -8,14 +8,16 @@ Base = declarative_base()
 class Candidate(Base):
     __tablename__ = "candidates"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "resume_hash", name="uq_candidates_tenant_resume_hash"),
+        UniqueConstraint("tenant_id", "user_id", "resume_hash", name="uq_candidates_tenant_user_resume_hash"),
         Index("ix_candidates_tenant_id", "tenant_id"),
+        Index("ix_candidates_user_id", "user_id"),
         Index("ix_candidates_trace_id", "trace_id"),
         Index("ix_candidates_github_username", "github_username"),
     )
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
     trace_id = Column(String, nullable=False)
     filename = Column(String, nullable=False)
     resume_hash = Column(String, nullable=False, index=True)
@@ -34,12 +36,14 @@ class Job(Base):
     __tablename__ = "jobs"
     __table_args__ = (
         Index("ix_jobs_tenant_id", "tenant_id"),
+        Index("ix_jobs_user_id", "user_id"),
         Index("ix_jobs_candidate_id", "candidate_id"),
         Index("ix_jobs_trace_id", "trace_id"),
     )
 
     id = Column(String, primary_key=True)
     tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
     candidate_id = Column(String, ForeignKey("candidates.id"), nullable=False)
     trace_id = Column(String, index=True)
     company_name = Column(String)

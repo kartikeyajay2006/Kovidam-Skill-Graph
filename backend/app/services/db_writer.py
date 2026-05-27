@@ -44,6 +44,7 @@ def save_to_db(
     trace_id: str,
     resume_hash: str,
     tenant_id: str,
+    user_id: str,
     *,
     force_reprocess: bool = False,
 ) -> Optional[Dict[str, str]]:
@@ -65,7 +66,11 @@ def save_to_db(
     try:
         existing = (
             db.query(candidates)
-            .filter(candidates.resume_hash == resume_hash, candidates.tenant_id == tenant_id)
+            .filter(
+                candidates.resume_hash == resume_hash,
+                candidates.tenant_id == tenant_id,
+                candidates.user_id == user_id,
+            )
             .first()
         )
         if existing and not force_reprocess:
@@ -89,6 +94,7 @@ def save_to_db(
             candidate_record = candidates(
                 id=candidate_id,
                 tenant_id=tenant_id,
+                user_id=user_id,
                 trace_id=trace_id,
                 resume_hash=resume_hash,
                 filename=cand_data.get("filename") or None,
@@ -108,6 +114,7 @@ def save_to_db(
         job_record = jobs(
             id=job_id,
             tenant_id=tenant_id,
+            user_id=user_id,
             candidate_id=candidate_id,
             trace_id=trace_id,
             company_name=job_data.get("company_name") or None,
@@ -220,7 +227,11 @@ def save_to_db(
         try:
             existing = (
                 db.query(candidates)
-                .filter(candidates.resume_hash == resume_hash, candidates.tenant_id == tenant_id)
+                .filter(
+                    candidates.resume_hash == resume_hash,
+                    candidates.tenant_id == tenant_id,
+                    candidates.user_id == user_id,
+                )
                 .first()
             )
             if existing:
