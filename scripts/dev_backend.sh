@@ -48,20 +48,22 @@ fi
 
 HAS_CAND=$(docker exec "$DB_CONTAINER" psql -U postgres -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='candidates');" | tr -d '[:space:]')
 HAS_AV=$(docker exec "$DB_CONTAINER" psql -U postgres -d "$DB_NAME" -tAc "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='alembic_version');" | tr -d '[:space:]')
-VER=$(docker exec "$DB_CONTAINER" psql -U postgres -d "$DB_NAME" -tAc "SELECT version_num FROM alembic_version LIMIT 1;" 2>/dev/null | tr -d '[:space:]' || true)
 
 if [[ "$HAS_CAND" == "t" && "$HAS_AV" == "f" ]]; then
   alembic stamp 20260503_01
 fi
 
-case "$VER" in
-  20260503_01|20260511_02|20260511_03|"")
-    alembic upgrade head
-    ;;
-  *)
+if ! alembic upgrade head; then
+  VER=$(docker exec "$DB_CONTAINER" psql -U postgres -d "$DB_NAME" -tAc "SELECT version_num FROM alembic_version LIMIT 1;" 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ "$VER" == "20260512_01" ]]; then
+    echo "[warn] Unknown Alembic revision $VER detected; repairing lineage via 20260511_03..."
     alembic stamp 20260511_03
-    ;;
-esac
+    alembic upgrade head
+  else
+    echo "[error] Failed to upgrade migrations at revision: ${VER:-<none>}"
+    exit 1
+  fi
+fi
 
 echo "[ok] Backend ready: http://localhost:8000/docs"
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

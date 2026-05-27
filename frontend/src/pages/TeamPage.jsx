@@ -1,20 +1,25 @@
 import React, { useEffect, useState } from 'react'
+import { Code2, Crown, UserRound, Users } from 'lucide-react'
 import './AboutTeam.css'
 
 const members = [
   {
-    name: 'Varun Patil',
-    roles: ['Chief Operating Officer (COO)', 'Co-Founder', 'Data Developer'],
-    bio1: 'Varun specializes in building robust and scalable backend systems using Java. He focuses on clean architecture, efficient code, and reliable APIs.',
-    bio2: 'Driven by problem-solving and performance optimization, he delivers stable, secure, and maintainable solutions aligned with both client and business goals.',
-    expertise: ['Java', 'Data Analysis', 'Backend Architecture', 'API Development', 'System Design'],
-  },
-  {
+    id: 'kartikeya',
     name: 'Kartikeya Yadav',
-    roles: ['Chief Data Officer (CDO)', 'Co-Founder'],
+    focus: 'AI and Platform Engineering',
+    roles: ['Chief Technology Officer (CTO)', 'Co-Founder'],
     bio1: 'Kartikeya is an AI enthusiast with strong expertise in intelligent chatbots and automation-driven systems. He works with Python, SQL, and Generative AI to build data-driven and conversational solutions.',
     bio2: 'His technical stack includes Ruby, AWS, and MongoDB, enabling scalable AI-backed applications with real-world impact.',
     expertise: ['GenAI', 'Python', 'Ruby', 'Database Management', 'AWS', 'Backend Development', 'Data Analysis'],
+  },
+  {
+    id: 'varun',
+    name: 'Varun Patil',
+    focus: 'Operations and Delivery',
+    roles: ['Chief Operating Officer (COO)', 'Co-Founder'],
+    bio1: 'Varun specializes in building robust and scalable backend systems using Java. He focuses on clean architecture, efficient code, and reliable APIs.',
+    bio2: 'Driven by problem-solving and performance optimization, he delivers stable, secure, and maintainable solutions aligned with both client and business goals.',
+    expertise: ['Java', 'Data Analysis', 'Backend Architecture', 'API Development', 'System Design'],
   },
 ]
 
@@ -37,8 +42,8 @@ export default function TeamPage() {
 
   return (
     <main className="about-team-page team-page team-page-enter">
-      <div className="about-bg about-bg-left" />
-      <div className="about-bg about-bg-right" />
+      <div className="team-bg team-bg-left" />
+      <div className="team-bg team-bg-right" />
 
       <section className="about-hero-card team-hero">
         <p className="about-kicker">Kovidam Team</p>
@@ -47,18 +52,40 @@ export default function TeamPage() {
         </h1>
         <p className="about-intro">The people designing trusted AI hiring infrastructure for modern companies.</p>
       </section>
+      <div className="team-hero-arc" />
 
       <section className="team-grid">
-        {members.map((member) => (
+        {members.map((member, index) => (
           <article className="team-card" key={member.name}>
-            <h3>{member.name}</h3>
-            <div className="team-roles">
-              {member.roles.map((role) => (
-                <p key={role}>{role}</p>
-              ))}
+            <div className="team-card-head">
+              <div className="team-avatar-shell" aria-hidden="true">
+                <div className="team-avatar-ring">
+                  <UserRound size={34} />
+                </div>
+                <div className="team-avatar-badge">
+                  {member.id === 'kartikeya' ? <Code2 size={18} /> : <Crown size={18} />}
+                </div>
+              </div>
+              <div className="team-card-top">
+                <p className="team-card-index">{String(index + 1).padStart(2, '0')}</p>
+                <p className="team-card-focus">{member.focus}</p>
+                <h3>{member.name}</h3>
+                <div className="team-role-pills">
+                  {member.roles.map((role, roleIndex) => (
+                    <span className={roleIndex === 0 ? 'team-role-pill is-primary' : 'team-role-pill'} key={role}>
+                      {role}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
-            <p>{member.bio1}</p>
-            <p>{member.bio2}</p>
+            <div className="team-divider">
+              <span />
+            </div>
+            <div className="team-bio-stack">
+              <p>{member.bio1}</p>
+              <p>{member.bio2}</p>
+            </div>
             <div className="team-expertise-label">Expertise</div>
             <div className="team-tags">
               {member.expertise.map((skill) => (
@@ -67,6 +94,13 @@ export default function TeamPage() {
             </div>
           </article>
         ))}
+      </section>
+
+      <section className="team-footer-strip">
+        <Users size={20} />
+        <p>
+          Two minds. One mission - building the future of <span>AI hiring.</span>
+        </p>
       </section>
     </main>
   )
