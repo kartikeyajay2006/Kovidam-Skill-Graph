@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Code2, Crown, UserRound, Users } from 'lucide-react'
+import { Code2, Crown, Users } from 'lucide-react'
 import './AboutTeam.css'
 
 const members = [
@@ -60,7 +60,7 @@ export default function TeamPage() {
             <div className="team-card-head">
               <div className="team-avatar-shell" aria-hidden="true">
                 <div className="team-avatar-ring">
-                  <UserRound size={34} />
+                  <span className="team-avatar-letter">{member.id === 'kartikeya' ? 'K' : 'V'}</span>
                 </div>
                 <div className="team-avatar-badge">
                   {member.id === 'kartikeya' ? <Code2 size={18} /> : <Crown size={18} />}

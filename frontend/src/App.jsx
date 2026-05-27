@@ -14,6 +14,7 @@ import PastShortlistPage from './pages/PastShortlistPage'
 import SemanticSearchPage from './pages/SemanticSearchPage'
 import ContactPage from './pages/ContactPage'
 import AllShortlistsPage from './pages/AllShortlistsPage'
+import ProductPage from './pages/ProductPage'
 import './App.css'
 
 function App() {
@@ -22,7 +23,7 @@ function App() {
       {/* Public SaaS Pages */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
-        <Route path="/product" element={<PlaceholderPage title="Product Overview" />} />
+        <Route path="/product" element={<ProductPage />} />
         <Route path="/features" element={<PlaceholderPage title="Features & Capabilities" />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/company/team" element={<TeamPage />} />
