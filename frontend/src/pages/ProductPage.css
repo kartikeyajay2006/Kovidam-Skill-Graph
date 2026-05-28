@@ -1,8 +1,7 @@
 .product-page {
   min-height: 100vh;
-  max-width: 1380px;
-  margin: 0 auto;
-  padding: 116px 28px 96px;
+  max-width: 100%;
+  padding: 116px 90px 96px;
   position: relative;
   color: #f8fafc;
   isolation: isolate;
