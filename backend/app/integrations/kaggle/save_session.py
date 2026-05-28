@@ -1,9 +1,19 @@
-from playwright.sync_api import sync_playwright
+try:
+    from playwright.sync_api import sync_playwright
+except ModuleNotFoundError as exc:
+    sync_playwright = None  # type: ignore[assignment]
+    _PLAYWRIGHT_IMPORT_ERROR = exc
 
 SESSION_FILE = "kaggle_session.json"
 
 
 def main() -> None:
+    if sync_playwright is None:
+        raise RuntimeError(
+            "playwright is not installed. Install the optional Kaggle integration "
+            "dependencies before saving a Kaggle session."
+        ) from _PLAYWRIGHT_IMPORT_ERROR
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
         context = browser.new_context()

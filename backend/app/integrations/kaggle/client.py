@@ -3,13 +3,23 @@ import re
 import json
 from typing import Any, Dict
 
-from playwright.async_api import async_playwright
+try:
+    from playwright.async_api import async_playwright
+except ModuleNotFoundError as exc:
+    async_playwright = None  # type: ignore[assignment]
+    _PLAYWRIGHT_IMPORT_ERROR = exc
 
 
 SESSION_FILE = "kaggle_session.json"
 
 
 async def get_kaggle_data(username: str) -> Dict[str, Any]:
+    if async_playwright is None:
+        raise RuntimeError(
+            "playwright is not installed. Install the optional Kaggle integration "
+            "dependencies if you need Kaggle profile scraping."
+        ) from _PLAYWRIGHT_IMPORT_ERROR
+
     result: Dict[str, Any] = {
         "username": username,
         "competitions": 0,

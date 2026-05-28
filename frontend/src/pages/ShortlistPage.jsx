@@ -22,7 +22,8 @@ import {
   Mail,
   BellRing,
   BellOff,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 import TagInput from '../components/TagInput';
 
@@ -199,6 +200,10 @@ export default function ShortlistPage() {
     if (e.target.files && e.target.files.length > 0) {
       setFiles((prev) => [...prev, ...Array.from(e.target.files)]);
     }
+  };
+
+  const removeFile = (index) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleDragOver = (e) => {
@@ -455,13 +460,89 @@ export default function ShortlistPage() {
                     )}
                   </motion.div>
                   
-                  <div>
-                    <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.75rem', fontWeight: '600', color: isDragging ? '#e0e7ff' : '#f8fafc' }}>
-                      {files.length > 0 ? `${files.length} Resumes Added` : 'Drag & Drop Resumes'}
-                    </h3>
-                    <p style={{ margin: 0, fontSize: '1.1rem', color: '#94a3b8' }}>
-                      or click to browse local files (PDF only)
-                    </p>
+                  <div style={{ width: '100%' }}>
+                    {files.length === 0 ? (
+                      <>
+                        <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.75rem', fontWeight: '600', color: isDragging ? '#e0e7ff' : '#f8fafc' }}>
+                          Drag & Drop Resumes
+                        </h3>
+                        <p style={{ margin: 0, fontSize: '1.1rem', color: '#94a3b8' }}>
+                          or click to browse local files (PDF only)
+                        </p>
+                      </>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', maxWidth: '600px', margin: '0 auto' }}>
+                        <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem', fontWeight: '600', color: '#f8fafc' }}>
+                          {files.length} Resumes Added
+                        </h3>
+                        <div 
+                          className="premium-input"
+                          style={{ 
+                            maxHeight: '220px', 
+                            overflowY: 'auto', 
+                            padding: '0.5rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.75rem',
+                            background: 'rgba(0,0,0,0.2)',
+                            paddingLeft: '0.5rem' // Override premium-input padding
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {files.map((file, idx) => (
+                            <motion.div
+                              key={`${file.name}-${idx}`}
+                              initial={{ opacity: 0, x: -10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '1rem', 
+                                background: 'rgba(255,255,255,0.03)', 
+                                padding: '0.75rem 1rem', 
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255,255,255,0.05)',
+                                location: 'relative'
+                              }}
+                            >
+                              <FileText size={18} color="#818cf8" />
+                              <span style={{ 
+                                flex: 1, 
+                                textAlign: 'left', 
+                                color: '#e2e8f0', 
+                                fontSize: '0.9rem', 
+                                overflow: 'hidden', 
+                                textOverflow: 'ellipsis', 
+                                whiteSpace: 'nowrap' 
+                              }}>
+                                {file.name}
+                              </span>
+                              <motion.button
+                                whileHover={{ scale: 1.1, color: '#f87171' }}
+                                whileTap={{ scale: 0.9 }}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeFile(idx);
+                                }}
+                                style={{ 
+                                  background: 'none', 
+                                  border: 'none', 
+                                  cursor: 'pointer', 
+                                  color: '#64748b', 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  padding: '4px',
+                                  transition: 'color 0.2s'
+                                }}
+                              >
+                                <Trash2 size={16} />
+                              </motion.button>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

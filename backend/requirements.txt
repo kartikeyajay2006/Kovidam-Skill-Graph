@@ -20,7 +20,6 @@ pdfplumber>=0.11.4
 pytesseract>=0.3.10
 Pillow>=10.4.0
 
-playwright>=1.53.0
 docker>=6.0.0
 qdrant-client>=1.10.1
 PyJWT>=2.8.0

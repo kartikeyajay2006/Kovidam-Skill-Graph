@@ -163,10 +163,11 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m playwright install chromium
 alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+If you need the optional Kaggle scraping helpers, install `playwright` separately and then run `python -m playwright install chromium`.
 
 ### Frontend manual
 
@@ -349,4 +350,3 @@ For complete internals (runtime flow, scoring formulas, env matrix, risk registe
 
 - Keep secrets out of git (`.env` files are ignored).
 - If you changed dependencies, remove `.venv/.deps_ok` and rerun backend script to force reinstall.
-
