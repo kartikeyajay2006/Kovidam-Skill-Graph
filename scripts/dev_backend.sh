@@ -7,12 +7,34 @@ cd "$ROOT"
 DB_CONTAINER="kovidam-db"
 QDRANT_CONTAINER="kovidam-qdrant"
 DB_NAME="kovidam"
+ENV_FILE="$ROOT/backend/.env"
+
+if [[ -f "$ENV_FILE" ]]; then
+  DB_URL_LINE=$(grep -E '^DATABASE_URL=' "$ENV_FILE" | tail -n 1 || true)
+  if [[ -n "$DB_URL_LINE" ]]; then
+    DB_URL="${DB_URL_LINE#DATABASE_URL=}"
+    DB_URL="${DB_URL%\"}"
+    DB_URL="${DB_URL#\"}"
+    DB_PATH="${DB_URL##*/}"
+    DB_PATH="${DB_PATH%%\?*}"
+    if [[ -n "$DB_PATH" ]]; then
+      DB_NAME="$DB_PATH"
+    fi
+  fi
+fi
 
 # Free local 8000 if another docker container is using it.
 docker ps --format '{{.Names}} {{.Ports}}' | awk '/0.0.0.0:8000->8000\/tcp/ {print $1}' | xargs -r docker stop >/dev/null 2>&1 || true
 
 if docker ps -a --format '{{.Names}}' | grep -qx "$DB_CONTAINER"; then
-  docker start "$DB_CONTAINER" >/dev/null 2>&1 || true
+  DB_PORT_BINDING="$(docker inspect -f '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' "$DB_CONTAINER" 2>/dev/null || true)"
+  if [[ "$DB_PORT_BINDING" != "5432" ]]; then
+    echo "[warn] Recreating $DB_CONTAINER to publish localhost:5432..."
+    docker rm -f "$DB_CONTAINER" >/dev/null 2>&1 || true
+    docker run -d --name "$DB_CONTAINER" -p 5432:5432 -e POSTGRES_PASSWORD=postgres ankane/pgvector >/dev/null
+  else
+    docker start "$DB_CONTAINER" >/dev/null 2>&1 || true
+  fi
 else
   docker run -d --name "$DB_CONTAINER" -p 5432:5432 -e POSTGRES_PASSWORD=postgres ankane/pgvector >/dev/null
 fi

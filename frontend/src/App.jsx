@@ -15,6 +15,7 @@ import SemanticSearchPage from './pages/SemanticSearchPage'
 import ContactPage from './pages/ContactPage'
 import AllShortlistsPage from './pages/AllShortlistsPage'
 import ProductPage from './pages/ProductPage'
+import FeaturesPage from './pages/FeaturesPage'
 import './App.css'
 
 function App() {
@@ -24,7 +25,7 @@ function App() {
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
         <Route path="/product" element={<ProductPage />} />
-        <Route path="/features" element={<PlaceholderPage title="Features & Capabilities" />} />
+        <Route path="/features" element={<FeaturesPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/company/team" element={<TeamPage />} />
         <Route path="/contact" element={<ContactPage />} />
