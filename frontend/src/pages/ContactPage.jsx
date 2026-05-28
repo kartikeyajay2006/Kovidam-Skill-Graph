@@ -13,6 +13,9 @@ import {
   Send,
   MapPin,
   Rocket,
+  Layout,
+  Globe,
+  MessageSquare,
 } from 'lucide-react'
 import './ContactPage.css'
 
@@ -24,6 +27,7 @@ const INITIAL_FORM = {
   preferredDate: '',
   preferredTime: '',
   timezone: 'IST',
+  platform: 'Kovidam Skill Graph',
   message: '',
   consent: false,
 }
@@ -107,6 +111,7 @@ export default function ContactPage() {
     email: form.workEmail.trim(),
     date: form.preferredDate,
     time: form.preferredTime,
+    platform: form.platform,
     inquiry_type: actionType,
     // Additional aliases commonly used in EmailJS templates
     user_name: form.fullName.trim(),
@@ -239,8 +244,8 @@ export default function ContactPage() {
             <div className="date-time-wrap">
               <label className="premium-input-group">
                 <span>Preferred Date {isPasswordHelp ? '' : '*'}</span>
-                <input type="date" min={minDate} className="premium-input plain-input" value={form.preferredDate} onChange={(e) => onChange('preferredDate', e.target.value)} />
-                <CalendarDays className="field-end-icon" size={16} />
+                <CalendarDays className="premium-input-icon" size={18} />
+                <input type="date" min={minDate} className="premium-input" value={form.preferredDate} onChange={(e) => onChange('preferredDate', e.target.value)} />
               </label>
               <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
             </div>
@@ -248,16 +253,27 @@ export default function ContactPage() {
             <div className="date-time-wrap">
               <label className="premium-input-group">
                 <span>Preferred Time {isPasswordHelp ? '' : '*'}</span>
-                <input type="time" className="premium-input plain-input" value={form.preferredTime} onChange={(e) => onChange('preferredTime', e.target.value)} />
-                <Clock3 className="field-end-icon" size={16} />
+                <Clock3 className="premium-input-icon" size={18} />
+                <input type="time" className="premium-input" value={form.preferredTime} onChange={(e) => onChange('preferredTime', e.target.value)} />
               </label>
               <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
             </div>
           </div>
 
           <label className="premium-input-group">
+            <span>Platform *</span>
+            <Layout className="premium-input-icon" />
+            <select className="premium-input select-input" value={form.platform} onChange={(e) => onChange('platform', e.target.value)}>
+              <option value="Kovidam Skill Graph">Kovidam Skill Graph</option>
+              <option value="Kovidam AI Interview">Kovidam AI Interview</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+
+          <label className="premium-input-group">
             <span>Timezone</span>
-            <select className="premium-input plain-input select-input" value={form.timezone} onChange={(e) => onChange('timezone', e.target.value)}>
+            <Globe className="premium-input-icon" />
+            <select className="premium-input select-input" value={form.timezone} onChange={(e) => onChange('timezone', e.target.value)}>
               <option value="IST">IST - India Standard Time (GMT +5:30)</option>
               <option value="GST">GST - Gulf Standard Time (GMT +4:00)</option>
             </select>
@@ -265,8 +281,9 @@ export default function ContactPage() {
 
           <label className="premium-input-group">
             <span>Message</span>
+            <MessageSquare className="premium-input-icon" style={{ top: '2.8rem' }} />
             <textarea
-              className="premium-input plain-input"
+              className="premium-input"
               rows={4}
               maxLength={500}
               value={form.message}

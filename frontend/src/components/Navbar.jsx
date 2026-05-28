@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Home, Sparkles, Settings, Info, Mail } from 'lucide-react'
+import { Home, Sparkles, Zap, Info, Mail } from 'lucide-react'
 import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Navbar.css'
 
@@ -12,7 +12,7 @@ export default function Navbar() {
   const navItems = [
     { name: 'Home', icon: Home, path: '/' },
     { name: 'Product', icon: Sparkles, path: '/product' },
-    { name: 'Features', icon: Settings, path: '/features' },
+    { name: 'Features', icon: Zap, path: '/features' },
     { name: 'About', icon: Info, path: '/about' },
     { name: 'Contact', icon: Mail, path: '/contact' },
   ]

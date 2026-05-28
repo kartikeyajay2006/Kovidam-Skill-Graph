@@ -90,6 +90,7 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 input[type="number"] {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 /* Premium Inputs */
@@ -129,11 +130,11 @@ input[type="number"] {
 .premium-input-icon {
   position: absolute;
   left: 1rem;
-  top: 2.3rem;
+  top: 2.65rem;
   color: #64748b;
   width: 18px;
   height: 18px;
-  transition: color 0.3s ease;
+  transition: all 0.3s ease;
   pointer-events: none;
 }
 
