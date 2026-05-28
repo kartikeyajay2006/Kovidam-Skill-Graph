@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
-import { Mail, ArrowRight, X } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Mail, ArrowRight, X, Shield, Eye, Lock, RefreshCcw, UserCheck, Clock, Cpu, User, Ban, ShieldAlert, AlertTriangle, HardDrive, ShieldCheck, Activity, Search } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import logoCroppedTight from '../assets/logo-cropped-tight.png';
 import './Footer.css';
 
 export default function Footer() {
+  const navigate = useNavigate();
   const [isCareersOpen, setIsCareersOpen] = useState(false);
   const [isPlatformOpen, setIsPlatformOpen] = useState(false);
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+  const [isTermsOpen, setIsTermsOpen] = useState(false);
+  const [isSecurityOpen, setIsSecurityOpen] = useState(false);
+
   return (
     <footer className="premium-footer-wrapper">
       
@@ -23,11 +28,21 @@ export default function Footer() {
               Join the top engineering teams that trust Kovidam to hire exceptional talent faster, fairer, and with absolute certainty.
             </p>
             <div className="cta-actions">
-              <button className="btn-premium btn-secondary">Book a Demo</button>
-              <button className="btn-premium btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Link 
+                to="/contact"
+                className="btn-premium btn-secondary"
+                style={{ textDecoration: 'none' }}
+              >
+                Book a Demo
+              </Link>
+              <Link 
+                to="/signup"
+                className="btn-premium btn-primary" 
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none' }}
+              >
                 Start Hiring Now
                 <ArrowRight className="inline-icon" size={18} />
-              </button>
+              </Link>
             </div>
           </div>
         </div>
@@ -66,9 +81,9 @@ export default function Footer() {
         
         <div className="footer-links-col">
           <h4 className="footer-col-title">Legal</h4>
-          <a href="#" className="footer-link">Privacy Policy</a>
-          <a href="#" className="footer-link">Terms of Service</a>
-          <a href="#" className="footer-link">Security</a>
+          <button onClick={() => setIsPrivacyOpen(true)} className="footer-link-btn">Privacy Policy</button>
+          <button onClick={() => setIsTermsOpen(true)} className="footer-link-btn">Terms of Service</button>
+          <button onClick={() => setIsSecurityOpen(true)} className="footer-link-btn">Security</button>
         </div>
       </div>
 
@@ -171,6 +186,184 @@ export default function Footer() {
                 <div className="modal-footer">
                   <p>Want a personalized deep dive?</p>
                   <Link to="/contact" onClick={() => setIsPlatformOpen(false)} className="email-link">Request a Technical Demo</Link>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {isPrivacyOpen && (
+          <div className="modal-overlay" onClick={() => setIsPrivacyOpen(false)}>
+            <motion.div 
+              className="careers-modal glass-panel"
+              style={{ maxWidth: '800px' }}
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button className="close-modal" onClick={() => setIsPrivacyOpen(false)}>
+                <X size={24} />
+              </button>
+              <div className="modal-content">
+                <span className="modal-tag">Privacy Policy</span>
+                <h2 className="modal-title">Privacy <span className="gradient-text">Policy</span></h2>
+                <div className="legal-scroll-area">
+                  <section className="legal-modal-section">
+                    <p>At Kovidam, we value your privacy and are committed to protecting your personal information.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Eye size={20} /> Information We Collect</h3>
+                    <ul>
+                      <li>Name, email address, and account details</li>
+                      <li>Uploaded resumes and candidate information</li>
+                      <li>Interview recordings and responses</li>
+                      <li>Usage analytics and platform activity</li>
+                    </ul>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><RefreshCcw size={20} /> How We Use Information</h3>
+                    <ul>
+                      <li>To improve our AI hiring tools</li>
+                      <li>To provide ATS scoring and interview analysis</li>
+                      <li>To enhance platform security and performance</li>
+                      <li>To communicate important updates</li>
+                    </ul>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Lock size={20} /> Data Protection</h3>
+                    <p>All user data is securely stored and encrypted. We implement industry-standard security measures to protect sensitive information.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Shield size={20} /> Third-Party Services</h3>
+                    <p>We may use trusted third-party services for hosting, analytics, and communication. These services are required to maintain strict confidentiality.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><UserCheck size={20} /> User Rights</h3>
+                    <p>Users may request access, correction, or deletion of their personal data at any time.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Clock size={20} /> Data Retention</h3>
+                    <p>We retain data only as long as necessary to provide our services and comply with legal obligations.</p>
+                  </section>
+                </div>
+                <div className="modal-footer">
+                  <p>Contact us at</p>
+                  <a href="mailto:kovidam26@gmail.com" className="email-link">kovidam26@gmail.com</a>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {isTermsOpen && (
+          <div className="modal-overlay" onClick={() => setIsTermsOpen(false)}>
+            <motion.div 
+              className="careers-modal glass-panel"
+              style={{ maxWidth: '800px' }}
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button className="close-modal" onClick={() => setIsTermsOpen(false)}>
+                <X size={24} />
+              </button>
+              <div className="modal-content">
+                <span className="modal-tag">Terms of Service</span>
+                <h2 className="modal-title">Terms of <span className="gradient-text">Service</span></h2>
+                <div className="legal-scroll-area">
+                  <section className="legal-modal-section">
+                    <p>By using our platform, you agree to the following terms and conditions.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Cpu size={20} /> Use of Service</h3>
+                    <p>Our platform provides AI-powered ATS scoring, interview assistance, and employee management tools.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><User size={20} /> User Responsibilities</h3>
+                    <ul>
+                      <li>Provide accurate information</li>
+                      <li>Maintain account security</li>
+                      <li>Use the platform lawfully</li>
+                      <li>Respect intellectual property rights</li>
+                    </ul>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Ban size={20} /> Prohibited Activities</h3>
+                    <ul>
+                      <li>Uploading harmful or illegal content</li>
+                      <li>Attempting unauthorized access</li>
+                      <li>Misusing AI-generated evaluations</li>
+                      <li>Disrupting platform operations</li>
+                    </ul>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><ShieldAlert size={20} /> AI Disclaimer</h3>
+                    <p>AI-generated scores, recommendations, and interview evaluations are intended to assist hiring processes and should not be considered final hiring decisions.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Lock size={20} /> Accounts</h3>
+                    <p>Users are responsible for maintaining the confidentiality of their account credentials.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><AlertTriangle size={20} /> Limitation of Liability</h3>
+                    <p>We are not responsible for hiring decisions, data loss caused by external factors, or misuse of the platform.</p>
+                  </section>
+                </div>
+                <div className="modal-footer">
+                  <p>Questions? Contact us at</p>
+                  <a href="mailto:kovidam26@gmail.com" className="email-link">kovidam26@gmail.com</a>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {isSecurityOpen && (
+          <div className="modal-overlay" onClick={() => setIsSecurityOpen(false)}>
+            <motion.div 
+              className="careers-modal glass-panel"
+              style={{ maxWidth: '800px' }}
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button className="close-modal" onClick={() => setIsSecurityOpen(false)}>
+                <X size={24} />
+              </button>
+              <div className="modal-content">
+                <span className="modal-tag">Security</span>
+                <h2 className="modal-title">Security <span className="gradient-text">Infrastructure</span></h2>
+                <div className="legal-scroll-area">
+                  <section className="legal-modal-section">
+                    <p>We take security seriously and continuously work to protect user and candidate data.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><HardDrive size={20} /> Infrastructure Security</h3>
+                    <p>Our systems are hosted on secure cloud infrastructure with continuous monitoring and protection measures.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Lock size={20} /> Data Encryption</h3>
+                    <p>Sensitive information is encrypted during transmission and storage using industry-standard protocols.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><ShieldCheck size={20} /> Access Control</h3>
+                    <p>Access to data is restricted to authorized personnel only via secure authentication methods.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Activity size={20} /> Monitoring</h3>
+                    <p>We continuously monitor our systems for vulnerabilities, suspicious activity, and potential threats.</p>
+                  </section>
+                  <section className="legal-modal-section">
+                    <h3><Search size={20} /> Responsible Disclosure</h3>
+                    <p>If you discover a security vulnerability, please report it responsibly to security@kovidam.com</p>
+                  </section>
+                </div>
+                <div className="modal-footer">
+                  <p>Our Commitment</p>
+                  <a href="mailto:security@kovidam.com" className="email-link">security@kovidam.com</a>
                 </div>
               </div>
             </motion.div>

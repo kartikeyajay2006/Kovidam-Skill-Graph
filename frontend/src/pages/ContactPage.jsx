@@ -17,6 +17,7 @@ import {
   Globe,
   MessageSquare,
 } from 'lucide-react'
+import Footer from '../components/Footer'
 import './ContactPage.css'
 
 const INITIAL_FORM = {
@@ -165,153 +166,156 @@ export default function ContactPage() {
   }
 
   return (
-    <section className="contact-page">
-      <div className="contact-bg-glow" />
-      <div className="contact-wrapper">
-        <div className="contact-left">
-          <h2>Schedule a <span>Demo</span></h2>
-          <p>
-            {isPasswordHelp
-              ? 'Tell us which account needs help and our team will follow up with access support.'
-              : 'Learn how Kovidam AI hiring intelligence helps you find the best engineering talent faster and with confidence.'}
-          </p>
+    <>
+      <section className="contact-page">
+        <div className="contact-bg-glow" />
+        <div className="contact-wrapper">
+          <div className="contact-left">
+            <h2>Schedule a <span>Demo</span></h2>
+            <p>
+              {isPasswordHelp
+                ? 'Tell us which account needs help and our team will follow up with access support.'
+                : 'Learn how Kovidam AI hiring intelligence helps you find the best engineering talent faster and with confidence.'}
+            </p>
 
-          <div className="contact-badges">
-            <div><ShieldCheck size={16} /> Secure &amp; Compliant</div>
-            <div><Sparkles size={16} /> AI-Powered Accuracy</div>
-            <div><Rocket size={16} /> Faster Shortlisting</div>
+            <div className="contact-badges">
+              <div><ShieldCheck size={16} /> Secure &amp; Compliant</div>
+              <div><Sparkles size={16} /> AI-Powered Accuracy</div>
+              <div><Rocket size={16} /> Faster Shortlisting</div>
+            </div>
+
+            <div className="contact-details">
+              <div className="detail-item">
+                <div className="icon-wrap"><Mail size={20} /></div>
+                <div>
+                  <h4>Contact</h4>
+                  <p>kovidam26@gmail.com</p>
+                </div>
+              </div>
+              <div className="detail-item">
+                <div className="icon-wrap"><Phone size={20} /></div>
+                <div>
+                  <h4>Phone</h4>
+                  <p>9720613333</p>
+                </div>
+              </div>
+              <div className="detail-item">
+                <div className="icon-wrap"><MapPin size={20} /></div>
+                <div>
+                  <h4>Location</h4>
+                  <p>Bengaluru, India</p>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="contact-details">
-            <div className="detail-item">
-              <div className="icon-wrap"><Mail size={20} /></div>
+          <div className="contact-form-card glass-panel">
+            <div className="form-heading">
+              <div className="head-icon"><CalendarDays size={24} /></div>
               <div>
-                <h4>Contact</h4>
-                <p>kovidam26@gmail.com</p>
+                <h3>Book Your Demo Slot</h3>
+                <p>{isPasswordHelp ? 'Account access support request' : 'Fill in the details below and we will take care of the rest.'}</p>
               </div>
             </div>
-            <div className="detail-item">
-              <div className="icon-wrap"><Phone size={20} /></div>
-              <div>
-                <h4>Phone</h4>
-                <p>9720613333</p>
+
+            <div className="contact-grid">
+              <label className="premium-input-group">
+                <span>Full Name *</span>
+                <User className="premium-input-icon" />
+                <input className="premium-input" value={form.fullName} onChange={(e) => onChange('fullName', e.target.value)} placeholder="Enter your full name" />
+              </label>
+
+              <label className="premium-input-group">
+                <span>Work Email *</span>
+                <Mail className="premium-input-icon" />
+                <input className="premium-input" value={form.workEmail} onChange={(e) => onChange('workEmail', e.target.value)} placeholder="name@company.com" />
+              </label>
+
+              <label className="premium-input-group">
+                <span>Phone Number {isPasswordHelp ? '' : '*'}</span>
+                <Phone className="premium-input-icon" />
+                <input className="premium-input" value={form.phoneNumber} onChange={(e) => onChange('phoneNumber', e.target.value)} placeholder="+91 98765 43210" />
+              </label>
+
+              <label className="premium-input-group">
+                <span>Company</span>
+                <Building2 className="premium-input-icon" />
+                <input className="premium-input" value={form.company} onChange={(e) => onChange('company', e.target.value)} placeholder="Your company name" />
+              </label>
+
+              <div className="date-time-wrap">
+                <label className="premium-input-group">
+                  <span>Preferred Date {isPasswordHelp ? '' : '*'}</span>
+                  <CalendarDays className="premium-input-icon" size={18} />
+                  <input type="date" min={minDate} className="premium-input" value={form.preferredDate} onChange={(e) => onChange('preferredDate', e.target.value)} />
+                </label>
+                <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
+              </div>
+
+              <div className="date-time-wrap">
+                <label className="premium-input-group">
+                  <span>Preferred Time {isPasswordHelp ? '' : '*'}</span>
+                  <Clock3 className="premium-input-icon" size={18} />
+                  <input type="time" className="premium-input" value={form.preferredTime} onChange={(e) => onChange('preferredTime', e.target.value)} />
+                </label>
+                <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
               </div>
             </div>
-            <div className="detail-item">
-              <div className="icon-wrap"><MapPin size={20} /></div>
-              <div>
-                <h4>Location</h4>
-                <p>Bengaluru, India</p>
-              </div>
+
+            <label className="premium-input-group">
+              <span>Platform *</span>
+              <Layout className="premium-input-icon" />
+              <select className="premium-input select-input" value={form.platform} onChange={(e) => onChange('platform', e.target.value)}>
+                <option value="Kovidam Skill Graph">Kovidam Skill Graph</option>
+                <option value="Kovidam AI Interview">Kovidam AI Interview</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+
+            <label className="premium-input-group">
+              <span>Timezone</span>
+              <Globe className="premium-input-icon" />
+              <select className="premium-input select-input" value={form.timezone} onChange={(e) => onChange('timezone', e.target.value)}>
+                <option value="IST">IST - India Standard Time (GMT +5:30)</option>
+                <option value="GST">GST - Gulf Standard Time (GMT +4:00)</option>
+              </select>
+            </label>
+
+            <label className="premium-input-group">
+              <span>Message</span>
+              <MessageSquare className="premium-input-icon" style={{ top: '2.8rem' }} />
+              <textarea
+                className="premium-input"
+                rows={4}
+                maxLength={500}
+                value={form.message}
+                onChange={(e) => onChange('message', e.target.value)}
+                placeholder="Tell us about your hiring needs or any specific requirements..."
+              />
+              <small className="counter">{messageLength}/500</small>
+            </label>
+
+            <label className="consent-row">
+              <input type="checkbox" checked={form.consent} onChange={(e) => onChange('consent', e.target.checked)} />
+              <span>I agree to be contacted regarding my inquiry.</span>
+            </label>
+
+            {error && <div className="form-notice error">{error}</div>}
+            {success && <div className="form-notice success">{success}</div>}
+
+
+            <div className="contact-actions">
+              <button className="btn-premium btn-primary" disabled={isSubmitting} onClick={() => void submit(isPasswordHelp ? 'Account Access Help' : 'Book Demo')}>
+                <CalendarDays size={18} /> {isSubmitting ? 'Sending...' : (isPasswordHelp ? 'Request Account Help' : 'Book Demo')}
+              </button>
+              <button className="btn-premium btn-secondary" disabled={isSubmitting} onClick={() => void submit('Send Inquiry')}>
+                <Send size={18} /> {isSubmitting ? 'Sending...' : 'Send Inquiry'}
+              </button>
             </div>
           </div>
         </div>
-
-        <div className="contact-form-card glass-panel">
-          <div className="form-heading">
-            <div className="head-icon"><CalendarDays size={24} /></div>
-            <div>
-              <h3>Book Your Demo Slot</h3>
-              <p>{isPasswordHelp ? 'Account access support request' : 'Fill in the details below and we will take care of the rest.'}</p>
-            </div>
-          </div>
-
-          <div className="contact-grid">
-            <label className="premium-input-group">
-              <span>Full Name *</span>
-              <User className="premium-input-icon" />
-              <input className="premium-input" value={form.fullName} onChange={(e) => onChange('fullName', e.target.value)} placeholder="Enter your full name" />
-            </label>
-
-            <label className="premium-input-group">
-              <span>Work Email *</span>
-              <Mail className="premium-input-icon" />
-              <input className="premium-input" value={form.workEmail} onChange={(e) => onChange('workEmail', e.target.value)} placeholder="name@company.com" />
-            </label>
-
-            <label className="premium-input-group">
-              <span>Phone Number {isPasswordHelp ? '' : '*'}</span>
-              <Phone className="premium-input-icon" />
-              <input className="premium-input" value={form.phoneNumber} onChange={(e) => onChange('phoneNumber', e.target.value)} placeholder="+91 98765 43210" />
-            </label>
-
-            <label className="premium-input-group">
-              <span>Company</span>
-              <Building2 className="premium-input-icon" />
-              <input className="premium-input" value={form.company} onChange={(e) => onChange('company', e.target.value)} placeholder="Your company name" />
-            </label>
-
-            <div className="date-time-wrap">
-              <label className="premium-input-group">
-                <span>Preferred Date {isPasswordHelp ? '' : '*'}</span>
-                <CalendarDays className="premium-input-icon" size={18} />
-                <input type="date" min={minDate} className="premium-input" value={form.preferredDate} onChange={(e) => onChange('preferredDate', e.target.value)} />
-              </label>
-              <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
-            </div>
-
-            <div className="date-time-wrap">
-              <label className="premium-input-group">
-                <span>Preferred Time {isPasswordHelp ? '' : '*'}</span>
-                <Clock3 className="premium-input-icon" size={18} />
-                <input type="time" className="premium-input" value={form.preferredTime} onChange={(e) => onChange('preferredTime', e.target.value)} />
-              </label>
-              <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
-            </div>
-          </div>
-
-          <label className="premium-input-group">
-            <span>Platform *</span>
-            <Layout className="premium-input-icon" />
-            <select className="premium-input select-input" value={form.platform} onChange={(e) => onChange('platform', e.target.value)}>
-              <option value="Kovidam Skill Graph">Kovidam Skill Graph</option>
-              <option value="Kovidam AI Interview">Kovidam AI Interview</option>
-              <option value="Other">Other</option>
-            </select>
-          </label>
-
-          <label className="premium-input-group">
-            <span>Timezone</span>
-            <Globe className="premium-input-icon" />
-            <select className="premium-input select-input" value={form.timezone} onChange={(e) => onChange('timezone', e.target.value)}>
-              <option value="IST">IST - India Standard Time (GMT +5:30)</option>
-              <option value="GST">GST - Gulf Standard Time (GMT +4:00)</option>
-            </select>
-          </label>
-
-          <label className="premium-input-group">
-            <span>Message</span>
-            <MessageSquare className="premium-input-icon" style={{ top: '2.8rem' }} />
-            <textarea
-              className="premium-input"
-              rows={4}
-              maxLength={500}
-              value={form.message}
-              onChange={(e) => onChange('message', e.target.value)}
-              placeholder="Tell us about your hiring needs or any specific requirements..."
-            />
-            <small className="counter">{messageLength}/500</small>
-          </label>
-
-          <label className="consent-row">
-            <input type="checkbox" checked={form.consent} onChange={(e) => onChange('consent', e.target.checked)} />
-            <span>I agree to be contacted regarding my inquiry.</span>
-          </label>
-
-          {error && <div className="form-notice error">{error}</div>}
-          {success && <div className="form-notice success">{success}</div>}
-
-
-          <div className="contact-actions">
-            <button className="btn-premium btn-primary" disabled={isSubmitting} onClick={() => void submit(isPasswordHelp ? 'Account Access Help' : 'Book Demo')}>
-              <CalendarDays size={18} /> {isSubmitting ? 'Sending...' : (isPasswordHelp ? 'Request Account Help' : 'Book Demo')}
-            </button>
-            <button className="btn-premium btn-secondary" disabled={isSubmitting} onClick={() => void submit('Send Inquiry')}>
-              <Send size={18} /> {isSubmitting ? 'Sending...' : 'Send Inquiry'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
+      </section>
+      <Footer />
+    </>
   )
 }

@@ -389,3 +389,59 @@
     font-size: 1.8rem;
   }
 }
+
+.legal-scroll-area {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 15px;
+  margin-top: 20px;
+}
+
+.legal-scroll-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.legal-scroll-area::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+}
+
+.legal-scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.legal-modal-section {
+  margin-bottom: 30px;
+}
+
+.legal-modal-section h3 {
+  color: #fff;
+  font-size: 1.25rem;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.legal-modal-section h3 svg {
+  color: var(--accent-indigo);
+}
+
+.legal-modal-section p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 0.95rem;
+  margin-bottom: 10px;
+}
+
+.legal-modal-section ul {
+  padding-left: 20px;
+  margin-bottom: 15px;
+}
+
+.legal-modal-section li {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: 8px;
+}

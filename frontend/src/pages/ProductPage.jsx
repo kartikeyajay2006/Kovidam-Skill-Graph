@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Gauge,
 } from 'lucide-react';
+import Footer from '../components/Footer';
 import './ProductPage.css';
 
 import cyberGlobe from '../assets/cyber_tech_globe.png';
@@ -370,6 +371,7 @@ export default function ProductPage() {
         })}
       </section>
 
+      <Footer />
     </main>
   );
 }

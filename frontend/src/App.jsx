@@ -1,5 +1,13 @@
-import React from 'react'
-import { Routes, Route } from 'react-router-dom'
+import React, { useEffect } from 'react'
+import { Routes, Route, useLocation } from 'react-router-dom'
+
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+  return null
+}
 import PublicLayout from './layouts/PublicLayout'
 import DashboardLayout from './layouts/DashboardLayout'
 import Home from './pages/Home'
@@ -21,7 +29,9 @@ import './App.css'
 
 function App() {
   return (
-    <Routes>
+    <>
+      <ScrollToTop />
+      <Routes>
       {/* Public SaaS Pages */}
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
@@ -48,6 +58,7 @@ function App() {
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
+    </>
   )
 }
 

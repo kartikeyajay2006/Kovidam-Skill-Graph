@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Code2, Crown, Users } from 'lucide-react'
+import Footer from '../components/Footer'
 import './AboutTeam.css'
 
 const members = [
@@ -102,6 +103,7 @@ export default function TeamPage() {
           Two minds. One mission - building the future of <span>AI hiring.</span>
         </p>
       </section>
+      <Footer />
     </main>
   )
 }

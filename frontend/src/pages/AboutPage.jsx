@@ -1,6 +1,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { Globe, Handshake, ShieldCheck, ArrowRight } from 'lucide-react'
+import Footer from '../components/Footer'
 import './AboutTeam.css'
 
 const pillars = [
@@ -66,6 +67,7 @@ export default function AboutPage() {
           <ArrowRight size={18} />
         </Link>
       </section>
+      <Footer />
     </main>
   )
 }
