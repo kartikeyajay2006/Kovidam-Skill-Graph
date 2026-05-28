@@ -50,7 +50,7 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  padding: 100px 8% 40px 8%;
+  padding: 85px 8% 20px 8%;
   overflow: hidden;
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
 }
@@ -88,7 +88,7 @@
    ========================================== */
 .features-intro-block {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -104,7 +104,7 @@
   letter-spacing: 2px;
   padding: 6px 16px;
   border-radius: 50px;
-  margin-bottom: 15px;
+  margin-bottom: 8px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -116,11 +116,11 @@
 }
 
 .features-main-title {
-  font-size: 2.8rem;
+  font-size: 2.4rem;
   font-weight: 800;
   color: #ffffff;
   letter-spacing: -0.5px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .features-main-title span {
@@ -130,11 +130,11 @@
 }
 
 .features-main-subtitle {
-  font-size: 1.1rem;
+  font-size: 1rem;
   color: #94a3b8;
   max-width: 650px;
-  line-height: 1.5;
-  margin-bottom: 25px;
+  line-height: 1.4;
+  margin-bottom: 10px;
 }
 
 /* Glowing orbital interactive path styles */
@@ -142,7 +142,7 @@
   position: relative;
   width: 100%;
   max-width: 720px;
-  height: 100px;
+  height: 80px;
   margin: 0 auto;
 }
 
@@ -261,7 +261,7 @@
   display: flex;
   align-items: center;
   gap: 15px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .number-box {
@@ -313,18 +313,18 @@
 }
 
 .section-heading {
-  font-size: 2.2rem;
+  font-size: 2rem;
   font-weight: 800;
   color: #ffffff;
-  margin-bottom: 18px;
+  margin-bottom: 10px;
   letter-spacing: -0.5px;
 }
 
 .section-desc {
-  font-size: 1rem;
+  font-size: 0.95rem;
   color: #94a3b8;
-  line-height: 1.6;
-  margin-bottom: 30px;
+  line-height: 1.5;
+  margin-bottom: 16px;
 }
 
 /* Checklist of features */
@@ -332,15 +332,15 @@
   list-style: none;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
-  margin-bottom: 35px;
+  gap: 8px;
+  margin-bottom: 18px;
 }
 
 .benefit-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 0.95rem;
+  gap: 10px;
+  font-size: 0.9rem;
   color: #cbd5e1;
   font-weight: 500;
 }
@@ -1350,7 +1350,10 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  padding-top: 110px;
+  padding-top: 100px;
+  height: auto !important;
+  min-height: 100vh;
+  overflow: visible !important;
 }
 
 .scrollable-y-mobile {
@@ -1358,9 +1361,9 @@
   max-width: 1350px;
   display: flex;
   flex-direction: column;
-  gap: 50px;
+  gap: 30px;
   flex: 1;
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 
 .why-choose-features-container {
@@ -1449,7 +1452,36 @@
 .embedded-footer-container {
   width: 100%;
   border-top: 1px solid rgba(255, 255, 255, 0.02);
-  padding-top: 10px;
+  padding-top: 0;
+}
+
+/* Compact the footer when embedded inside features page */
+.embedded-footer-container .footer-cta-container {
+  padding: 40px 20px;
+}
+
+.embedded-footer-container .cta-glass-banner {
+  padding: 50px 30px;
+  border-radius: 24px;
+}
+
+.embedded-footer-container .cta-title {
+  font-size: 2.5rem;
+  margin-bottom: 14px;
+}
+
+.embedded-footer-container .cta-desc {
+  font-size: 1rem;
+  margin-bottom: 28px;
+}
+
+.embedded-footer-container .footer-content-grid {
+  padding: 40px 40px;
+  gap: 40px;
+}
+
+.embedded-footer-container .footer-bottom-bar {
+  padding: 20px 40px;
 }
 
 /* ==========================================
