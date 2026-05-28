@@ -102,12 +102,15 @@ if cors_env:
     else:
         cors_allowed_origins = [origin.strip() for origin in cors_env.split(",") if origin.strip()]
 else:
+    # Hardcoded allowed origins including local and production custom domains
     cors_allowed_origins = [
         "http://localhost:5173",
         "https://kovidam-skill-graph-1.onrender.com",
+        "https://kovidam.co.in",
+        "https://www.kovidam.co.in",
         "https://kovidam-skill-graph.vercel.app",
     ]
-    # Auto-detect Render URL
+    # Auto-detect Render URL if available
     render_url = os.getenv("RENDER_EXTERNAL_URL")
     if render_url and render_url not in cors_allowed_origins:
         cors_allowed_origins.append(render_url)
