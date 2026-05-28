@@ -107,6 +107,10 @@ else:
         "https://kovidam-skill-graph-1.onrender.com",
         "https://kovidam-skill-graph.vercel.app",
     ]
+    # Auto-detect Render URL
+    render_url = os.getenv("RENDER_EXTERNAL_URL")
+    if render_url and render_url not in cors_allowed_origins:
+        cors_allowed_origins.append(render_url)
 
 app.add_middleware(
     CORSMiddleware,

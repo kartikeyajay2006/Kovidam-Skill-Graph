@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import TagInput from '../components/TagInput';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+import { authFetch } from '../utils/api';
 
 export default function ShortlistPage() {
   const [step, setStep] = useState(1); // 1: Upload, 2: Config, 3: Results
@@ -255,7 +255,7 @@ export default function ShortlistPage() {
     try {
       const fetchProgress = async () => {
         try {
-          const progressRes = await fetch(`${API_BASE_URL}/hiring/shortlist/progress/${clientTraceId}`);
+          const progressRes = await authFetch(`/hiring/shortlist/progress/${clientTraceId}`);
           if (!progressRes.ok) return;
           const progressJson = await progressRes.json();
           setShortlistProgress(progressJson);
@@ -266,7 +266,7 @@ export default function ShortlistPage() {
       await fetchProgress();
       progressTimer = setInterval(fetchProgress, 1500);
 
-      const response = await fetch(`${API_BASE_URL}/hiring/shortlist`, {
+      const response = await authFetch(`/hiring/shortlist`, {
         method: 'POST',
         body: data,
       });

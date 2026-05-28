@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Send, Sparkles, Mic } from 'lucide-react'
 import './ChatWidget.css'
 
+import { authFetch } from '../utils/api'
+
 const initialMessages = [
   {
     role: 'bot',
@@ -31,7 +33,7 @@ export default function ChatWidget() {
     setInput('')
     setIsLoading(true)
     try {
-      const response = await fetch('/chat/respond', {
+      const response = await authFetch('/chat/respond', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

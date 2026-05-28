@@ -10,7 +10,7 @@ import {
   Activity
 } from 'lucide-react';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+import { authFetch } from '../utils/api';
 
 export default function PastShortlistPage() {
   const { traceId } = useParams();
@@ -24,7 +24,7 @@ export default function PastShortlistPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_BASE_URL}/hiring/shortlist/${traceId}`)
+    authFetch(`/hiring/shortlist/${traceId}`)
       .then(res => {
         if (!res.ok) throw new Error('Shortlist not found');
         return res.json();

@@ -17,7 +17,7 @@ import {
   Trash2
 } from 'lucide-react';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+import { authFetch } from '../utils/api';
 
 export default function DashboardHub() {
   const navigate = useNavigate();
@@ -69,24 +69,27 @@ export default function DashboardHub() {
       const profile = loadAuthProfile(user?.uid)
       setViewerName(user?.displayName || profile.fullName || user?.email || 'Not signed in')
       setCompanyName(profile.companyName || 'No company linked')
+      
+      // Fetch metrics once auth state is determined
+      if (user) {
+        authFetch('/hiring/dashboard-metrics')
+          .then(res => res.json())
+          .then(data => {
+            if (data.metrics) {
+              setMetricsData(data.metrics);
+            }
+            if (data.recent_shortlists) {
+              setRecentShortlists(data.recent_shortlists);
+            }
+          })
+          .catch(err => console.error("Error fetching dashboard metrics:", err))
+          .finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
     })
     return () => unsub()
   }, [])
-
-  React.useEffect(() => {
-    fetch(`${API_BASE_URL}/hiring/dashboard-metrics`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.metrics) {
-          setMetricsData(data.metrics);
-        }
-        if (data.recent_shortlists) {
-          setRecentShortlists(data.recent_shortlists);
-        }
-      })
-      .catch(err => console.error("Error fetching dashboard metrics:", err))
-      .finally(() => setLoading(false));
-  }, []);
 
   const handleDelete = async (item) => {
     const label = item.display_title || item.role || item.id;
@@ -95,7 +98,7 @@ export default function DashboardHub() {
 
     setDeletingId(item.id);
     try {
-      const response = await fetch(`${API_BASE_URL}/hiring/shortlist/${item.id}`, {
+      const response = await authFetch(`/hiring/shortlist/${item.id}`, {
         method: 'DELETE',
       });
       if (!response.ok) {

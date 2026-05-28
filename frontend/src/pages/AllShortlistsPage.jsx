@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Activity, Users, ArrowRight, ArrowLeft, Trash2 } from 'lucide-react';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+import { authFetch } from '../utils/api';
 
 export default function AllShortlistsPage() {
   const navigate = useNavigate();
@@ -43,7 +43,7 @@ export default function AllShortlistsPage() {
   };
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/hiring/shortlists`)
+    authFetch('/hiring/shortlists')
       .then(res => res.json())
       .then(data => {
         setShortlists(data || []);
@@ -62,7 +62,7 @@ export default function AllShortlistsPage() {
 
     setDeletingId(item.id);
     try {
-      const response = await fetch(`${API_BASE_URL}/hiring/shortlist/${item.id}`, {
+      const response = await authFetch(`/hiring/shortlist/${item.id}`, {
         method: 'DELETE',
       });
       if (!response.ok) {
