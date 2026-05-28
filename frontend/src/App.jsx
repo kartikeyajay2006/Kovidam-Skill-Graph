@@ -16,6 +16,7 @@ import ContactPage from './pages/ContactPage'
 import AllShortlistsPage from './pages/AllShortlistsPage'
 import ProductPage from './pages/ProductPage'
 import FeaturesPage from './pages/FeaturesPage'
+import SettingsPage from './pages/SettingsPage'
 import './App.css'
 
 function App() {
@@ -44,7 +45,7 @@ function App() {
         <Route path="history/:traceId" element={<PastShortlistPage />} />
         <Route path="search" element={<SemanticSearchPage />} />
         <Route path="candidate/:id" element={<PlaceholderPage title="Candidate Profile" />} />
-        <Route path="settings" element={<PlaceholderPage title="Settings & Configuration" />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   )
