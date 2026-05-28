@@ -583,7 +583,7 @@
 .summary-bars-container {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   flex-content: center;
 }
 

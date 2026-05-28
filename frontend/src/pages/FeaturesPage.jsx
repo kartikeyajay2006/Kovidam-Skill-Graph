@@ -147,7 +147,7 @@ export default function FeaturesPage() {
                     <div className="node-icon-wrapper">
                       <FileText size={20} />
                     </div>
-                    <span className="node-label">ATS Scoring</span>
+                    <span className="node-label">Skill Graph</span>
                   </motion.div>
 
                   <motion.div 
@@ -191,21 +191,21 @@ export default function FeaturesPage() {
                 </motion.div>
                 
                 <motion.h2 className="section-heading" variants={fadeInUp}>
-                  AI Resume Scoring
+                  AI Skill Graph Scoring
                 </motion.h2>
                 
                 <motion.p className="section-desc" variants={fadeInUp}>
-                  Smart resume analysis to identify top-tier talent with unmatched accuracy. We parse, map, and evaluate skills against real job descriptions instantly.
+                  Beyond traditional ATS — we scrape GitHub profiles, verify skills through real project evidence, and build a comprehensive skill graph to identify top-tier talent with unmatched accuracy.
                 </motion.p>
                 
                 <motion.ul className="benefits-checklist" variants={staggerContainer}>
                   {[
-                    'AI-Powered ATS Score',
-                    'Job Description Matching',
-                    'Skill Gap Analysis',
-                    'Resume Improvement Suggestions',
-                    'Keyword & Format Analysis',
-                    'Candidate Ranking'
+                    'GitHub Profile & Project Scraping',
+                    'Skill Evidence Through Real Code',
+                    'AI-Powered Fit Score',
+                    'Job Description Skill Mapping',
+                    'Skill Gap & Growth Analysis',
+                    'Candidate Ranking & Shortlisting'
                   ].map((benefit, i) => (
                     <motion.li key={i} className="benefit-item" variants={fadeInUp}>
                       <span className="check-bullet bg-indigo">
@@ -251,7 +251,7 @@ export default function FeaturesPage() {
                     <div className="body-grid-top">
                       {/* ATS Score Radial Circle */}
                       <div className="glass-subcard radial-score-card" onMouseEnter={() => setResumeHoveredScore(94)} onMouseLeave={() => setResumeHoveredScore(86)}>
-                        <h4 className="card-label">ATS Match Score</h4>
+                        <h4 className="card-label">Fit Score</h4>
                         
                         <div className="radial-progress-wrapper">
                           <svg className="radial-svg" viewBox="0 0 120 120">
@@ -283,13 +283,15 @@ export default function FeaturesPage() {
 
                       {/* Match Summary Progress Bars */}
                       <div className="glass-subcard progress-metrics-card">
-                        <h4 className="card-label">Match Summary</h4>
+                        <h4 className="card-label">Score Breakdown</h4>
                         <div className="summary-bars-container">
                           {[
-                            { label: 'Skills Match', value: 90 },
-                            { label: 'Experience Match', value: 80 },
-                            { label: 'Keywords Match', value: 85 },
-                            { label: 'Format Score', value: 75 }
+                            { label: 'Github', value: 91 },
+                            { label: 'Experience', value: 86 },
+                            { label: 'Project Evidence', value: 82 },
+                            { label: 'Skills Match', value: 88 },
+                            { label: 'Platform Strength', value: 79 },
+                            { label: 'Profile Completeness', value: 84 }
                           ].map((metric, idx) => (
                             <div key={idx} className="progress-bar-row">
                               <div className="progress-bar-info">
