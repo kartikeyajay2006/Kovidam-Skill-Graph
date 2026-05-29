@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ReactDOM from 'react-dom';
 import { Mail, ArrowRight, X, Shield, Eye, Lock, RefreshCcw, UserCheck, Clock, Cpu, User, Ban, ShieldAlert, AlertTriangle, HardDrive, ShieldCheck, Activity, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -206,7 +207,8 @@ export default function Footer() {
         </div>
       </div>
 
-      <AnimatePresence>
+      {ReactDOM.createPortal(
+        <AnimatePresence>
         {isCareersOpen && (
           <motion.div 
             className="modal-overlay" 
@@ -505,7 +507,9 @@ export default function Footer() {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </footer>
   );
 }
