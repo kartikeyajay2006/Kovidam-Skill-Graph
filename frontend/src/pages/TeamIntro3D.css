@@ -1,0 +1,518 @@
+/* ═══════════════════════════════════════════════════════════════════
+   TeamIntro3D — Cinematic 3D Intro Animation
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── Container ───────────────────────────────────────────────────── */
+.team-intro-3d {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(
+    ellipse 80% 60% at 50% 50%,
+    rgba(15, 12, 41, 1),
+    rgba(6, 4, 18, 1) 70%
+  );
+  overflow: hidden;
+  perspective: 1200px;
+}
+
+/* ─── Particle Canvas ─────────────────────────────────────────────── */
+.team-intro-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 1s ease;
+}
+
+.phase-1 .team-intro-canvas,
+.phase-2 .team-intro-canvas {
+  opacity: 0.7;
+}
+
+.phase-3 .team-intro-canvas {
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+/* ─── 3D Center Wrapper ───────────────────────────────────────────── */
+.intro-3d-center {
+  position: absolute;
+  z-index: 2;
+}
+
+/* ─── 3D Cube Scene ───────────────────────────────────────────────── */
+.cube-scene {
+  width: 220px;
+  height: 220px;
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.cube-wrapper {
+  width: 140px;
+  height: 140px;
+  perspective: 800px;
+  perspective-origin: 50% 50%;
+}
+
+.cube-3d {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  animation: cubeRotate 6s linear infinite;
+}
+
+.cube-face {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  border: 1.5px solid rgba(129, 140, 248, 0.5);
+  background: rgba(99, 102, 241, 0.04);
+  box-shadow:
+    inset 0 0 30px rgba(99, 102, 241, 0.08),
+    0 0 15px rgba(99, 102, 241, 0.06);
+  backface-visibility: visible;
+}
+
+.cube-front  { transform: translateZ(70px); }
+.cube-back   { transform: rotateY(180deg) translateZ(70px); }
+.cube-right  { transform: rotateY(90deg) translateZ(70px); }
+.cube-left   { transform: rotateY(-90deg) translateZ(70px); }
+.cube-top    { transform: rotateX(90deg) translateZ(70px); }
+.cube-bottom { transform: rotateX(-90deg) translateZ(70px); }
+
+/* Glowing vertices (8 corners of the cube) */
+.cube-vertex {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a5b4fc;
+  box-shadow:
+    0 0 12px rgba(165, 180, 252, 0.9),
+    0 0 28px rgba(99, 102, 241, 0.6);
+  animation: vertexPulse 2s ease-in-out infinite alternate;
+}
+
+/* 8 corners positioned in 3D */
+.cube-vertex-0 { transform: translate3d(-3px, -3px,  70px); }
+.cube-vertex-1 { transform: translate3d(137px, -3px,  70px); }
+.cube-vertex-2 { transform: translate3d(-3px, 137px,  70px); }
+.cube-vertex-3 { transform: translate3d(137px, 137px,  70px); }
+.cube-vertex-4 { transform: translate3d(-3px, -3px, -70px); }
+.cube-vertex-5 { transform: translate3d(137px, -3px, -70px); }
+.cube-vertex-6 { transform: translate3d(-3px, 137px, -70px); }
+.cube-vertex-7 { transform: translate3d(137px, 137px, -70px); }
+
+/* Staggered vertex pulse */
+.cube-vertex-1 { animation-delay: 0.25s; }
+.cube-vertex-2 { animation-delay: 0.5s; }
+.cube-vertex-3 { animation-delay: 0.75s; }
+.cube-vertex-4 { animation-delay: 0.15s; }
+.cube-vertex-5 { animation-delay: 0.4s; }
+.cube-vertex-6 { animation-delay: 0.65s; }
+.cube-vertex-7 { animation-delay: 0.9s; }
+
+/* ─── Orbit Rings ─────────────────────────────────────────────────── */
+.cube-orbit {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid transparent;
+}
+
+.cube-orbit-1 {
+  width: 280px;
+  height: 280px;
+  border-color: rgba(129, 140, 248, 0.2);
+  animation: orbitSpin1 8s linear infinite;
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.08);
+}
+
+.cube-orbit-1::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #818cf8;
+  box-shadow: 0 0 16px rgba(129, 140, 248, 0.8);
+  top: -4px;
+  left: calc(50% - 4px);
+}
+
+.cube-orbit-2 {
+  width: 360px;
+  height: 360px;
+  border-color: rgba(99, 102, 241, 0.12);
+  animation: orbitSpin2 12s linear infinite reverse;
+}
+
+.cube-orbit-2::after {
+  content: '';
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #a5b4fc;
+  box-shadow: 0 0 12px rgba(165, 180, 252, 0.7);
+  bottom: -2px;
+  left: calc(50% - 2px);
+}
+
+.cube-orbit-3 {
+  width: 440px;
+  height: 440px;
+  border-color: rgba(79, 70, 229, 0.08);
+  animation: orbitSpin1 16s linear infinite;
+}
+
+.cube-orbit-3::after {
+  content: '';
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(167, 180, 252, 0.6);
+  box-shadow: 0 0 10px rgba(167, 180, 252, 0.5);
+  right: -2px;
+  top: calc(50% - 2px);
+}
+
+/* ─── Holographic Text ────────────────────────────────────────────── */
+.holo-text-wrapper {
+  position: absolute;
+  z-index: 5;
+  text-align: center;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.holo-line {
+  height: 1px;
+  width: min(420px, 80vw);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(129, 140, 248, 0.6),
+    rgba(165, 180, 252, 0.8),
+    rgba(129, 140, 248, 0.6),
+    transparent
+  );
+  transform-origin: center;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+}
+
+.holo-title {
+  margin: 0;
+  font-size: clamp(2.4rem, 6vw, 5rem);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #f0f2ff;
+  text-shadow:
+    0 0 20px rgba(129, 140, 248, 0.5),
+    0 0 60px rgba(99, 102, 241, 0.25),
+    0 0 120px rgba(79, 70, 229, 0.15);
+  transform-style: preserve-3d;
+}
+
+.holo-word {
+  display: inline-block;
+  background: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #e0e7ff 30%,
+    #a5b4fc 60%,
+    #818cf8 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 24px rgba(99, 102, 241, 0.4));
+}
+
+.holo-sub {
+  margin: 0;
+  font-size: clamp(0.7rem, 1.4vw, 0.95rem);
+  font-weight: 500;
+  color: rgba(165, 180, 252, 0.85);
+  text-transform: uppercase;
+}
+
+/* Scanning line that sweeps across the text */
+.holo-scan-line {
+  position: absolute;
+  width: min(460px, 85vw);
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(165, 180, 252, 0.15) 20%,
+    rgba(165, 180, 252, 0.6) 50%,
+    rgba(165, 180, 252, 0.15) 80%,
+    transparent 100%
+  );
+  animation: holoScan 2.4s ease-in-out infinite;
+  box-shadow: 0 0 18px rgba(129, 140, 248, 0.25);
+  pointer-events: none;
+}
+
+/* ─── Radial burst on exit ────────────────────────────────────────── */
+.intro-burst {
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(129, 140, 248, 0.6),
+    rgba(99, 102, 241, 0.3) 30%,
+    transparent 70%
+  );
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ─── HUD Corner Elements ─────────────────────────────────────────── */
+.hud-corner {
+  position: absolute;
+  width: 50px;
+  height: 50px;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.8s ease 0.4s;
+}
+
+.phase-1 .hud-corner,
+.phase-2 .hud-corner {
+  opacity: 0.5;
+}
+
+.phase-3 .hud-corner {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.hud-tl {
+  top: 32px;
+  left: 32px;
+  border-top: 2px solid rgba(129, 140, 248, 0.5);
+  border-left: 2px solid rgba(129, 140, 248, 0.5);
+}
+
+.hud-tr {
+  top: 32px;
+  right: 32px;
+  border-top: 2px solid rgba(129, 140, 248, 0.5);
+  border-right: 2px solid rgba(129, 140, 248, 0.5);
+}
+
+.hud-bl {
+  bottom: 32px;
+  left: 32px;
+  border-bottom: 2px solid rgba(129, 140, 248, 0.5);
+  border-left: 2px solid rgba(129, 140, 248, 0.5);
+}
+
+.hud-br {
+  bottom: 32px;
+  right: 32px;
+  border-bottom: 2px solid rgba(129, 140, 248, 0.5);
+  border-right: 2px solid rgba(129, 140, 248, 0.5);
+}
+
+/* ─── Progress bar at bottom ──────────────────────────────────────── */
+.intro-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  transform-origin: left;
+  z-index: 6;
+  background: linear-gradient(
+    90deg,
+    rgba(99, 102, 241, 0.8),
+    rgba(129, 140, 248, 0.9),
+    rgba(165, 180, 252, 1)
+  );
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Keyframe Animations
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes cubeRotate {
+  0%   { transform: rotateX(-20deg) rotateY(0deg); }
+  25%  { transform: rotateX(10deg)  rotateY(90deg); }
+  50%  { transform: rotateX(-15deg) rotateY(180deg); }
+  75%  { transform: rotateX(5deg)   rotateY(270deg); }
+  100% { transform: rotateX(-20deg) rotateY(360deg); }
+}
+
+@keyframes vertexPulse {
+  0%   { box-shadow: 0 0 8px rgba(165, 180, 252, 0.6), 0 0 18px rgba(99, 102, 241, 0.3); }
+  100% { box-shadow: 0 0 16px rgba(165, 180, 252, 1), 0 0 40px rgba(99, 102, 241, 0.7); }
+}
+
+@keyframes orbitSpin1 {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes orbitSpin2 {
+  from { transform: rotateX(60deg) rotateZ(0deg); }
+  to   { transform: rotateX(60deg) rotateZ(360deg); }
+}
+
+@keyframes holoScan {
+  0%   { top: -10%;  opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { top: 110%;  opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase-specific transitions for the 3D cube
+   ═══════════════════════════════════════════════════════════════════ */
+
+.phase-3 .cube-3d {
+  animation: cubeExplode 0.8s ease-in forwards;
+}
+
+@keyframes cubeExplode {
+  0% {
+    transform: rotateX(-20deg) rotateY(0deg) scale(1);
+    opacity: 1;
+  }
+  60% {
+    transform: rotateX(40deg) rotateY(180deg) scale(1.4);
+    opacity: 0.6;
+  }
+  100% {
+    transform: rotateX(80deg) rotateY(360deg) scale(0);
+    opacity: 0;
+  }
+}
+
+.phase-3 .cube-orbit {
+  animation: orbitExpand 0.7s ease-out forwards !important;
+}
+
+@keyframes orbitExpand {
+  to {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+
+/* ─── Glow backdrop behind cube ───────────────────────────────────── */
+.cube-scene::before {
+  content: '';
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(99, 102, 241, 0.2),
+    transparent 70%
+  );
+  animation: cubeGlow 3s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes cubeGlow {
+  0%   { transform: scale(0.9); opacity: 0.5; }
+  100% { transform: scale(1.3); opacity: 1; }
+}
+
+/* ─── Grid overlay for futuristic feel ────────────────────────────── */
+.team-intro-3d::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  z-index: 1;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black, transparent);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black, transparent);
+}
+
+/* Vignette effect */
+.team-intro-3d::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 60% 50% at 50% 50%,
+    transparent,
+    rgba(6, 4, 18, 0.5) 70%,
+    rgba(6, 4, 18, 0.85) 100%
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Responsive
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .cube-scene {
+    width: 160px;
+    height: 160px;
+  }
+
+  .cube-wrapper {
+    width: 100px;
+    height: 100px;
+  }
+
+  .cube-face {
+    width: 100px;
+    height: 100px;
+  }
+
+  .cube-front  { transform: translateZ(50px); }
+  .cube-back   { transform: rotateY(180deg) translateZ(50px); }
+  .cube-right  { transform: rotateY(90deg) translateZ(50px); }
+  .cube-left   { transform: rotateY(-90deg) translateZ(50px); }
+  .cube-top    { transform: rotateX(90deg) translateZ(50px); }
+  .cube-bottom { transform: rotateX(-90deg) translateZ(50px); }
+
+  .cube-vertex-0 { transform: translate3d(-3px, -3px,  50px); }
+  .cube-vertex-1 { transform: translate3d(97px,  -3px,  50px); }
+  .cube-vertex-2 { transform: translate3d(-3px,  97px,  50px); }
+  .cube-vertex-3 { transform: translate3d(97px,  97px,  50px); }
+  .cube-vertex-4 { transform: translate3d(-3px, -3px, -50px); }
+  .cube-vertex-5 { transform: translate3d(97px, -3px, -50px); }
+  .cube-vertex-6 { transform: translate3d(-3px, 97px, -50px); }
+  .cube-vertex-7 { transform: translate3d(97px, 97px, -50px); }
+
+  .cube-orbit-1 { width: 200px; height: 200px; }
+  .cube-orbit-2 { width: 260px; height: 260px; }
+  .cube-orbit-3 { width: 320px; height: 320px; }
+
+  .hud-tl, .hud-tr, .hud-bl, .hud-br {
+    width: 30px;
+    height: 30px;
+  }
+
+  .hud-tl { top: 16px; left: 16px; }
+  .hud-tr { top: 16px; right: 16px; }
+  .hud-bl { bottom: 16px; left: 16px; }
+  .hud-br { bottom: 16px; right: 16px; }
+}
