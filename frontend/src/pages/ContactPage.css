@@ -266,14 +266,35 @@
   padding: 12px;
 }
 
+/* Date & Time Picker Customization */
+.premium-input[type="date"],
+.premium-input[type="time"] {
+  position: relative;
+  cursor: pointer;
+  padding-right: 12px;
+  color-scheme: dark; /* Ensures the native picker uses dark mode if the browser supports it */
+}
+
+/* Make the whole input a trigger for the native picker */
 input::-webkit-calendar-picker-indicator {
   position: absolute;
-  right: 12px;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   cursor: pointer;
   opacity: 0;
-  width: 20px;
-  height: 20px;
-  z-index: 2;
+  z-index: 5;
+}
+
+.date-input, .time-input {
+  font-family: inherit;
+  color: #e2e8f0;
+}
+
+.premium-input:hover {
+  background: rgba(133, 128, 255, 0.08);
+  border-color: rgba(133, 128, 255, 0.5);
 }
 
 .date-time-wrap small {

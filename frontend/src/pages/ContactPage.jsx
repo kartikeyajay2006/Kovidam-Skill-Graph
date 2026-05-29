@@ -330,7 +330,14 @@ export default function ContactPage() {
                 <label className="premium-input-group">
                   <span>Preferred Date {isPasswordHelp ? '' : '*'}</span>
                   <CalendarDays className="premium-input-icon" size={18} />
-                  <input type="date" min={minDate} className="premium-input" value={form.preferredDate} onChange={(e) => onChange('preferredDate', e.target.value)} />
+                  <input 
+                    type="date" 
+                    min={minDate} 
+                    className="premium-input date-input" 
+                    value={form.preferredDate} 
+                    onChange={(e) => onChange('preferredDate', e.target.value)} 
+                    onClick={(e) => e.target.showPicker?.()}
+                  />
                 </label>
                 <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
               </div>
@@ -339,7 +346,13 @@ export default function ContactPage() {
                 <label className="premium-input-group">
                   <span>Preferred Time {isPasswordHelp ? '' : '*'}</span>
                   <Clock3 className="premium-input-icon" size={18} />
-                  <input type="time" className="premium-input" value={form.preferredTime} onChange={(e) => onChange('preferredTime', e.target.value)} />
+                  <input 
+                    type="time" 
+                    className="premium-input time-input" 
+                    value={form.preferredTime} 
+                    onChange={(e) => onChange('preferredTime', e.target.value)} 
+                    onClick={(e) => e.target.showPicker?.()}
+                  />
                 </label>
                 <small>{isPasswordHelp ? 'Optional for account help' : 'We will confirm your slot by email'}</small>
               </div>

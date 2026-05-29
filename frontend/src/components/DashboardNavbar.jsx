@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { LayoutDashboard, Briefcase, Search, Settings, LogOut } from 'lucide-react'
@@ -12,6 +12,7 @@ export default function DashboardNavbar() {
   const [isHovered, setIsHovered] = useState(false)
   const [authUser, setAuthUser] = useState(null)
   const [profile, setProfile] = useState({})
+  const [scrolled, setScrolled] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const AUTH_UI_DEBUG = import.meta.env.VITE_AUTH_UI_DEBUG === 'true'
@@ -26,6 +27,14 @@ export default function DashboardNavbar() {
     })
     return () => unsub()
   }, [AUTH_UI_DEBUG])
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 10)
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   const displayName = authUser?.displayName || profile.fullName || authUser?.email || 'Not signed in'
   const companyLabel = profile.companyName || 'No company linked'
@@ -48,9 +57,20 @@ export default function DashboardNavbar() {
     { name: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ]
 
+  const sideStyle = {
+    opacity: scrolled ? 0 : 1,
+    transform: scrolled ? 'translateY(-12px)' : 'translateY(0)',
+    pointerEvents: scrolled ? 'none' : 'auto',
+    transition: 'opacity 0.35s ease, transform 0.35s ease',
+  }
+
   return (
     <header className="top-header">
-      <div className="header-logo" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>
+      <div
+        className="header-logo"
+        onClick={() => !scrolled && navigate('/dashboard')}
+        style={{ cursor: scrolled ? 'default' : 'pointer', ...sideStyle }}
+      >
         <img src={logoCroppedTight} alt="Kovidam Logo" className="brand-logo" />
         <span className="brand-text">KOVI<span className="sanskrit">दम्</span><span style={{ fontSize: '1.2rem', marginLeft: '10px', fontWeight: 500, color: '#e2e8f0', letterSpacing: '1px' }}>Medha</span></span>
       </div>
@@ -99,7 +119,7 @@ export default function DashboardNavbar() {
         </ul>
       </motion.nav>
 
-      <div className="header-action">
+      <div className="header-action" style={sideStyle}>
         <div style={{ textAlign: 'right', marginRight: '0.75rem', lineHeight: 1.2 }}>
           <div style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>{displayName}</div>
           <div style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{companyLabel}</div>
