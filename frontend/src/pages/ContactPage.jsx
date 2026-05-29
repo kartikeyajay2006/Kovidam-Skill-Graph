@@ -296,7 +296,7 @@ export default function ContactPage() {
             <div className="form-heading">
               <div className="head-icon"><CalendarDays size={24} /></div>
               <div>
-                <h3>Book Your Demo Slot</h3>
+                <h3>Book Your <span>Demo Slot</span></h3>
                 <p>{isPasswordHelp ? 'Account access support request' : 'Fill in the details below and we will take care of the rest.'}</p>
               </div>
             </div>
