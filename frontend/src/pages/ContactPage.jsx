@@ -42,6 +42,42 @@ export default function ContactPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  const [introState, setIntroState] = useState('flying-in')
+
+  const skipIntro = () => setIntroState('done')
+  const replayIntro = () => setIntroState('flying-in')
+
+  useEffect(() => {
+    if (introState === 'done') return
+
+    let t1, t2, t3, t4
+
+    if (introState === 'flying-in') {
+      t1 = setTimeout(() => {
+        setIntroState('dropping-threads')
+      }, 2000)
+    } else if (introState === 'dropping-threads') {
+      t2 = setTimeout(() => {
+        setIntroState('revealing')
+      }, 1200)
+    } else if (introState === 'revealing') {
+      t3 = setTimeout(() => {
+        setIntroState('flying-out')
+      }, 1500)
+    } else if (introState === 'flying-out') {
+      t4 = setTimeout(() => {
+        setIntroState('done')
+      }, 1500)
+    }
+
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+      clearTimeout(t3)
+      clearTimeout(t4)
+    }
+  }, [introState])
+
   const messageLength = form.message.length
   const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID || 'service_ji7xw7p'
   const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || ''
@@ -167,11 +203,58 @@ export default function ContactPage() {
 
   return (
     <>
+      {introState !== 'done' && (
+        <>
+          <div className={`intro-airplane-wrapper ${introState}`}>
+            <div className="airplane-3d">
+              <svg viewBox="0 0 100 100" className="airplane-svg">
+                <defs>
+                  <linearGradient id="left-wing" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#c3c0ff" />
+                    <stop offset="50%" stopColor="#7a70ff" />
+                    <stop offset="100%" stopColor="#4f40ff" />
+                  </linearGradient>
+                  <linearGradient id="right-wing" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#ffffff" />
+                    <stop offset="50%" stopColor="#a39eff" />
+                    <stop offset="100%" stopColor="#6e60ff" />
+                  </linearGradient>
+                  <linearGradient id="left-body" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#4139b8" />
+                    <stop offset="100%" stopColor="#1c1675" />
+                  </linearGradient>
+                  <linearGradient id="right-body" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#534abf" />
+                    <stop offset="100%" stopColor="#28208a" />
+                  </linearGradient>
+                </defs>
+                <path d="M50,15 L15,70 L50,55 Z" fill="url(#left-wing)" />
+                <path d="M50,15 L50,55 L38,62 Z" fill="url(#left-body)" />
+                <path d="M50,15 L85,70 L50,55 Z" fill="url(#right-wing)" />
+                <path d="M50,15 L50,55 L62,62 Z" fill="url(#right-body)" />
+              </svg>
+              <div className="airplane-trail" />
+            </div>
+          </div>
+          <div className={`intro-thread thread-left ${introState}`} />
+          <div className={`intro-thread thread-right ${introState}`} />
+          <button className="skip-intro-btn" onClick={skipIntro}>
+            Skip Intro
+          </button>
+        </>
+      )}
       <section className="contact-page">
         <div className="contact-bg-glow" />
-        <div className="contact-wrapper">
+        <div className={`contact-wrapper ${introState !== 'done' ? 'intro-animating' : ''} intro-${introState}`}>
           <div className="contact-left">
-            <h2>Schedule a <span>Demo</span></h2>
+            <h2>
+              Schedule a <span>Demo</span>
+              {introState === 'done' && (
+                <button className="replay-intro-btn" onClick={replayIntro} title="Replay intro animation">
+                  <Rocket size={16} />
+                </button>
+              )}
+            </h2>
             <p>
               {isPasswordHelp
                 ? 'Tell us which account needs help and our team will follow up with access support.'

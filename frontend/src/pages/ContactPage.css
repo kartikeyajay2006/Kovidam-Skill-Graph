@@ -303,3 +303,300 @@ input::-webkit-calendar-picker-indicator {
     grid-template-columns: 1fr;
   }
 }
+
+/* 3D Paper Airplane Animation Intro styling */
+
+/* Skip & Replay Buttons */
+.skip-intro-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: rgba(15, 17, 33, 0.6);
+  border: 1px solid rgba(133, 128, 255, 0.3);
+  backdrop-filter: blur(8px);
+  color: #c4c9ff;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  z-index: 10001;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.skip-intro-btn:hover {
+  background: rgba(133, 128, 255, 0.25);
+  border-color: rgba(133, 128, 255, 0.6);
+  color: #ffffff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(133, 128, 255, 0.2);
+}
+
+.skip-intro-btn:active {
+  transform: translateY(0);
+}
+
+.replay-intro-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(133, 128, 255, 0.1);
+  border: 1px solid rgba(133, 128, 255, 0.2);
+  color: #a7a1ff;
+  cursor: pointer;
+  margin-left: 16px;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  vertical-align: middle;
+}
+
+.replay-intro-btn:hover {
+  background: rgba(133, 128, 255, 0.25);
+  border-color: rgba(133, 128, 255, 0.5);
+  color: #ffffff;
+  transform: scale(1.1) rotate(-15deg);
+}
+
+/* Airplane 3D Container */
+.intro-airplane-wrapper {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  width: 90px;
+  height: 90px;
+  top: 35vh;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  perspective: 1000px;
+  transform-style: preserve-3d;
+}
+
+.intro-airplane-wrapper.flying-in {
+  animation: fly-in-path 2.0s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+}
+
+.intro-airplane-wrapper.dropping-threads {
+  transform: translate(-50%, -50%) scale(1) rotateX(0deg) rotateY(0deg) rotateZ(-90deg);
+  animation: center-bob 1.2s ease-in-out infinite alternate;
+}
+
+.intro-airplane-wrapper.revealing {
+  transform: translate(-50%, -50%) scale(1) rotateX(0deg) rotateY(0deg) rotateZ(-90deg);
+  animation: center-bob 1.2s ease-in-out infinite alternate;
+}
+
+.intro-airplane-wrapper.flying-out {
+  animation: fly-out-path 1.5s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+/* Airplane Graphics */
+.airplane-3d {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+}
+
+.airplane-svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.45));
+  transform-style: preserve-3d;
+  transition: transform 0.4s ease;
+}
+
+.airplane-trail {
+  position: absolute;
+  top: 50%;
+  left: -20px;
+  transform: translateY(-50%) rotate(90deg);
+  width: 4px;
+  height: 35px;
+  background: linear-gradient(to top, rgba(95, 105, 255, 0), rgba(143, 132, 255, 0.8));
+  filter: blur(2px);
+  opacity: 0.8;
+  animation: trail-flicker 0.12s infinite alternate;
+}
+
+@keyframes trail-flicker {
+  0% { opacity: 0.5; height: 30px; }
+  100% { opacity: 0.9; height: 45px; }
+}
+
+/* Glowing Threads */
+.intro-thread {
+  position: fixed;
+  top: 35vh;
+  width: 2px;
+  height: 0vh;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background: linear-gradient(to bottom, #a7a1ff, #5e64ff 80%, rgba(94, 100, 255, 0));
+  box-shadow: 0 0 8px #5e64ff, 0 0 15px #a7a1ff;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.intro-thread::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translate(-50%, 50%);
+  width: 8px;
+  height: 8px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #ffffff, 0 0 20px #5e64ff, 0 0 30px #a7a1ff;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.intro-thread.dropping-threads {
+  height: 65vh;
+  opacity: 1;
+  transition: height 1.2s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.3s ease-out;
+}
+
+.intro-thread.dropping-threads::after {
+  opacity: 1;
+}
+
+.intro-thread.thread-left.revealing,
+.intro-thread.thread-left.flying-out {
+  height: 65vh;
+  opacity: 1;
+  animation: move-thread-left 1.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.intro-thread.thread-left.revealing::after,
+.intro-thread.thread-left.flying-out::after {
+  opacity: 1;
+}
+
+.intro-thread.thread-right.revealing,
+.intro-thread.thread-right.flying-out {
+  height: 65vh;
+  opacity: 1;
+  animation: move-thread-right 1.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.intro-thread.thread-right.revealing::after,
+.intro-thread.thread-right.flying-out::after {
+  opacity: 1;
+}
+
+/* Page Layout Animation States */
+.contact-wrapper.intro-animating {
+  pointer-events: none;
+}
+
+.contact-left {
+  transition: clip-path 1.4s cubic-bezier(0.25, 1, 0.5, 1),
+              transform 1.4s cubic-bezier(0.25, 1, 0.5, 1),
+              opacity 1.4s ease-out;
+}
+
+.intro-flying-in .contact-left,
+.intro-dropping-threads .contact-left {
+  opacity: 0;
+  clip-path: inset(0 0 0 100%);
+  transform: translateX(40px);
+}
+
+.intro-revealing .contact-left,
+.intro-flying-out .contact-left,
+.intro-done .contact-left {
+  opacity: 1;
+  clip-path: inset(0 0 0 0%);
+  transform: translateX(0);
+}
+
+.contact-form-card {
+  transition: clip-path 1.4s cubic-bezier(0.25, 1, 0.5, 1),
+              transform 1.4s cubic-bezier(0.25, 1, 0.5, 1),
+              opacity 1.4s ease-out;
+}
+
+.intro-flying-in .contact-form-card,
+.intro-dropping-threads .contact-form-card {
+  opacity: 0;
+  clip-path: inset(0 100% 0 0);
+  transform: translateX(-40px);
+}
+
+.intro-revealing .contact-form-card,
+.intro-flying-out .contact-form-card,
+.intro-done .contact-form-card {
+  opacity: 1;
+  clip-path: inset(0 0 0 0%);
+  transform: translateX(0);
+}
+
+/* Keyframes */
+@keyframes fly-in-path {
+  0% {
+    transform: translate(60vw, -15vh) scale(0.4) rotateX(25deg) rotateY(-45deg) rotateZ(-110deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.05) rotateX(5deg) rotateY(-10deg) rotateZ(-95deg);
+    opacity: 1;
+  }
+}
+
+@keyframes center-bob {
+  0% {
+    transform: translate(-50%, calc(-50% - 6px)) scale(1) rotateX(0deg) rotateY(0deg) rotateZ(-90deg);
+  }
+  100% {
+    transform: translate(-50%, calc(-50% + 6px)) scale(1) rotateX(5deg) rotateY(5deg) rotateZ(-90deg);
+  }
+}
+
+@keyframes fly-out-path {
+  0% {
+    transform: translate(-50%, -50%) scale(1) rotateX(0deg) rotateY(0deg) rotateZ(-90deg);
+    opacity: 1;
+  }
+  25% {
+    transform: translate(-30vw, 5vh) scale(1.1) rotateX(-10deg) rotateY(30deg) rotateZ(-75deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-120vw, -25vh) scale(0.3) rotateX(-35deg) rotateY(60deg) rotateZ(-65deg);
+    opacity: 0;
+  }
+}
+
+@keyframes move-thread-left {
+  0% { left: 50%; transform: translateX(-50%); opacity: 1; }
+  85% { left: max(4.5vw, calc(50vw - 660px)); transform: translateX(-50%); opacity: 1; }
+  100% { left: max(4.5vw, calc(50vw - 660px)); transform: translateX(-50%); opacity: 0; }
+}
+
+@keyframes move-thread-right {
+  0% { left: 50%; transform: translateX(-50%); opacity: 1; }
+  85% { left: min(95.5vw, calc(50vw + 660px)); transform: translateX(-50%); opacity: 1; }
+  100% { left: min(95.5vw, calc(50vw + 660px)); transform: translateX(-50%); opacity: 0; }
+}
+
+@media (max-width: 760px) {
+  @keyframes move-thread-left {
+    0% { left: 50%; transform: translateX(-50%); opacity: 1; }
+    85% { left: 14px; transform: translateX(-50%); opacity: 1; }
+    100% { left: 14px; transform: translateX(-50%); opacity: 0; }
+  }
+  @keyframes move-thread-right {
+    0% { left: 50%; transform: translateX(-50%); opacity: 1; }
+    85% { left: calc(100vw - 14px); transform: translateX(-50%); opacity: 1; }
+    100% { left: calc(100vw - 14px); transform: translateX(-50%); opacity: 0; }
+  }
+}
