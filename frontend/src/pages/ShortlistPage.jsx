@@ -1,15 +1,13 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   UploadCloud, 
   Building, 
   Briefcase, 
   Star, 
-  Settings2, 
   FileText, 
   CheckCircle2, 
   XCircle, 
-  ChevronRight, 
   Zap,
   Target,
   Award,
@@ -26,170 +24,36 @@ import {
   Trash2
 } from 'lucide-react';
 import TagInput from '../components/TagInput';
-
-import { authFetch } from '../utils/api';
+import { useShortlist } from '../context/ShortlistContext';
 
 export default function ShortlistPage() {
-  const [step, setStep] = useState(1); // 1: Upload, 2: Config, 3: Results
-  const [formData, setFormData] = useState({
-    role: 'internship',
-    company_name: 'Kovidam',
-    position_title: 'Software Engineer',
-    job_description: '',
-    min_experience_years: 0,
-    target_headcount: 3,
-  });
-  const [requiredSkills, setRequiredSkills] = useState(['python', 'react', 'javascript']);
-  const [mustHaveSkills, setMustHaveSkills] = useState([]);
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingElapsedSec, setLoadingElapsedSec] = useState(0);
-  const [loadingStageIdx, setLoadingStageIdx] = useState(0);
-  const [shortlistProgress, setShortlistProgress] = useState(null);
-  const [results, setResults] = useState(null);
-  const [error, setError] = useState(null);
+  const {
+    step, setStep,
+    formData, setFormData,
+    requiredSkills, setRequiredSkills,
+    mustHaveSkills, setMustHaveSkills,
+    files, setFiles,
+    loading,
+    results,
+    error,
+    shortlistProgress,
+    loadingElapsedSec,
+    loadingStageIdx,
+    autoSendEmails, setAutoSendEmails,
+    selectedCandidateIndex, setSelectedCandidateIndex,
+    notificationPermission,
+    notificationPromptSeen,
+    notifyToast, setNotifyToast,
+    fileCountRef,
+    loadingStages,
+    handleSubmit: contextHandleSubmit,
+    resetShortlist,
+    requestNotificationPermission,
+    showNotifyToast,
+  } = useShortlist();
+
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedCandidateIndex, setSelectedCandidateIndex] = useState(null);
-  const [autoSendEmails, setAutoSendEmails] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
-    return Notification.permission;
-  });
-  const [notificationPromptSeen, setNotificationPromptSeen] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem('kovidam_notification_prompt_seen') === '1';
-  });
-  const [notifyToast, setNotifyToast] = useState(null);
-  
   const fileInputRef = useRef(null);
-  const completionNotifiedRef = useRef(false);
-  const notifyToastTimerRef = useRef(null);
-  const loadingStages = [
-    'Validating uploaded resumes...',
-    'Extracting profile links, skills, and projects...',
-    'Analyzing GitHub and coding platform signals...',
-    'Matching role requirements and must-have skills...',
-    'Ranking candidates and generating shortlist insights...',
-  ];
-
-  useEffect(() => {
-    if (!loading) return;
-    setLoadingElapsedSec(0);
-    setLoadingStageIdx(0);
-
-    const timer = setInterval(() => {
-      setLoadingElapsedSec((prev) => prev + 1);
-    }, 1000);
-
-    const stageTimer = setInterval(() => {
-      setLoadingStageIdx((prev) => (prev + 1) % loadingStages.length);
-    }, 3500);
-
-    return () => {
-      clearInterval(timer);
-      clearInterval(stageTimer);
-    };
-  }, [loading]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    setNotificationPermission(Notification.permission);
-  }, []);
-
-  const showNotifyToast = (type, title, message) => {
-    if (notifyToastTimerRef.current) {
-      clearTimeout(notifyToastTimerRef.current);
-    }
-    setNotifyToast({ type, title, message });
-    notifyToastTimerRef.current = setTimeout(() => {
-      setNotifyToast(null);
-    }, 4400);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (notifyToastTimerRef.current) clearTimeout(notifyToastTimerRef.current);
-    };
-  }, []);
-
-  const requestNotificationPermission = async () => {
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    try {
-      const permission = await Notification.requestPermission();
-      setNotificationPermission(permission);
-      window.localStorage.setItem('kovidam_notification_prompt_seen', '1');
-      setNotificationPromptSeen(true);
-      if (permission === 'granted') {
-        showNotifyToast('success', 'Notifications enabled', 'You will get an alert when shortlist processing completes.');
-      } else if (permission === 'denied') {
-        showNotifyToast('warning', 'Notifications blocked', 'Browser notifications are blocked. You can enable them from site settings.');
-      } else {
-        showNotifyToast('info', 'Notification request dismissed', 'You can enable notifications anytime from the progress panel.');
-      }
-    } catch {
-      showNotifyToast('error', 'Notification setup failed', 'Could not request notification permission in this browser session.');
-    }
-  };
-
-  const notifyShortlistCompletion = (payload) => {
-    if (completionNotifiedRef.current) return;
-
-    const ranked = payload?.counts?.ranked ?? 0;
-    const uploaded = payload?.counts?.uploaded ?? files.length ?? 0;
-    const failed = payload?.counts?.failed ?? 0;
-    const title = `${formData.company_name || 'Kovidam'} shortlist completed`;
-    const body = `Processed ${uploaded} resumes • Ranked ${ranked} • Failed ${failed}`;
-
-    showNotifyToast(
-      failed > 0 ? 'warning' : 'success',
-      'Shortlist completed',
-      `Processed ${uploaded} resumes. Ranked ${ranked}${failed > 0 ? `, failed ${failed}` : ''}.`
-    );
-
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      completionNotifiedRef.current = true;
-      return;
-    }
-    if (Notification.permission !== 'granted') {
-      completionNotifiedRef.current = true;
-      return;
-    }
-
-    try {
-      const n = new Notification(title, {
-        body,
-        tag: 'kovidam-shortlist-complete',
-        requireInteraction: failed > 0,
-        renotify: true,
-      });
-      n.onclick = () => {
-        window.focus();
-        n.close();
-      };
-      completionNotifiedRef.current = true;
-    } catch {
-      // Ignore notification runtime errors.
-    }
-  };
-
-  const notifyShortlistFailure = (message) => {
-    showNotifyToast('error', 'Shortlist failed', message || 'Something went wrong while processing resumes.');
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    if (Notification.permission !== 'granted') return;
-    try {
-      const n = new Notification(`${formData.company_name || 'Kovidam'} shortlist failed`, {
-        body: message || 'Something went wrong while processing resumes.',
-        tag: 'kovidam-shortlist-failed',
-        requireInteraction: true,
-      });
-      n.onclick = () => {
-        window.focus();
-        n.close();
-      };
-    } catch {
-      // Ignore notification runtime errors.
-    }
-  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -224,91 +88,12 @@ export default function ShortlistPage() {
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    completionNotifiedRef.current = false;
-    setLoading(true);
-    setError(null);
-    setResults(null);
-    setShortlistProgress(null);
-    setStep(3); // Move to results step immediately to show loading
-
-    const data = new FormData();
-    const clientTraceId =
-      (typeof crypto !== 'undefined' && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    for (const key in formData) {
-      data.append(key, formData[key]);
-    }
-    data.append('required_skills_csv', requiredSkills.join(','));
-    data.append('must_have_skills_csv', mustHaveSkills.join(','));
-    data.append('send_shortlist_emails', autoSendEmails);
-    data.append('client_trace_id', clientTraceId);
-    
-    files.forEach((file) => {
-      data.append('files', file);
-    });
-
-    let progressTimer = null;
-    try {
-      const fetchProgress = async () => {
-        try {
-          const progressRes = await authFetch(`/hiring/shortlist/progress/${clientTraceId}`);
-          if (!progressRes.ok) return;
-          const progressJson = await progressRes.json();
-          setShortlistProgress(progressJson);
-        } catch {
-          // Best-effort progress polling; shortlist request remains source of truth.
-        }
-      };
-      await fetchProgress();
-      progressTimer = setInterval(fetchProgress, 1500);
-
-      const response = await authFetch(`/hiring/shortlist`, {
-        method: 'POST',
-        body: data,
-      });
-      const rawBody = await response.text();
-      let json = null;
-      if (rawBody && rawBody.trim()) {
-        try {
-          json = JSON.parse(rawBody);
-        } catch {
-          throw new Error(`Server returned invalid JSON (status ${response.status})`);
-        }
-      }
-      if (!response.ok) {
-        const errorMessage =
-          (json && (json.detail || json.message)) ||
-          rawBody ||
-          `Error processing request (${response.status})`;
-        throw new Error(errorMessage);
-      }
-      if (!json) {
-        throw new Error("Server returned empty response");
-      }
-      setResults(json);
-      notifyShortlistCompletion(json);
-    } catch (err) {
-      setError(err.message);
-      notifyShortlistFailure(err.message);
-      setStep(2); // Go back to config on error
-    } finally {
-      if (progressTimer) clearInterval(progressTimer);
-      setLoading(false);
-    }
+    contextHandleSubmit(files);
   };
 
-  const handleStartOver = () => {
-    setFiles([]);
-    setResults(null);
-    setError(null);
-    setStep(1);
-    setSelectedCandidateIndex(null);
-    setAutoSendEmails(false);
-  };
+  const handleStartOver = () => resetShortlist();
 
   // Animation Variants
   const containerVariants = {
@@ -894,7 +679,7 @@ export default function ShortlistPage() {
                       )}
                       <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
                         <span style={{ background: 'rgba(99,102,241,0.16)', color: '#c7d2fe', border: '1px solid rgba(99,102,241,0.35)', borderRadius: '999px', padding: '0.34rem 0.65rem', fontSize: '0.78rem' }}>
-                          Resumes: {files.length || 0}
+                          Resumes: {fileCountRef.current || 0}
                         </span>
                         <span style={{ background: 'rgba(16,185,129,0.13)', color: '#86efac', border: '1px solid rgba(16,185,129,0.35)', borderRadius: '999px', padding: '0.34rem 0.65rem', fontSize: '0.78rem' }}>
                           Ranked: {shortlistProgress?.ranked_so_far || 0}
