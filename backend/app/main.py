@@ -480,6 +480,13 @@ async def get_past_shortlist(trace_id: str, request: Request):
     db = SessionLocal()
     auth = _get_auth_context(request)
     try:
+        _shortlist_progress_cleanup()
+        progress_payload = shortlist_progress_store.get(trace_id)
+        if progress_payload and progress_payload.get("tenant_id") == auth.tenant_id and progress_payload.get("user_id") == auth.user_id:
+            cached_result = progress_payload.get("result")
+            if isinstance(cached_result, dict) and cached_result.get("shortlisted") is not None:
+                return cached_result
+
         # Fetch candidates matching the trace_id, along with their scores
         query = (
             db.query(Candidate, Job, CandidateJobScore, CandidateScore)
@@ -541,9 +548,25 @@ async def get_past_shortlist(trace_id: str, request: Request):
         shortlisted.sort(key=lambda x: x["fit_score_100"], reverse=True)
         for i, c in enumerate(shortlisted, 1):
             c["rank"] = i
-            
+
+        job = query[0][1]
+        job_summary = {
+            "company_name": job.company_name or "",
+            "position_title": job.position_title or "",
+            "role": job.role or "job",
+            "required_skills": [],
+            "must_have_skills": [],
+            "job_description": "",
+            "job_description_skills": [],
+            "semantic_query_skills": [],
+            "min_experience_years": float((job.min_experience_years if job.min_experience_years is not None else 0.0) or 0.0),
+            "applied_thresholds": _role_thresholds(job.role or "job", float((job.min_experience_years if job.min_experience_years is not None else 0.0) or 0.0)),
+            "source": "historical_fallback",
+        }
+        
         return {
             "trace_id": trace_id,
+            "job_summary": job_summary,
             "counts": {
                 "total": len(query),
                 "ranked": len(shortlisted),
