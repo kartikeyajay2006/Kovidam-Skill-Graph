@@ -31,6 +31,7 @@ from app.models.schema import (
     PlatformStat,
     CandidateGithubSummary,
     CandidateGithubCommit,
+    ShortlistRun,
 )
 from app.services.transformer import transform_resume_data
 from app.services.db_writer import save_to_db
@@ -156,6 +157,85 @@ def _set_shortlist_progress(trace_id: str, patch: dict) -> None:
     shortlist_progress_store[trace_id] = current
 
 
+def _persist_shortlist_run(auth: AuthContext, trace_id: str, response_payload: dict) -> None:
+    """
+    Persist the latest shortlist payload so history pages can restore the exact
+    JD and rerun context even after the in-memory progress store expires.
+    """
+    db = SessionLocal()
+    try:
+        job_summary = response_payload.get("job_summary") or {}
+        existing = (
+            db.query(ShortlistRun)
+            .filter(
+                ShortlistRun.trace_id == trace_id,
+                ShortlistRun.tenant_id == auth.tenant_id,
+                ShortlistRun.user_id == auth.user_id,
+            )
+            .first()
+        )
+        if existing:
+            existing.job_summary = job_summary
+            existing.response_json = response_payload
+        else:
+            db.add(
+                ShortlistRun(
+                    id=str(uuid.uuid4()),
+                    tenant_id=auth.tenant_id,
+                    user_id=auth.user_id,
+                    trace_id=trace_id,
+                    job_summary=job_summary,
+                    response_json=response_payload,
+                )
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "failed_to_persist_shortlist_run",
+            extra={"trace_id": trace_id, "tenant_id": auth.tenant_id, "user_id": auth.user_id},
+        )
+    finally:
+        db.close()
+
+
+def _load_shortlist_run(auth: AuthContext, trace_id: str) -> ShortlistRun | None:
+    db = SessionLocal()
+    try:
+        return (
+            db.query(ShortlistRun)
+            .filter(
+                ShortlistRun.trace_id == trace_id,
+                ShortlistRun.tenant_id == auth.tenant_id,
+                ShortlistRun.user_id == auth.user_id,
+            )
+            .first()
+        )
+    finally:
+        db.close()
+
+
+def _shortlist_merge_key(candidate: dict) -> str:
+    resume_hash = str(candidate.get("resume_hash") or "").strip().lower()
+    if resume_hash:
+        return resume_hash
+    filename = str(candidate.get("filename") or "").strip().lower()
+    return filename
+
+
+def _dedupe_shortlisted_rows(rows: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for row in rows:
+        key = _shortlist_merge_key(row)
+        if key and key in seen:
+            continue
+        if key:
+            seen.add(key)
+        deduped.append(row)
+    return deduped
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     # Let CORS preflight pass through without auth challenge.
@@ -218,81 +298,44 @@ async def dashboard_metrics(request: Request):
     auth = _get_auth_context(request)
     try:
         total_candidates = db.query(Candidate).filter(Candidate.tenant_id == auth.tenant_id, Candidate.user_id == auth.user_id).count()
-        shortlists_completed = db.query(Job.trace_id).filter(Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id).distinct().count()
+        shortlists_completed = db.query(ShortlistRun.id).filter(ShortlistRun.tenant_id == auth.tenant_id, ShortlistRun.user_id == auth.user_id).count()
         
         # In Kovidam, pending reviews isn't tracked in DB explicitly yet
         pending_reviews = 0
         
         recent_query = (
             db.query(
-                Job.trace_id,
-                func.max(Job.role).label("role"),
-                func.max(Job.company_name).label("company_name"),
-                func.max(Job.position_title).label("position_title"),
-                func.max(Job.created_at).label("created_at"),
-                func.count(Candidate.id).label("matches")
+                ShortlistRun.trace_id,
+                ShortlistRun.job_summary,
+                ShortlistRun.response_json,
+                ShortlistRun.created_at,
             )
-            .join(Candidate, Job.candidate_id == Candidate.id)
-            .filter(Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
-            .group_by(Job.trace_id)
-            .order_by(func.max(Job.created_at).desc())
+            .filter(ShortlistRun.tenant_id == auth.tenant_id, ShortlistRun.user_id == auth.user_id)
+            .order_by(ShortlistRun.created_at.desc())
             .limit(5)
             .all()
         )
         
         recent_shortlists = []
         for r in recent_query:
-            candidate_rows = (
-                db.query(Candidate, CandidateJobScore, CandidateScore)
-                .join(Job, Candidate.id == Job.candidate_id)
-                .outerjoin(CandidateJobScore, Job.id == CandidateJobScore.job_id)
-                .outerjoin(CandidateScore, Candidate.id == CandidateScore.candidate_id)
-                .filter(Job.trace_id == r.trace_id, Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
-                .order_by((CandidateJobScore.fit_score).desc().nullslast(), Candidate.filename.asc())
-                .all()
-            )
-            shortlisted = []
-            for c, cjs, cs in candidate_rows:
-                fit_score = float((cjs.fit_score if cjs and cjs.fit_score is not None else 0.0) or 0.0)
-                metrics = {
-                    "github_score_100": float((cs.github_score if cs and cs.github_score is not None else 0.0) or 0.0),
-                    "skills_match_score_100": float((cs.skills_match_score if cs and cs.skills_match_score is not None else 0.0) or 0.0),
-                    "experience_score_100": float((cs.experience_score if cs and cs.experience_score is not None else 0.0) or 0.0),
-                    "platform_strength_score_100": float((cs.platform_strength_score if cs and cs.platform_strength_score is not None else 0.0) or 0.0),
-                    "project_evidence_score_100": float((cs.project_evidence_score if cs and cs.project_evidence_score is not None else 0.0) or 0.0),
-                    "profile_completeness_score_100": float((cs.profile_completeness_score if cs and cs.profile_completeness_score is not None else 0.0) or 0.0),
-                }
-                candidate_summary = {
-                    "filename": c.filename or "Unknown",
-                    "rank": 0,
-                    "eligible": True,
-                    "fit_score_100": round(fit_score, 4),
-                    "rejection_reasons": [],
-                    "ranking_decision_log": {
-                        "role_profile": r.role or "job",
-                        "candidate_metrics": metrics,
-                    },
-                    "experience": {
-                        "candidate_years": float((c.work_experience_years if c.work_experience_years is not None else 0.0) or 0.0),
-                    },
-                }
-                shortlisted.append(candidate_summary)
-
+            job_summary = r.job_summary if isinstance(r.job_summary, dict) else {}
+            payload = r.response_json if isinstance(r.response_json, dict) else {}
+            shortlisted = list(payload.get("shortlisted") or [])
             shortlisted.sort(key=lambda x: x.get("fit_score_100") or 0.0, reverse=True)
             for idx, item in enumerate(shortlisted, start=1):
                 item["rank"] = idx
 
             recent_shortlists.append({
                 "id": r.trace_id,
-                "role": r.role or "Unknown Role",
-                "company_name": r.company_name or "",
-                "position_title": r.position_title or "",
+                "role": job_summary.get("role") or "Unknown Role",
+                "company_name": job_summary.get("company_name") or "",
+                "position_title": job_summary.get("position_title") or "",
                 "display_title": (
-                    f"{(r.company_name or '').strip()} - {(r.position_title or '').strip()}".strip(" -")
-                    or (r.role or "Unknown Role")
+                    f"{(job_summary.get('company_name') or '').strip()} - {(job_summary.get('position_title') or '').strip()}".strip(" -")
+                    or (job_summary.get("role") or "Unknown Role")
                 ),
                 "date": r.created_at.isoformat(timespec='milliseconds') if r.created_at else None,
-                "matches": r.matches,
+                "matches": int((payload.get("counts") or {}).get("ranked") or len(shortlisted)),
                 "status": "completed",
                 "top_candidates": shortlisted[:3],
                 "shortlisted": shortlisted,
@@ -324,17 +367,13 @@ async def get_all_shortlists(request: Request):
     try:
         query = (
             db.query(
-                Job.trace_id,
-                func.max(Job.role).label("role"),
-                func.max(Job.company_name).label("company_name"),
-                func.max(Job.position_title).label("position_title"),
-                func.max(Job.created_at).label("created_at"),
-                func.count(Candidate.id).label("matches")
+                ShortlistRun.trace_id,
+                ShortlistRun.job_summary,
+                ShortlistRun.response_json,
+                ShortlistRun.created_at,
             )
-            .join(Candidate, Job.candidate_id == Candidate.id)
-            .filter(Job.tenant_id == auth.tenant_id, Job.user_id == auth.user_id)
-            .group_by(Job.trace_id)
-            .order_by(func.max(Job.created_at).desc())
+            .filter(ShortlistRun.tenant_id == auth.tenant_id, ShortlistRun.user_id == auth.user_id)
+            .order_by(ShortlistRun.created_at.desc())
             .all()
         )
         if DEBUG_DIAGNOSTICS:
@@ -350,17 +389,19 @@ async def get_all_shortlists(request: Request):
         
         shortlists = []
         for r in query:
+            job_summary = r.job_summary if isinstance(r.job_summary, dict) else {}
+            payload = r.response_json if isinstance(r.response_json, dict) else {}
             shortlists.append({
                 "id": r.trace_id,
-                "role": r.role or "Unknown Role",
-                "company_name": r.company_name or "",
-                "position_title": r.position_title or "",
+                "role": job_summary.get("role") or "Unknown Role",
+                "company_name": job_summary.get("company_name") or "",
+                "position_title": job_summary.get("position_title") or "",
                 "display_title": (
-                    f"{(r.company_name or '').strip()} - {(r.position_title or '').strip()}".strip(" -")
-                    or (r.role or "Unknown Role")
+                    f"{(job_summary.get('company_name') or '').strip()} - {(job_summary.get('position_title') or '').strip()}".strip(" -")
+                    or (job_summary.get("role") or "Unknown Role")
                 ),
                 "date": r.created_at.isoformat(timespec='milliseconds') if r.created_at else None,
-                "matches": r.matches,
+                "matches": int((payload.get("counts") or {}).get("ranked") or len(payload.get("shortlisted") or [])),
                 "status": "completed"
             })
             
@@ -387,6 +428,11 @@ async def delete_shortlist(trace_id: str, request: Request):
 
         job_ids = [row.id for row in jobs_for_trace if row.id]
         candidate_ids = sorted({row.candidate_id for row in jobs_for_trace if row.candidate_id})
+        deleted_shortlist_runs = (
+            db.query(ShortlistRun)
+            .filter(ShortlistRun.trace_id == trace_id, ShortlistRun.tenant_id == auth.tenant_id, ShortlistRun.user_id == auth.user_id)
+            .delete(synchronize_session=False)
+        )
 
         deleted_candidate_job_scores = 0
         deleted_jobs = 0
@@ -454,6 +500,7 @@ async def delete_shortlist(trace_id: str, request: Request):
             "status": "deleted",
             "trace_id": trace_id,
             "deleted": {
+                "shortlist_runs": deleted_shortlist_runs,
                 "jobs": deleted_jobs,
                 "candidate_job_scores": deleted_candidate_job_scores,
                 "candidates": removed_candidates,
@@ -486,6 +533,18 @@ async def get_past_shortlist(trace_id: str, request: Request):
             cached_result = progress_payload.get("result")
             if isinstance(cached_result, dict) and cached_result.get("shortlisted") is not None:
                 return cached_result
+
+        persisted_run = (
+            db.query(ShortlistRun)
+            .filter(
+                ShortlistRun.trace_id == trace_id,
+                ShortlistRun.tenant_id == auth.tenant_id,
+                ShortlistRun.user_id == auth.user_id,
+            )
+            .first()
+        )
+        if persisted_run and isinstance(persisted_run.response_json, dict) and persisted_run.response_json.get("shortlisted") is not None:
+            return persisted_run.response_json
 
         # Fetch candidates matching the trace_id, along with their scores
         query = (
@@ -564,7 +623,7 @@ async def get_past_shortlist(trace_id: str, request: Request):
             "source": "historical_fallback",
         }
         
-        return {
+        response_payload = {
             "trace_id": trace_id,
             "job_summary": job_summary,
             "counts": {
@@ -577,6 +636,8 @@ async def get_past_shortlist(trace_id: str, request: Request):
             "rejected": [],
             "failed": failed
         }
+        _persist_shortlist_run(auth, trace_id, response_payload)
+        return response_payload
     except HTTPException:
         raise
     except Exception as e:
@@ -2782,6 +2843,7 @@ async def hiring_shortlist(
     send_shortlist_emails: bool = Form(default=False),
     interview_base_url: str = Form(default=""),
     client_trace_id: str = Form(default=""),
+    merge_source_trace_id: str = Form(default=""),
 ):
     started_at = time.time()
     auth = _get_auth_context(request)
@@ -2815,6 +2877,46 @@ async def hiring_shortlist(
     )
     thresholds = _role_thresholds(role, min_experience_years)
 
+    previous_run = None
+    previous_payload = None
+    previous_shortlisted: list[dict] = []
+    previous_failed: list[dict] = []
+    previous_rejected: list[dict] = []
+    previous_merge_keys: set[str] = set()
+    merge_source_trace_id = (merge_source_trace_id or "").strip()
+    if merge_source_trace_id:
+        previous_run = _load_shortlist_run(auth, merge_source_trace_id)
+        if previous_run and isinstance(previous_run.response_json, dict):
+            previous_payload = previous_run.response_json
+            previous_shortlisted = list(previous_payload.get("shortlisted") or [])
+            previous_failed = list(previous_payload.get("failed") or [])
+            previous_rejected = list(previous_payload.get("rejected") or [])
+            previous_merge_keys = {
+                key for key in (_shortlist_merge_key(row) for row in previous_shortlisted) if key
+            }
+                # Include raw ranked rows too when legacy keys are present, so reruns can skip exact repeats.
+            for row in previous_payload.get("ranked_candidates") or []:
+                key = _shortlist_merge_key(row)
+                if key:
+                    previous_merge_keys.add(key)
+
+    filtered_files: list[UploadFile] = []
+    skipped_duplicate_filenames: list[str] = []
+    for file in files:
+        file_key = str(file.filename or "").strip().lower()
+        if previous_merge_keys and file_key and file_key in previous_merge_keys:
+            skipped_duplicate_filenames.append(file.filename or "unknown")
+            continue
+        filtered_files.append(file)
+
+    if merge_source_trace_id and files and not filtered_files:
+        raise HTTPException(
+            status_code=400,
+            detail="All uploaded resumes already exist in the previous shortlist. Please add new resumes only.",
+        )
+
+    files = filtered_files
+
     trace_id = (client_trace_id or "").strip() or str(uuid.uuid4())
     _set_shortlist_progress(
         trace_id,
@@ -2833,6 +2935,8 @@ async def hiring_shortlist(
             "last_completed_filename": None,
             "error": None,
             "result": None,
+            "merge_source_trace_id": merge_source_trace_id or None,
+            "skipped_duplicate_filenames": skipped_duplicate_filenames,
         },
     )
 
@@ -2998,7 +3102,22 @@ async def hiring_shortlist(
     ]
     top_3_insights = _top_ranking_insights(shortlisted_table, rejected_table)
 
+    if previous_payload:
+        combined_shortlisted = _dedupe_shortlisted_rows(previous_shortlisted + shortlisted_table)
+        combined_shortlisted.sort(key=lambda x: x.get("fit_score_100") or 0.0, reverse=True)
+        for idx, row in enumerate(combined_shortlisted, start=1):
+            row["rank"] = idx
+
+        combined_failed = _dedupe_shortlisted_rows(previous_failed + failed_table)
+        combined_rejected = _dedupe_shortlisted_rows(previous_rejected + rejected_table)
+
+        shortlisted_table = combined_shortlisted
+        failed_table = combined_failed
+        rejected_table = combined_rejected
+        top_3_insights = _top_ranking_insights(shortlisted_table, rejected_table)
+
     response_payload = {
+        "trace_id": trace_id,
         "api_version": API_VERSION,
         "scoring_version": SCORING_VERSION,
         "policy_version": POLICY_VERSION,
@@ -3018,12 +3137,13 @@ async def hiring_shortlist(
                 "company_signal_max_contrib": COMPANY_SIGNAL_MAX_CONTRIB,
                 "score_decimals": SCORE_DECIMALS,
             },
+            "source": "merged_rerun" if previous_payload else "fresh_run",
         },
         "counts": {
-            "uploaded": len(files),
-            "ranked": len(ranked),
-            "rejected": 0,
-            "failed": len(failed),
+            "uploaded": (previous_payload.get("counts", {}).get("uploaded", 0) if previous_payload else 0) + len(files),
+            "ranked": len(shortlisted_table),
+            "rejected": len(rejected_table),
+            "failed": len(failed_table),
         },
         "shortlisted": shortlisted_table,
         "rejected": rejected_table,
@@ -3084,9 +3204,11 @@ async def hiring_shortlist(
             "company_name": company_name,
             "position_title": position_title,
             "uploaded": len(files),
-            "ranked": len(ranked),
-            "rejected": 0,
-            "failed": len(failed),
+            "ranked": len(shortlisted_table),
+            "rejected": len(rejected_table),
+            "failed": len(failed_table),
+            "merge_source_trace_id": merge_source_trace_id or None,
+            "skipped_duplicate_filenames": skipped_duplicate_filenames,
             "duration_ms": round((time.time() - started_at) * 1000.0, 2),
             "api_version": API_VERSION,
             "scoring_version": SCORING_VERSION,
@@ -3109,6 +3231,7 @@ async def hiring_shortlist(
             "result": response_payload,
         },
     )
+    _persist_shortlist_run(auth, trace_id, response_payload)
     if DEBUG_DIAGNOSTICS:
         logger.info(
             json.dumps(

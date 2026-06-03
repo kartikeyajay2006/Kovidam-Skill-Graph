@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
 import { 
   UploadCloud, 
   Building, 
@@ -44,16 +45,42 @@ export default function ShortlistPage() {
     notificationPermission,
     notificationPromptSeen,
     notifyToast, setNotifyToast,
-    fileCountRef,
+    historicalRerunContext,
     loadingStages,
     handleSubmit: contextHandleSubmit,
+    applyHistoricalRerunContext,
     resetShortlist,
     requestNotificationPermission,
-    showNotifyToast,
   } = useShortlist();
 
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
+  const location = useLocation();
+  const isHistoricalRerun = Boolean(historicalRerunContext?.sourceTraceId);
+
+  useEffect(() => {
+    const storageKey = 'kovidam_shortlist_rerun_context';
+    const maybeContext = location.state?.shortlistRerunContext;
+    let storedContext = null;
+
+    if (maybeContext) {
+      storedContext = maybeContext;
+    } else if (typeof window !== 'undefined') {
+      const raw = window.sessionStorage.getItem(storageKey);
+      if (raw) {
+        try {
+          storedContext = JSON.parse(raw);
+        } catch {
+          storedContext = null;
+        }
+        window.sessionStorage.removeItem(storageKey);
+      }
+    }
+
+    if (storedContext) {
+      applyHistoricalRerunContext(storedContext);
+    }
+  }, [location.state, applyHistoricalRerunContext]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -114,18 +141,6 @@ export default function ShortlistPage() {
     }
   };
 
-  const inputStyle = {
-    width: '100%',
-    padding: '0.85rem 1rem 0.85rem 2.8rem',
-    background: 'rgba(255,255,255,0.03)',
-    color: 'white',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: '8px',
-    outline: 'none',
-    transition: 'all 0.3s ease',
-    fontSize: '0.95rem'
-  };
-
   const labelStyle = {
     display: 'block',
     marginBottom: '0.5rem',
@@ -136,24 +151,24 @@ export default function ShortlistPage() {
     textTransform: 'uppercase'
   };
 
-  const iconStyle = {
-    position: 'absolute',
-    left: '1rem',
-    top: '2.5rem',
-    color: '#64748b',
-    width: '18px',
-    height: '18px'
-  };
-
   return (
     <div style={{ 
       flex: 1, 
       display: 'flex', 
       flexDirection: 'column', 
       width: '100%',
-      maxHeight: step === 3 ? 'none' : 'calc(100vh - 152px)',
-      overflow: step === 3 ? 'visible' : 'hidden'
+      maxHeight: 'none',
+      overflow: 'visible',
+      paddingBottom: '3rem'
     }}>
+      {historicalRerunContext?.sourceTraceId && (
+        <div style={{ marginBottom: '1.25rem', padding: '1rem 1.1rem', borderRadius: '16px', background: 'rgba(79, 70, 229, 0.08)', border: '1px solid rgba(129, 140, 248, 0.22)', color: '#c7d2fe' }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Continuing from a past shortlist</div>
+          <div style={{ color: '#94a3b8', fontSize: '0.92rem', lineHeight: 1.45 }}>
+            This is old JD data from trace {historicalRerunContext.sourceTraceId}. The JD fields are locked, and only new resumes will be accepted and merged with the existing shortlist.
+          </div>
+        </div>
+      )}
       
       {/* Wizard Header (Progress) */}
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2rem' }}>
@@ -394,9 +409,9 @@ export default function ShortlistPage() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 30 }}
             transition={{ duration: 0.4 }}
-            style={{ width: '100%', maxWidth: '1200px', margin: '0 auto', zIndex: 10, display: 'flex', flexDirection: 'column', height: '100%' }}
+            style={{ width: '100%', maxWidth: '1200px', margin: '0 auto', zIndex: 10, display: 'flex', flexDirection: 'column', height: 'auto', minHeight: '0' }}
           >
-            <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '1.5rem', height: '100%' }}>
+            <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: '1.5rem', height: 'auto', minHeight: '0' }}>
               
               {/* Left Sidebar: Role Profile */}
               <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: '24px', display: 'flex', flexDirection: 'column', gap: '1rem', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -411,7 +426,14 @@ export default function ShortlistPage() {
                 <div className="premium-input-group">
                   <label style={labelStyle}>Role Type</label>
                   <Target className="premium-input-icon" />
-                  <select name="role" value={formData.role} onChange={handleInputChange} className="premium-input" style={{ paddingLeft: '2.8rem', appearance: 'none', cursor: 'pointer' }}>
+                  <select
+                    name="role"
+                    value={formData.role}
+                    onChange={handleInputChange}
+                    className="premium-input"
+                    style={{ paddingLeft: '2.8rem', appearance: 'none', cursor: isHistoricalRerun ? 'not-allowed' : 'pointer', opacity: isHistoricalRerun ? 0.8 : 1 }}
+                    disabled={isHistoricalRerun}
+                  >
                     <option value="internship" style={{ background: '#0f172a', color: 'white' }}>Internship Position</option>
                     <option value="job" style={{ background: '#0f172a', color: 'white' }}>Full-time Job</option>
                   </select>
@@ -423,7 +445,7 @@ export default function ShortlistPage() {
                   <input type="number" step="0.1" min="0" name="min_experience_years" value={formData.min_experience_years} onChange={(e) => {
                     if (parseFloat(e.target.value) < 0) e.target.value = 0;
                     handleInputChange(e);
-                  }} className="premium-input" />
+                  }} className="premium-input" disabled={isHistoricalRerun} style={{ opacity: isHistoricalRerun ? 0.8 : 1, cursor: isHistoricalRerun ? 'not-allowed' : 'text' }} />
                 </div>
 
                 <div className="premium-input-group">
@@ -432,19 +454,19 @@ export default function ShortlistPage() {
                   <input type="number" step="1" min="1" name="target_headcount" value={formData.target_headcount} onChange={(e) => {
                     if (parseInt(e.target.value) < 1) e.target.value = 1;
                     handleInputChange(e);
-                  }} className="premium-input" />
+                  }} className="premium-input" disabled={isHistoricalRerun} style={{ opacity: isHistoricalRerun ? 0.8 : 1, cursor: isHistoricalRerun ? 'not-allowed' : 'text' }} />
                 </div>
 
                 <div className="premium-input-group">
                   <label style={labelStyle}>Company Name</label>
                   <Building className="premium-input-icon" />
-                  <input type="text" name="company_name" value={formData.company_name} onChange={handleInputChange} required className="premium-input" placeholder="e.g. Kovidam" />
+                  <input type="text" name="company_name" value={formData.company_name} onChange={handleInputChange} required className="premium-input" placeholder="e.g. Kovidam" disabled={isHistoricalRerun} style={{ opacity: isHistoricalRerun ? 0.8 : 1, cursor: isHistoricalRerun ? 'not-allowed' : 'text' }} />
                 </div>
 
                 <div className="premium-input-group">
                   <label style={labelStyle}>Position Title</label>
                   <Briefcase className="premium-input-icon" />
-                  <input type="text" name="position_title" value={formData.position_title} onChange={handleInputChange} required className="premium-input" placeholder="e.g. Software Engineer" />
+                  <input type="text" name="position_title" value={formData.position_title} onChange={handleInputChange} required className="premium-input" placeholder="e.g. Software Engineer" disabled={isHistoricalRerun} style={{ opacity: isHistoricalRerun ? 0.8 : 1, cursor: isHistoricalRerun ? 'not-allowed' : 'text' }} />
                 </div>
 
                 <div style={{ flex: 1 }} /> {/* Spacer */}
@@ -452,8 +474,12 @@ export default function ShortlistPage() {
                 <div style={{ background: 'rgba(79, 70, 229, 0.05)', border: '1px solid rgba(79, 70, 229, 0.15)', borderRadius: '12px', padding: '1rem', display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
                   <div style={{ color: '#818cf8', marginTop: '2px' }}><Star size={16} /></div>
                   <div>
-                    <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '0.9rem', color: '#e0e7ff' }}>Tip</h4>
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8', lineHeight: 1.4 }}>More context helps AI find better matches.</p>
+                    <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '0.9rem', color: '#e0e7ff' }}>{isHistoricalRerun ? 'Historical JD Locked' : 'Tip'}</h4>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                      {isHistoricalRerun
+                        ? 'This rerun is tied to old JD data. Only new resume files are editable here.'
+                        : 'More context helps AI find better matches.'}
+                    </p>
                   </div>
                 </div>
 
@@ -486,7 +512,11 @@ export default function ShortlistPage() {
                     <h3 style={{ margin: 0, fontSize: '1.5rem', color: '#f8fafc', marginBottom: '0.5rem' }}>
                       Skills & Requirements
                     </h3>
-                    <p style={{ margin: 0, fontSize: '0.9rem', color: '#94a3b8' }}>Add the skills and requirements for this role.</p>
+                    <p style={{ margin: 0, fontSize: '0.9rem', color: '#94a3b8' }}>
+                      {isHistoricalRerun
+                        ? 'Read-only historical JD values. Add only new resumes.'
+                        : 'Add the skills and requirements for this role.'}
+                    </p>
                   </div>
                   <div style={{ padding: '0.4rem 0.8rem', background: 'rgba(79, 70, 229, 0.1)', borderRadius: '100px', color: '#818cf8', fontWeight: '500', fontSize: '0.85rem' }}>
                     {files.length} Candidate{files.length !== 1 ? 's' : ''} Loaded
@@ -495,32 +525,56 @@ export default function ShortlistPage() {
 
                 <div className="premium-input-group" style={{ zIndex: 20 }}>
                   <label style={labelStyle}>Required Skills</label>
-                  <TagInput 
-                    tags={requiredSkills} 
-                    setTags={setRequiredSkills} 
-                    placeholder="e.g. react, python, javascript"
-                    icon={Star}
-                  />
+                  {isHistoricalRerun ? (
+                    <div style={{ minHeight: '52px', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', opacity: 0.95 }}>
+                      {requiredSkills.length > 0 ? requiredSkills.map((tag) => (
+                        <span key={tag} style={{ padding: '0.28rem 0.65rem', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', color: '#e2e8f0', fontSize: '0.85rem' }}>{tag}</span>
+                      )) : <span style={{ color: '#94a3b8' }}>No required skills saved on this historical shortlist.</span>}
+                    </div>
+                  ) : (
+                    <TagInput 
+                      tags={requiredSkills} 
+                      setTags={setRequiredSkills} 
+                      placeholder="e.g. react, python, javascript"
+                      icon={Star}
+                    />
+                  )}
                 </div>
                 
                 <div className="premium-input-group" style={{ zIndex: 10 }}>
                   <label style={labelStyle}>Must Have Skills</label>
-                  <TagInput 
-                    tags={mustHaveSkills} 
-                    setTags={setMustHaveSkills} 
-                    placeholder="Add must have skills"
-                    icon={Zap}
-                    iconColor="#facc15"
-                    borderColor="rgba(250, 204, 21, 0.25)"
-                    focusColor="rgba(250, 204, 21, 0.5)"
-                    glowColor="rgba(250, 204, 21, 0.1)"
-                  />
+                  {isHistoricalRerun ? (
+                    <div style={{ minHeight: '52px', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', opacity: 0.95 }}>
+                      {mustHaveSkills.length > 0 ? mustHaveSkills.map((tag) => (
+                        <span key={tag} style={{ padding: '0.28rem 0.65rem', borderRadius: '999px', background: 'rgba(250, 204, 21, 0.1)', color: '#fde68a', fontSize: '0.85rem' }}>{tag}</span>
+                      )) : <span style={{ color: '#94a3b8' }}>No must-have skills saved on this historical shortlist.</span>}
+                    </div>
+                  ) : (
+                    <TagInput 
+                      tags={mustHaveSkills} 
+                      setTags={setMustHaveSkills} 
+                      placeholder="Add must have skills"
+                      icon={Zap}
+                      iconColor="#facc15"
+                      borderColor="rgba(250, 204, 21, 0.25)"
+                      focusColor="rgba(250, 204, 21, 0.5)"
+                      glowColor="rgba(250, 204, 21, 0.1)"
+                    />
+                  )}
                 </div>
 
                 <div className="premium-input-group" style={{ flex: 1 }}>
                   <label style={labelStyle}>Job Description <span style={{ textTransform: 'none', color: '#64748b', fontWeight: '400' }}>(Optional)</span></label>
                   <FileText className="premium-input-icon" style={{ top: '2.1rem' }} />
-                  <textarea name="job_description" value={formData.job_description} onChange={handleInputChange} className="premium-input" style={{ resize: 'none', flex: 1, minHeight: '80px' }} placeholder="Paste JD context here to improve semantic matching..." />
+                  <textarea
+                    name="job_description"
+                    value={formData.job_description}
+                    onChange={handleInputChange}
+                    className="premium-input"
+                    style={{ resize: 'none', flex: 1, minHeight: '80px', opacity: isHistoricalRerun ? 0.8 : 1, cursor: isHistoricalRerun ? 'not-allowed' : 'text' }}
+                    placeholder="Paste JD context here to improve semantic matching..."
+                    readOnly={isHistoricalRerun}
+                  />
                 </div>
 
                 <AnimatePresence>
@@ -592,7 +646,7 @@ export default function ShortlistPage() {
                   }}
                 >
                   <Zap size={22} />
-                  Start Shortlisting
+                  {isHistoricalRerun ? 'Merge With Old Shortlist' : 'Start Shortlisting'}
                 </motion.button>
               </div>
 
@@ -679,7 +733,7 @@ export default function ShortlistPage() {
                       )}
                       <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
                         <span style={{ background: 'rgba(99,102,241,0.16)', color: '#c7d2fe', border: '1px solid rgba(99,102,241,0.35)', borderRadius: '999px', padding: '0.34rem 0.65rem', fontSize: '0.78rem' }}>
-                          Resumes: {fileCountRef.current || 0}
+                          Resumes: {shortlistProgress?.uploaded || files.length || 0}
                         </span>
                         <span style={{ background: 'rgba(16,185,129,0.13)', color: '#86efac', border: '1px solid rgba(16,185,129,0.35)', borderRadius: '999px', padding: '0.34rem 0.65rem', fontSize: '0.78rem' }}>
                           Ranked: {shortlistProgress?.ranked_so_far || 0}

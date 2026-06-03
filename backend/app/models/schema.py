@@ -153,6 +153,25 @@ class CandidateGithubCommit(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class ShortlistRun(Base):
+    __tablename__ = "shortlist_runs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "trace_id", name="uq_shortlist_runs_tenant_user_trace"),
+        Index("ix_shortlist_runs_tenant_id", "tenant_id"),
+        Index("ix_shortlist_runs_user_id", "user_id"),
+        Index("ix_shortlist_runs_trace_id", "trace_id"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    trace_id = Column(String, nullable=False)
+    job_summary = Column(JSON, nullable=False, default=dict)
+    response_json = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
 # Backward-compatible aliases for existing imports.
 candidates = Candidate
 jobs = Job
@@ -163,3 +182,4 @@ candidate_skills = CandidateSkill
 platform_stats = PlatformStat
 candidate_github_summary = CandidateGithubSummary
 candidate_github_commits = CandidateGithubCommit
+shortlist_runs = ShortlistRun

@@ -12,8 +12,13 @@ class JobSummary(BaseModel):
     role: str
     required_skills: list[str]
     must_have_skills: list[str]
+    job_description: str = ""
+    job_description_skills: list[str] = Field(default_factory=list)
+    semantic_query_skills: list[str] = Field(default_factory=list)
     min_experience_years: float
     applied_thresholds: dict[str, Any]
+    policy_runtime_flags: dict[str, Any] = Field(default_factory=dict)
+    source: str | None = None
 
 
 class Counts(BaseModel):

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -26,8 +27,14 @@ export default function PastShortlistPage() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showAddMorePanel, setShowAddMorePanel] = useState(false);
   const [addMoreFiles, setAddMoreFiles] = useState([]);
+  const [addMoreRequiredSkillsText, setAddMoreRequiredSkillsText] = useState('');
+  const [addMoreMustHaveSkillsText, setAddMoreMustHaveSkillsText] = useState('');
+  const [addMoreJobDescriptionText, setAddMoreJobDescriptionText] = useState('');
   const [addMoreLoading, setAddMoreLoading] = useState(false);
   const [addMoreError, setAddMoreError] = useState(null);
+  const [addMoreProgress, setAddMoreProgress] = useState(null);
+  const addMoreProgressTimerRef = useRef(null);
+  const addMoreFileInputRef = useRef(null);
   const targetHeadcount = 3; // Default or fetched from config
   const addMoreFileInputId = 'add-more-resumes-input';
 
@@ -68,6 +75,18 @@ export default function PastShortlistPage() {
   };
 
   const jobSummary = results?.job_summary || {};
+  const hasReusableShortlistConfig =
+    Array.isArray(jobSummary.required_skills) && jobSummary.required_skills.length > 0;
+  const addMoreRequiredSkills = addMoreRequiredSkillsText
+    .split(',')
+    .map((skill) => skill.trim())
+    .filter(Boolean);
+  const addMoreMustHaveSkills = addMoreMustHaveSkillsText
+    .split(',')
+    .map((skill) => skill.trim())
+    .filter(Boolean);
+  const canSubmitAddMore = addMoreFiles.length > 0 && addMoreRequiredSkills.length > 0 && !addMoreLoading;
+
   const detailListStyle = {
     display: 'flex',
     flexWrap: 'wrap',
@@ -86,9 +105,30 @@ export default function PastShortlistPage() {
   };
 
   const handleAddMoreResumes = () => {
-    setShowAddMorePanel((prev) => !prev);
-    setAddMoreError(null);
+    const shortlistRerunContext = {
+      source_trace_id: traceId,
+      job_summary: jobSummary,
+      shortlisted: results?.shortlisted || [],
+      ranked_candidates: results?.ranked_candidates || [],
+      counts: results?.counts || {},
+    };
+
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('kovidam_shortlist_rerun_context', JSON.stringify(shortlistRerunContext));
+    }
+
+    navigate('/dashboard/shortlist', {
+      state: { shortlistRerunContext },
+    });
   };
+
+  useEffect(() => {
+    return () => {
+      if (addMoreProgressTimerRef.current) {
+        clearInterval(addMoreProgressTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleAddMoreFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -107,26 +147,43 @@ export default function PastShortlistPage() {
       setAddMoreError('Please add at least one resume before starting shortlisting.');
       return;
     }
+    if (addMoreRequiredSkills.length === 0) {
+      setAddMoreError('Please enter at least one required skill so the shortlist can be rerun.');
+      return;
+    }
 
     setAddMoreLoading(true);
     setAddMoreError(null);
+    setAddMoreProgress(null);
 
-    const clientTraceId =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const clientTraceId = traceId;
 
     const data = new FormData();
     data.append('role', summary.role || 'job');
     data.append('company_name', summary.company_name || '');
     data.append('position_title', summary.position_title || '');
-    data.append('required_skills_csv', (summary.required_skills || []).join(','));
-    data.append('must_have_skills_csv', (summary.must_have_skills || []).join(','));
-    data.append('job_description', summary.job_description || '');
+    data.append('required_skills_csv', addMoreRequiredSkills.join(','));
+    data.append('must_have_skills_csv', addMoreMustHaveSkills.join(','));
+    data.append('job_description', addMoreJobDescriptionText || summary.job_description || '');
     data.append('min_experience_years', String(summary.min_experience_years ?? 0));
     data.append('send_shortlist_emails', 'false');
     data.append('client_trace_id', clientTraceId);
     addMoreFiles.forEach((file) => data.append('files', file));
+
+    const fetchProgress = async () => {
+      try {
+        const progressRes = await authFetch(`/hiring/shortlist/progress/${clientTraceId}`);
+        if (!progressRes.ok) return;
+        const progressJson = await progressRes.json();
+        setAddMoreProgress(progressJson);
+      } catch {
+        // Best-effort progress only.
+      }
+    };
+
+    await fetchProgress();
+    if (addMoreProgressTimerRef.current) clearInterval(addMoreProgressTimerRef.current);
+    addMoreProgressTimerRef.current = setInterval(fetchProgress, 1500);
 
     try {
       const response = await authFetch('/hiring/shortlist', {
@@ -153,10 +210,14 @@ export default function PastShortlistPage() {
       setSelectedCandidateIndex(null);
       setShowAddMorePanel(false);
       setAddMoreFiles([]);
-      navigate(`/dashboard/history/${clientTraceId}`, { replace: true });
+      setAddMoreProgress(null);
     } catch (err) {
       setAddMoreError(err.message || 'Failed to re-run shortlist.');
     } finally {
+      if (addMoreProgressTimerRef.current) {
+        clearInterval(addMoreProgressTimerRef.current);
+        addMoreProgressTimerRef.current = null;
+      }
       setAddMoreLoading(false);
     }
   };
@@ -251,170 +312,279 @@ export default function PastShortlistPage() {
               </div>
             </div>
 
-            <AnimatePresence>
-              {showAddMorePanel && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setShowAddMorePanel(false)}
-                  style={{
-                    position: 'fixed',
-                    inset: 0,
-                    zIndex: 70,
-                    background: 'rgba(2, 6, 23, 0.72)',
-                    backdropFilter: 'blur(14px)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '1.25rem'
-                  }}
-                >
-                  <motion.div
-                    initial={{ opacity: 0, y: 20, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 20, scale: 0.98 }}
-                    transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      width: 'min(100%, 920px)',
-                      maxHeight: '90vh',
-                      overflow: 'hidden',
-                      borderRadius: '28px',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(8, 11, 20, 0.98) 100%)',
-                      boxShadow: '0 30px 100px rgba(0,0,0,0.5)',
-                      display: 'flex',
-                      flexDirection: 'column'
-                    }}
-                  >
-                    <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start' }}>
-                      <div>
-                        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <FilePlus size={18} color="#818cf8" />
-                          Add more resumes with the same shortlist setup
-                        </h4>
-                        <p style={{ margin: '0.45rem 0 0 0', color: '#94a3b8', fontSize: '0.92rem', lineHeight: 1.5 }}>
-                          This uses the same company, role, JD, required skills, and must-have skills from this shortlist.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-premium"
-                        onClick={() => {
-                          setShowAddMorePanel(false);
-                          setAddMoreFiles([]);
-                          setAddMoreError(null);
+            {typeof document !== 'undefined'
+              ? createPortal(
+                  <AnimatePresence>
+                    {showAddMorePanel && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setShowAddMorePanel(false)}
+                        style={{
+                          position: 'fixed',
+                          inset: 0,
+                          zIndex: 70,
+                          background: 'rgba(2, 6, 23, 0.72)',
+                          backdropFilter: 'blur(14px)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '1.25rem'
                         }}
-                        style={{ width: '40px', height: '40px', padding: 0, background: 'rgba(255,255,255,0.05)', display: 'grid', placeItems: 'center' }}
-                        aria-label="Close add more resumes popup"
                       >
-                        <XCircle size={20} />
-                      </button>
-                    </div>
-
-                    <div style={{ padding: '1.25rem 1.5rem 1.5rem 1.5rem', overflowY: 'auto' }}>
-                      <input
-                        id={addMoreFileInputId}
-                        type="file"
-                        multiple
-                        accept=".pdf"
-                        onChange={handleAddMoreFileChange}
-                        style={{ display: 'none' }}
-                      />
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                          <span style={badgeStyle}>{jobSummary.company_name || 'Company'}</span>
-                          <span style={badgeStyle}>{jobSummary.position_title || 'Position'}</span>
-                          <span style={badgeStyle}>{jobSummary.role || 'Role'}</span>
-                          <span style={badgeStyle}>{Number(jobSummary.min_experience_years || 0).toFixed(1)} yrs min exp</span>
-                        </div>
-                        <label
-                          htmlFor={addMoreFileInputId}
-                          className="btn-premium"
-                          style={{ padding: '0.7rem 1rem', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+                        <motion.div
+                          initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 20, scale: 0.98 }}
+                          transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            width: 'min(100%, 860px)',
+                            maxHeight: '88vh',
+                            overflow: 'hidden',
+                            borderRadius: '28px',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(8, 11, 20, 0.98) 100%)',
+                            boxShadow: '0 30px 100px rgba(0,0,0,0.5)',
+                            display: 'flex',
+                            flexDirection: 'column'
+                          }}
                         >
-                          <FileText size={18} />
-                          Add Resumes
-                        </label>
-                      </div>
-
-                      <div style={{ marginTop: '1rem', display: 'grid', gap: '0.85rem' }}>
-                        <div style={{
-                          borderRadius: '16px',
-                          border: '1px dashed rgba(129,140,248,0.35)',
-                          background: 'rgba(0,0,0,0.18)',
-                          padding: '1rem',
-                        }}>
-                          {addMoreFiles.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                              <div style={{ color: '#c7d2fe', fontSize: '0.9rem', fontWeight: 600 }}>
-                                {addMoreFiles.length} resume{addMoreFiles.length !== 1 ? 's' : ''} ready for re-shortlisting
-                              </div>
-                              {addMoreFiles.map((file, idx) => (
-                                <div
-                                  key={`${file.name}-${idx}`}
-                                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '0.7rem 0.9rem' }}
-                                >
-                                  <span style={{ color: '#e2e8f0', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
-                                  <button
-                                    type="button"
-                                    className="btn-premium"
-                                    onClick={() => removeAddMoreFile(idx)}
-                                    style={{ padding: '0.45rem 0.75rem', background: 'rgba(255,255,255,0.05)' }}
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-                              ))}
+                          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start' }}>
+                            <div>
+                              <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <FilePlus size={18} color="#818cf8" />
+                                Add more resumes with the same shortlist setup
+                              </h4>
+                              <p style={{ margin: '0.35rem 0 0 0', color: '#94a3b8', fontSize: '0.88rem', lineHeight: 1.45 }}>
+                                This uses the same company, role, JD, required skills, and must-have skills from this shortlist.
+                              </p>
+                              {!hasReusableShortlistConfig && (
+                                <p style={{ margin: '0.5rem 0 0 0', color: '#fbbf24', fontSize: '0.84rem', lineHeight: 1.4 }}>
+                                  This is a legacy shortlist, so required skills are not saved yet. Fill them below once and the rerun will work from then on.
+                                </p>
+                              )}
                             </div>
-                          ) : (
-                            <div style={{ color: '#94a3b8', fontSize: '0.95rem' }}>
-                              Click <strong style={{ color: '#c7d2fe' }}>Add Resumes</strong> to choose more PDFs for this same shortlist.
-                            </div>
-                          )}
-                        </div>
-
-                        {addMoreError && (
-                          <div style={{ color: '#fca5a5', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.9rem 1rem', borderRadius: '12px', fontSize: '0.92rem' }}>
-                            {addMoreError}
+                            <button
+                              type="button"
+                              className="btn-premium"
+                              onClick={() => {
+                                setShowAddMorePanel(false);
+                                setAddMoreFiles([]);
+                                setAddMoreError(null);
+                              }}
+                              style={{ width: '40px', height: '40px', padding: 0, background: 'rgba(255,255,255,0.05)', display: 'grid', placeItems: 'center' }}
+                              aria-label="Close add more resumes popup"
+                            >
+                              <XCircle size={20} />
+                            </button>
                           </div>
-                        )}
 
-                        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          <button
-                            type="button"
-                            className="btn-premium"
-                            onClick={() => {
-                              setShowAddMorePanel(false);
-                              setAddMoreFiles([]);
-                              setAddMoreError(null);
-                            }}
-                            style={{ padding: '0.72rem 1rem', background: 'rgba(255,255,255,0.05)' }}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-premium btn-primary"
-                            onClick={handleInlineReshortlist}
-                            disabled={addMoreLoading || addMoreFiles.length === 0}
-                            style={{
-                              padding: '0.72rem 1rem',
-                              opacity: addMoreLoading || addMoreFiles.length === 0 ? 0.6 : 1,
-                              cursor: addMoreLoading || addMoreFiles.length === 0 ? 'not-allowed' : 'pointer',
-                            }}
-                          >
-                            {addMoreLoading ? 'Re-shortlisting...' : 'Start Shortlisting'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                          <div style={{ padding: '1rem 1.25rem 1.15rem 1.25rem' }}>
+                            <input
+                              id={addMoreFileInputId}
+                              type="file"
+                              multiple
+                              accept=".pdf"
+                              onChange={handleAddMoreFileChange}
+                              ref={addMoreFileInputRef}
+                              style={{ display: 'none' }}
+                            />
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.85rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                <span style={badgeStyle}>{jobSummary.company_name || 'Company'}</span>
+                                <span style={badgeStyle}>{jobSummary.position_title || 'Position'}</span>
+                                <span style={badgeStyle}>{jobSummary.role || 'Role'}</span>
+                                <span style={badgeStyle}>{Number(jobSummary.min_experience_years || 0).toFixed(1)} yrs min exp</span>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn-premium"
+                                onClick={() => addMoreFileInputRef.current?.click()}
+                                style={{ padding: '0.7rem 1rem', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+                              >
+                                <FileText size={18} />
+                                Add Resumes
+                              </button>
+                            </div>
+
+                            {!hasReusableShortlistConfig && (
+                              <div style={{ marginTop: '0.8rem', display: 'grid', gap: '0.7rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+                                  <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                    <div style={{ color: '#cbd5e1', fontSize: '0.84rem' }}>
+                                      Required Skills
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={addMoreRequiredSkillsText}
+                                      onChange={(e) => setAddMoreRequiredSkillsText(e.target.value)}
+                                      placeholder="python, react, javascript"
+                                      style={{
+                                        width: '100%',
+                                        background: 'rgba(255,255,255,0.04)',
+                                        color: '#e2e8f0',
+                                        border: '1px solid rgba(129,140,248,0.25)',
+                                        borderRadius: '12px',
+                                        padding: '0.7rem 0.9rem',
+                                        outline: 'none',
+                                      }}
+                                    />
+                                  </div>
+                                  <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                    <div style={{ color: '#cbd5e1', fontSize: '0.84rem' }}>
+                                      Must Have Skills
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={addMoreMustHaveSkillsText}
+                                      onChange={(e) => setAddMoreMustHaveSkillsText(e.target.value)}
+                                      placeholder="optional, comma-separated"
+                                      style={{
+                                        width: '100%',
+                                        background: 'rgba(255,255,255,0.04)',
+                                        color: '#e2e8f0',
+                                        border: '1px solid rgba(255,255,255,0.08)',
+                                        borderRadius: '12px',
+                                        padding: '0.7rem 0.9rem',
+                                        outline: 'none',
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                                <div style={{ display: 'grid', gap: '0.35rem' }}>
+                                  <div style={{ color: '#cbd5e1', fontSize: '0.84rem' }}>
+                                    Job Description
+                                  </div>
+                                  <textarea
+                                    value={addMoreJobDescriptionText}
+                                    onChange={(e) => setAddMoreJobDescriptionText(e.target.value)}
+                                    placeholder="Paste JD context here to improve semantic matching"
+                                    rows={3}
+                                    style={{
+                                      width: '100%',
+                                      resize: 'vertical',
+                                      background: 'rgba(255,255,255,0.04)',
+                                      color: '#e2e8f0',
+                                      border: '1px solid rgba(255,255,255,0.08)',
+                                      borderRadius: '12px',
+                                      padding: '0.7rem 0.9rem',
+                                      outline: 'none',
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            <div style={{ marginTop: '0.9rem', display: 'grid', gap: '0.8rem' }}>
+                              <div style={{
+                                borderRadius: '16px',
+                                border: '1px dashed rgba(129,140,248,0.35)',
+                                background: 'rgba(0,0,0,0.18)',
+                                padding: '0.9rem',
+                                cursor: 'pointer',
+                              }}>
+                                <div onClick={() => addMoreFileInputRef.current?.click()}>
+                                  {addMoreFiles.length > 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                      <div style={{ color: '#c7d2fe', fontSize: '0.9rem', fontWeight: 600 }}>
+                                        {addMoreFiles.length} resume{addMoreFiles.length !== 1 ? 's' : ''} selected
+                                      </div>
+                                      {addMoreFiles.map((file, idx) => (
+                                        <div
+                                          key={`${file.name}-${idx}`}
+                                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '0.6rem 0.8rem' }}
+                                        >
+                                          <span style={{ color: '#e2e8f0', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                                          <button
+                                            type="button"
+                                            className="btn-premium"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              removeAddMoreFile(idx);
+                                            }}
+                                            style={{ padding: '0.4rem 0.7rem', background: 'rgba(255,255,255,0.05)' }}
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div style={{ color: '#94a3b8', fontSize: '0.95rem' }}>
+                                      Click this area or <strong style={{ color: '#c7d2fe' }}>Add Resumes</strong> to choose more PDFs for this same shortlist.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {addMoreLoading && (
+                                <div style={{ borderRadius: '16px', border: '1px solid rgba(129,140,248,0.22)', background: 'rgba(79,70,229,0.08)', padding: '0.9rem' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', marginBottom: '0.65rem' }}>
+                                    <div style={{ color: '#e0e7ff', fontSize: '0.92rem', fontWeight: 600 }}>
+                                      Re-shortlisting in progress
+                                    </div>
+                                    <div style={{ color: '#c7d2fe', fontSize: '0.82rem' }}>
+                                      Processed {addMoreProgress?.processed || 0}/{addMoreProgress?.uploaded || addMoreFiles.length || 0}
+                                    </div>
+                                  </div>
+                                  <div style={{ width: '100%', height: '8px', borderRadius: '999px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                                    <div
+                                      style={{
+                                        width: `${Math.min(100, Math.max(0, ((addMoreProgress?.processed || 0) / (addMoreProgress?.uploaded || addMoreFiles.length || 1)) * 100))}%`,
+                                        height: '100%',
+                                        background: 'linear-gradient(90deg, #6366f1, #22d3ee)',
+                                        transition: 'width 0.45s ease'
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {addMoreError && (
+                                <div style={{ color: '#fca5a5', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.75rem 0.9rem', borderRadius: '12px', fontSize: '0.9rem' }}>
+                                  {addMoreError}
+                                </div>
+                              )}
+
+                              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  className="btn-premium"
+                                  onClick={() => {
+                                    setShowAddMorePanel(false);
+                                    setAddMoreFiles([]);
+                                    setAddMoreError(null);
+                                  }}
+                                  style={{ padding: '0.72rem 1rem', background: 'rgba(255,255,255,0.05)' }}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-premium btn-primary"
+                                  onClick={handleInlineReshortlist}
+                                  disabled={!canSubmitAddMore}
+                                  style={{
+                                    padding: '0.72rem 1rem',
+                                    opacity: !canSubmitAddMore ? 0.6 : 1,
+                                    cursor: !canSubmitAddMore ? 'not-allowed' : 'pointer',
+                                  }}
+                                >
+                                  {addMoreLoading ? 'Re-shortlisting...' : 'Start Shortlisting'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>,
+                  document.body
+                )
+              : null}
             
             {results.shortlisted?.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column' }}>

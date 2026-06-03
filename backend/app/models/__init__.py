@@ -8,6 +8,7 @@ from .schema import CandidateSkill
 from .schema import PlatformStat
 from .schema import CandidateGithubSummary
 from .schema import CandidateGithubCommit
+from .schema import ShortlistRun
 from .schema import candidates
 from .schema import jobs
 from .schema import candidate_job_scores
@@ -17,3 +18,4 @@ from .schema import candidate_skills
 from .schema import platform_stats
 from .schema import candidate_github_summary
 from .schema import candidate_github_commits
+from .schema import shortlist_runs
