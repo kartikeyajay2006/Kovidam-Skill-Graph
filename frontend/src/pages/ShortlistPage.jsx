@@ -583,10 +583,34 @@ export default function ShortlistPage() {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      style={{ color: '#fca5a5', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1rem', borderRadius: '12px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '1rem' }}
+                      style={{ color: '#fca5a5', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '1rem', borderRadius: '12px', fontSize: '0.95rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem' }}
                     >
-                      <XCircle size={20} />
-                      {error}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <XCircle size={20} />
+                        <span style={{ flex: 1 }}>{error}</span>
+                      </div>
+                      {error.toLowerCase().includes('credit') && (
+                        <button 
+                          onClick={() => {
+                            window.location.href = '/dashboard/settings?tab=billing';
+                          }}
+                          style={{
+                            alignSelf: 'flex-start',
+                            background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                            border: 'none',
+                            color: 'white',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '8px',
+                            fontWeight: '700',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            marginTop: '0.25rem',
+                            boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)'
+                          }}
+                        >
+                          Buy Credits
+                        </button>
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>

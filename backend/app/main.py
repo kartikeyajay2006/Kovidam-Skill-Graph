@@ -126,7 +126,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-PROTECTED_PATH_PREFIXES = ("/hiring", "/resume", "/account", "/admin")
+PROTECTED_PATH_PREFIXES = (
+    "/hiring",
+    "/resume",
+    "/account",
+    "/admin",
+    "/api/create-order",
+    "/api/verify-payment",
+)
 
 
 def _auth_snapshot(auth: AuthContext | None) -> dict:
@@ -247,6 +254,7 @@ def _serialize_profile(profile: OrganizationProfile | None, auth: AuthContext) -
             "user_id": auth.user_id,
             "auth_email": defaults["work_email"],
             "status": "active",
+            "credits": 10,
             "last_seen_at": None,
             "created_at": None,
             "updated_at": None,
@@ -263,6 +271,7 @@ def _serialize_profile(profile: OrganizationProfile | None, auth: AuthContext) -
         "company_size": profile.company_size or "",
         "hiring_volume": profile.hiring_volume or "",
         "status": profile.status or "active",
+        "credits": getattr(profile, "credits", 10),
         "last_seen_at": profile.last_seen_at.isoformat(timespec="milliseconds") if profile.last_seen_at else None,
         "created_at": profile.created_at.isoformat(timespec="milliseconds") if profile.created_at else None,
         "updated_at": profile.updated_at.isoformat(timespec="milliseconds") if profile.updated_at else None,
@@ -3160,6 +3169,51 @@ async def hiring_shortlist(
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
+    # Credit validation and deduction
+    db_session = SessionLocal()
+    try:
+        profile = (
+            db_session.query(OrganizationProfile)
+            .filter(
+                OrganizationProfile.tenant_id == auth.tenant_id,
+                OrganizationProfile.user_id == auth.user_id,
+            )
+            .first()
+        )
+        is_admin = _is_admin_auth(auth)
+        num_files = len(files)
+        if not is_admin:
+            current_credits = getattr(profile, "credits", 10) if profile else 10
+            if num_files > current_credits:
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Insufficient credits. You are trying to process {num_files} resume(s), but you only have {current_credits} credit(s) left. Please upgrade your plan."
+                )
+            if profile:
+                profile.credits = current_credits - num_files
+                db_session.commit()
+            else:
+                # Create profile with default credits minus consumed credits
+                new_profile = OrganizationProfile(
+                    id=str(uuid.uuid4()),
+                    tenant_id=auth.tenant_id,
+                    user_id=auth.user_id,
+                    auth_email=auth.claims.get("email") or "unknown@kovidam.co.in",
+                    status="active",
+                    credits=10 - num_files,
+                )
+                db_session.add(new_profile)
+                db_session.commit()
+    except HTTPException:
+        db_session.rollback()
+        raise
+    except Exception as exc:
+        db_session.rollback()
+        logger.exception("failed_to_deduct_credits")
+        raise HTTPException(status_code=500, detail="Database error during credit validation.")
+    finally:
+        db_session.close()
+
     required_skills = _parse_csv_list(required_skills_csv)
     must_have_skills = _parse_csv_list(must_have_skills_csv)
     if not required_skills:
@@ -3658,6 +3712,141 @@ async def hiring_semantic_search(
         min_score=min_score,
     )
     return result
+
+
+class CreateOrderRequest(BaseModel):
+    plan_id: str
+    credits: int = 0
+
+
+class VerifyPaymentRequest(BaseModel):
+    razorpay_payment_id: str
+    razorpay_order_id: str
+    razorpay_signature: str
+    plan_id: str
+    credits: int = 0
+
+
+PLAN_PRICES = {
+    "starter": {"credits": 100, "price_rs": 1700},
+    "growth": {"credits": 250, "price_rs": 3750},
+    "business": {"credits": 500, "price_rs": 6250},
+    "super_business": {"credits": 1000, "price_rs": 10000},
+}
+
+
+@app.post("/api/create-order")
+async def create_razorpay_order(payload: CreateOrderRequest, request: Request):
+    auth = _get_auth_context(request)
+    key_id = os.getenv("RAZORPAY_KEY_ID")
+    key_secret = os.getenv("RAZORPAY_KEY_SECRET")
+    if not key_id or not key_secret:
+        raise HTTPException(status_code=500, detail="Razorpay credentials not configured on backend.")
+    
+    plan_id = payload.plan_id
+    credits_to_buy = payload.credits
+    
+    if plan_id in PLAN_PRICES:
+        price_rs = PLAN_PRICES[plan_id]["price_rs"]
+        credits_to_buy = PLAN_PRICES[plan_id]["credits"]
+    elif plan_id == "individual":
+        if credits_to_buy < 5:
+            raise HTTPException(status_code=400, detail="Minimum credits to buy individually is 5 (INR 100).")
+        price_rs = credits_to_buy * 20
+    else:
+        raise HTTPException(status_code=400, detail="Invalid plan ID.")
+        
+    amount_paise = price_rs * 100
+    
+    try:
+        import razorpay
+        client = razorpay.Client(auth=(key_id, key_secret))
+        order_data = {
+            "amount": amount_paise,
+            "currency": "INR",
+            "receipt": f"rcpt_{uuid.uuid4().hex[:12]}",
+        }
+        order = client.order.create(data=order_data)
+        return {
+            "order_id": order["id"],
+            "amount": order["amount"],
+            "currency": order["currency"],
+            "credits": credits_to_buy,
+            "key_id": key_id,
+        }
+    except Exception as e:
+        logger.exception("razorpay_order_creation_failed")
+        raise HTTPException(status_code=500, detail=f"Razorpay order creation failed: {str(e)}")
+
+
+@app.post("/api/verify-payment")
+async def verify_razorpay_payment(payload: VerifyPaymentRequest, request: Request):
+    auth = _get_auth_context(request)
+    key_secret = os.getenv("RAZORPAY_KEY_SECRET")
+    if not key_secret:
+        raise HTTPException(status_code=500, detail="Razorpay credentials not configured on backend.")
+        
+    # Verify signature
+    import hmac
+    import hashlib
+    msg = f"{payload.razorpay_order_id}|{payload.razorpay_payment_id}"
+    generated = hmac.new(
+        key_secret.encode("utf-8"),
+        msg.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+    
+    if not hmac.compare_digest(generated, payload.razorpay_signature):
+        raise HTTPException(status_code=400, detail="Payment signature verification failed. Mismatch.")
+        
+    # Calculate credits
+    plan_id = payload.plan_id
+    credits_purchased = payload.credits
+    if plan_id in PLAN_PRICES:
+        credits_purchased = PLAN_PRICES[plan_id]["credits"]
+    elif plan_id == "individual":
+        if credits_purchased < 5:
+            raise HTTPException(status_code=400, detail="Invalid credit purchase amount.")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid plan ID.")
+        
+    db_session = SessionLocal()
+    try:
+        profile = (
+            db_session.query(OrganizationProfile)
+            .filter(
+                OrganizationProfile.tenant_id == auth.tenant_id,
+                OrganizationProfile.user_id == auth.user_id,
+            )
+            .first()
+        )
+        if profile:
+            profile.credits = getattr(profile, "credits", 10) + credits_purchased
+            db_session.commit()
+            db_session.refresh(profile)
+        else:
+            profile = OrganizationProfile(
+                id=str(uuid.uuid4()),
+                tenant_id=auth.tenant_id,
+                user_id=auth.user_id,
+                auth_email=auth.claims.get("email") or "unknown@kovidam.co.in",
+                status="active",
+                credits=10 + credits_purchased,
+            )
+            db_session.add(profile)
+            db_session.commit()
+            db_session.refresh(profile)
+            
+        return {
+            "success": True,
+            "profile": _serialize_profile(profile, auth)
+        }
+    except Exception as e:
+        db_session.rollback()
+        logger.exception("database_update_failed_during_payment_verify")
+        raise HTTPException(status_code=500, detail="Failed to credit account after successful verification.")
+    finally:
+        db_session.close()
 
 
 if __name__ == "__main__":

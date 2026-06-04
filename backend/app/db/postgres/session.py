@@ -58,6 +58,15 @@ def _auto_fix_legacy_constraints(conn) -> None:
         )
     )
     conn.execute(text("CREATE INDEX IF NOT EXISTS ix_candidates_resume_hash ON candidates (resume_hash)"))
+    
+    # Add credits column to organization_profiles if it does not exist
+    conn.execute(
+        text(
+            """
+            ALTER TABLE organization_profiles ADD COLUMN IF NOT EXISTS credits INTEGER DEFAULT 10;
+            """
+        )
+    )
     print("[DB] Legacy constraint check complete.")
 
 

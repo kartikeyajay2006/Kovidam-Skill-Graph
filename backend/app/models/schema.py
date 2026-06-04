@@ -191,6 +191,7 @@ class OrganizationProfile(Base):
     company_size = Column(String)
     hiring_volume = Column(String)
     status = Column(String, nullable=False, default="active")
+    credits = Column(Integer, nullable=False, default=10, server_default="10")
     last_seen_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

@@ -23,11 +23,13 @@ import {
   Fingerprint,
   FileJson,
   AlertTriangle,
-  Info
+  Info,
+  CreditCard
 } from 'lucide-react'
 import { auth } from '../firebase'
 import { loadAuthProfile, saveAuthProfile, normalizeAuthProfile } from '../utils/authProfile'
 import { authFetch } from '../utils/api'
+import { isAdminEmail } from '../utils/admin'
 import './SettingsPage.css'
 
 export default function SettingsPage() {
@@ -36,6 +38,9 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [credits, setCredits] = useState(10)
+  const [customCredits, setCustomCredits] = useState(5)
 
   // Profile and Org state
   const [fullName, setFullName] = useState('')
@@ -67,6 +72,8 @@ export default function SettingsPage() {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user) {
         setAuthUser(user)
+        const isUserAdmin = isAdminEmail(user.email)
+        setIsAdmin(isUserAdmin)
         const profile = normalizeAuthProfile(loadAuthProfile(user.uid))
         
         // Load Profile Fields
@@ -76,6 +83,7 @@ export default function SettingsPage() {
         setCompanySize(profile.companySize || '')
         setHiringVolume(profile.hiringVolume || '')
         setWorkEmail(profile.workEmail || user.email || '')
+        setCredits(profile.credits ?? 10)
 
         authFetch('/account/profile')
           .then((response) => (response.ok ? response.json() : null))
@@ -88,6 +96,7 @@ export default function SettingsPage() {
             setCompanySize(serverProfile.companySize || '')
             setHiringVolume(serverProfile.hiringVolume || '')
             setWorkEmail(serverProfile.workEmail || user.email || '')
+            setCredits(data.profile.credits ?? 10)
             saveAuthProfile(user.uid, serverProfile)
           })
           .catch(() => {
@@ -106,6 +115,15 @@ export default function SettingsPage() {
     })
     return () => unsub()
   }, [])
+
+  // Sync active tab with URL query parameter
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam && ['profile', 'organization', 'billing', 'security'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, []);
 
   // Live Password Strength Check
   useEffect(() => {
@@ -273,6 +291,110 @@ export default function SettingsPage() {
     showNotification('Settings export downloaded successfully.')
   }
 
+  const handleBuyPlan = async (planId, customCreditsCount = 0) => {
+    try {
+      setSaving(true)
+      const token = await authUser?.getIdToken()
+      if (!token) {
+        showNotification('Session expired. Please log in again.', 'error')
+        return
+      }
+
+      // 1. Call Backend Order endpoint
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/create-order`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          plan_id: planId,
+          credits: planId === 'individual' ? Number(customCreditsCount) : 0
+        })
+      })
+
+      if (!response.ok) {
+        const errText = await response.text()
+        throw new Error(errText || 'Failed to initiate Razorpay order.')
+      }
+
+      const orderData = await response.json()
+      const razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || orderData.key_id
+
+      // 2. Open Razorpay Checkout Modal
+      if (!razorpayKeyId) {
+        throw new Error('Razorpay key is not configured.')
+      }
+
+      const options = {
+        key: razorpayKeyId,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: 'Kovidam Medha',
+        description: `Upgrade Plan - ${planId.replace('_', ' ').toUpperCase()}`,
+        order_id: orderData.order_id,
+        handler: async (response) => {
+          try {
+            setSaving(true)
+            const verifyRes = await fetch(`${import.meta.env.VITE_API_BASE_URL || ''}/api/verify-payment`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature,
+                plan_id: planId,
+                credits: planId === 'individual' ? Number(customCreditsCount) : 0
+              })
+            })
+
+            if (!verifyRes.ok) {
+              const errText = await verifyRes.text()
+              throw new Error(errText || 'Payment verification failed.')
+            }
+
+            const verifyData = await verifyRes.json()
+            if (verifyData.success) {
+              saveAuthProfile(authUser.uid, verifyData.profile)
+              setCredits(verifyData.profile.credits ?? 10)
+              showNotification(`Successfully purchased ${orderData.credits} credits!`, 'success')
+            }
+          } catch (verifyErr) {
+            showNotification(verifyErr.message || 'Verification failed. Please contact support.', 'error')
+          } finally {
+            setSaving(false)
+          }
+        },
+        prefill: {
+          name: fullName || authUser.displayName || '',
+          email: workEmail || authUser.email || '',
+        },
+        theme: {
+          color: '#6366f1'
+        },
+        modal: {
+          ondismiss: () => {
+            showNotification('Payment cancelled.', 'info')
+            setSaving(false)
+          }
+        }
+      }
+
+      if (!window.Razorpay) {
+        throw new Error('Razorpay checkout script is not loaded.')
+      }
+
+      const rzp = new window.Razorpay(options)
+      rzp.open()
+    } catch (err) {
+      showNotification(err.message || 'Failed to checkout.', 'error')
+      setSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="settings-loading">
@@ -285,6 +407,7 @@ export default function SettingsPage() {
   const tabItems = [
     { id: 'profile', name: 'Profile & Account', icon: User },
     { id: 'organization', name: 'Organization Info', icon: Building2 },
+    ...(!isAdmin ? [{ id: 'billing', name: 'Plans & Pricing', icon: CreditCard }] : []),
     { id: 'security', name: 'Security & Data', icon: ShieldAlert }
   ]
 
@@ -611,6 +734,187 @@ export default function SettingsPage() {
                       </button>
                     </div>
                   </form>
+                </div>
+              )}
+
+              {/* TAB: PLANS & PRICING */}
+              {activeTab === 'billing' && (
+                <div className="pricing-section-container">
+                  <div className="pricing-balance-banner">
+                    <div className="pricing-balance-info">
+                      <h3>Active Resume Balance</h3>
+                      <p>Used to parse candidate GitHub context, run semantic search & calculate fit scores.</p>
+                    </div>
+                    <div className="pricing-balance-value">
+                      {credits} credits
+                    </div>
+                  </div>
+
+                  <div className="pricing-cards-grid">
+                    {/* 1. FREE TRIAL */}
+                    <div className="pricing-card">
+                      <div className="pricing-header">
+                        <h4>FREE TRIAL</h4>
+                        <h3 className="plan-title">FREE TRIAL</h3>
+                      </div>
+                      <div className="pricing-price-wrapper">
+                        <span className="pricing-price">FREE</span>
+                      </div>
+                      <p className="custom-price-note" style={{ minHeight: '3rem' }}>Start testing with 10 FREE analyses (included on signup)</p>
+                      <ul className="pricing-features-list">
+                        <li className="pricing-feature-item"><Check size={14} /> AI Resume Scoring</li>
+                        <li className="pricing-feature-item"><Check size={14} /> GitHub & Project Analysis</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Skill & Keyword Analysis</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Basic Candidate Ranking</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Instant Results</li>
+                      </ul>
+                      <button className="pricing-action-btn" disabled style={{ opacity: 0.6 }}>Active Plan</button>
+                    </div>
+
+                    {/* 2. INDIVIDUALS / PAY AS YOU GO */}
+                    <div className="pricing-card">
+                      <div className="pricing-header">
+                        <h4>INDIVIDUALS</h4>
+                        <h3 className="plan-title">PAY AS YOU GO</h3>
+                      </div>
+                      <div className="pricing-price-wrapper">
+                        <span className="pricing-price">₹ 20</span>
+                        <span className="pricing-period">/ resume</span>
+                      </div>
+                      <div style={{ minHeight: '3rem' }}>
+                        <p className="custom-price-note" style={{ margin: 0 }}>Pay only for what you use. (Min. 5 credits)</p>
+                        <div className="custom-input-wrapper">
+                          <label className="input-label" style={{ fontSize: '0.65rem' }}>Credits:</label>
+                          <input 
+                            type="number" 
+                            min="5" 
+                            className="custom-input-field" 
+                            value={customCredits} 
+                            onChange={(e) => setCustomCredits(Math.max(5, parseInt(e.target.value) || 5))} 
+                          />
+                        </div>
+                      </div>
+                      <ul className="pricing-features-list">
+                        <li className="pricing-feature-item"><Check size={14} /> Pay only for what you use</li>
+                        <li className="pricing-feature-item"><Check size={14} /> No monthly commitment</li>
+                        <li className="pricing-feature-item"><Check size={14} /> AI-Powered Analysis</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Comprehensive Report</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Instant Results</li>
+                      </ul>
+                      <button className="pricing-action-btn" onClick={() => handleBuyPlan('individual', customCredits)}>Buy {customCredits} Credits</button>
+                    </div>
+
+                    {/* 3. STARTER PACK */}
+                    <div className="pricing-card popular">
+                      <span className="pricing-badge">Popular</span>
+                      <div className="pricing-header">
+                        <h4>STARTER PACK</h4>
+                        <h3 className="plan-title">100 RESUMES</h3>
+                      </div>
+                      <div className="pricing-price-wrapper">
+                        <span className="pricing-price">₹ 1,700</span>
+                      </div>
+                      <p className="custom-price-note" style={{ minHeight: '3rem', color: '#818cf8' }}>₹ 17 / resume. Save 15% vs Individual.</p>
+                      <ul className="pricing-features-list">
+                        <li className="pricing-feature-item"><Check size={14} /> All Pay As You Go Features</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Bulk Resume Analysis</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Candidate Ranking</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Export Reports</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Email Support</li>
+                      </ul>
+                      <div className="pricing-card-footer-note">Save 15% vs Individual</div>
+                      <button className="pricing-action-btn" onClick={() => handleBuyPlan('starter')}>Get Started</button>
+                    </div>
+
+                    {/* 4. GROWTH PACK */}
+                    <div className="pricing-card">
+                      <div className="pricing-header">
+                        <h4>GROWTH PACK</h4>
+                        <h3 className="plan-title">250 RESUMES</h3>
+                      </div>
+                      <div className="pricing-price-wrapper">
+                        <span className="pricing-price">₹ 3,750</span>
+                      </div>
+                      <p className="custom-price-note" style={{ minHeight: '3rem' }}>₹ 15 / resume. Save 25% vs Individual.</p>
+                      <ul className="pricing-features-list">
+                        <li className="pricing-feature-item"><Check size={14} /> All Starter Pack Features</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Advanced Skill Insights</li>
+                        <li className="pricing-feature-item"><Check size={14} /> JD Matching</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Priority Support</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Bulk Export</li>
+                      </ul>
+                      <div className="pricing-card-footer-note">Save 25% vs Individual</div>
+                      <button className="pricing-action-btn" onClick={() => handleBuyPlan('growth')}>Get Started</button>
+                    </div>
+
+                    {/* 5. BUSINESS PACK */}
+                    <div className="pricing-card">
+                      <div className="pricing-header">
+                        <h4>BUSINESS PACK</h4>
+                        <h3 className="plan-title">500 RESUMES</h3>
+                      </div>
+                      <div className="pricing-price-wrapper">
+                        <span className="pricing-price">₹ 6,250</span>
+                      </div>
+                      <p className="custom-price-note" style={{ minHeight: '3rem' }}>₹ 12.5 / resume. Save 37.5% vs Individual.</p>
+                      <ul className="pricing-features-list">
+                        <li className="pricing-feature-item"><Check size={14} /> All Growth Pack Features</li>
+                        <li className="pricing-feature-item"><Check size={14} /> API Access</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Custom Integrations</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Dedicated Support</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Advanced Analytics</li>
+                      </ul>
+                      <div className="pricing-card-footer-note">Save 37.5% vs Individual</div>
+                      <button className="pricing-action-btn" onClick={() => handleBuyPlan('business')}>Get Started</button>
+                    </div>
+
+                    {/* 6. SUPER BUSINESS PACK */}
+                    <div className="pricing-card">
+                      <div className="pricing-header">
+                        <h4>SUPER BUSINESS</h4>
+                        <h3 className="plan-title">1000 RESUMES</h3>
+                      </div>
+                      <div className="pricing-price-wrapper">
+                        <span className="pricing-price">₹ 10,000</span>
+                      </div>
+                      <p className="custom-price-note" style={{ minHeight: '3rem' }}>₹ 10 / resume. Save 50% vs Individual.</p>
+                      <ul className="pricing-features-list">
+                        <li className="pricing-feature-item"><Check size={14} /> All Business Pack Features</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Team Collaboration</li>
+                        <li className="pricing-feature-item"><Check size={14} /> SSO & Role Management</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Dedicated Account Manager</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Enterprise Security</li>
+                      </ul>
+                      <div className="pricing-card-footer-note">Save 50% vs Individual</div>
+                      <button className="pricing-action-btn" onClick={() => handleBuyPlan('super_business')}>Get Started</button>
+                    </div>
+
+                    {/* 7. CUSTOM PLAN */}
+                    <div className="pricing-card">
+                      <div className="pricing-header">
+                        <h4>CUSTOM PLAN</h4>
+                        <h3 className="plan-title">CUSTOMIZE</h3>
+                      </div>
+                      <div className="pricing-price-wrapper">
+                        <span className="pricing-price">CUSTOM</span>
+                      </div>
+                      <p className="custom-price-note" style={{ minHeight: '3rem' }}>Tailored specifically to your business requirements.</p>
+                      <ul className="pricing-features-list">
+                        <li className="pricing-feature-item"><Check size={14} /> Custom Resume Limit</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Tailored Features</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Advanced Integrations</li>
+                        <li className="pricing-feature-item"><Check size={14} /> On-Premise Options</li>
+                        <li className="pricing-feature-item"><Check size={14} /> Priority & Dedicated Support</li>
+                      </ul>
+                      <div className="pricing-card-footer-note">Built for your needs</div>
+                      <button 
+                        className="pricing-action-btn" 
+                        onClick={() => window.open(`mailto:kovidam26@gmail.com?subject=Custom%20Plan%20Inquiry%20-%20Kovidam%20Medha&body=Hi%20Kovidam%20Team%2C%0A%0AI%20am%20interested%20in%20a%20custom%20billing%20plan%20for%20resumes.%20Here%20are%20my%20details%3A%0A%0APreferred%20Volume%3A%20%0ACompany%20Name%3A%20${companyName}`, '_blank')}
+                      >
+                        Contact Us
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
