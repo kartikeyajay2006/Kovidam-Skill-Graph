@@ -20,3 +20,19 @@ export function loadAuthProfile(uid) {
     return {}
   }
 }
+
+export function normalizeAuthProfile(profile) {
+  if (!profile || typeof profile !== 'object') return {}
+  return {
+    fullName: profile.fullName || profile.full_name || '',
+    companyName: profile.companyName || profile.company_name || '',
+    jobTitle: profile.jobTitle || profile.job_title || '',
+    companySize: profile.companySize || profile.company_size || '',
+    hiringVolume: profile.hiringVolume || profile.hiring_volume || '',
+    workEmail: profile.workEmail || profile.work_email || profile.auth_email || '',
+    status: profile.status || 'active',
+    updatedAtIso: profile.updatedAtIso || profile.updated_at || '',
+    createdAtIso: profile.createdAtIso || profile.created_at || '',
+    lastSeenAtIso: profile.lastSeenAtIso || profile.last_seen_at || '',
+  }
+}

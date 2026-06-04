@@ -17,6 +17,8 @@ import AllShortlistsPage from './pages/AllShortlistsPage'
 import ProductPage from './pages/ProductPage'
 import FeaturesPage from './pages/FeaturesPage'
 import SettingsPage from './pages/SettingsPage'
+import AdminRoute from './components/AdminRoute'
+import AdminDashboard from './pages/AdminDashboard'
 import './App.css'
 
 function ScrollToTop() {
@@ -56,6 +58,9 @@ function App() {
         <Route path="search" element={<SemanticSearchPage />} />
         <Route path="candidate/:id" element={<PlaceholderPage title="Candidate Profile" />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route element={<AdminRoute />}>
+          <Route path="admin" element={<AdminDashboard />} />
+        </Route>
       </Route>
     </Routes>
     </>

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { LayoutDashboard, Briefcase, Search, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Briefcase, Search, Settings, LogOut, ShieldCheck } from 'lucide-react'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { auth } from '../firebase'
-import { loadAuthProfile } from '../utils/authProfile'
+import { loadAuthProfile, normalizeAuthProfile } from '../utils/authProfile'
+import { authFetch } from '../utils/api'
+import { isAdminEmail } from '../utils/admin'
 import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Navbar.css'
 
@@ -13,6 +15,7 @@ export default function DashboardNavbar() {
   const [authUser, setAuthUser] = useState(null)
   const [profile, setProfile] = useState({})
   const [scrolled, setScrolled] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const AUTH_UI_DEBUG = import.meta.env.VITE_AUTH_UI_DEBUG === 'true'
@@ -20,7 +23,20 @@ export default function DashboardNavbar() {
   React.useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       setAuthUser(user || null)
-      setProfile(loadAuthProfile(user?.uid))
+      setIsAdmin(isAdminEmail(user?.email))
+      setProfile(normalizeAuthProfile(loadAuthProfile(user?.uid)))
+      if (user) {
+        authFetch('/account/profile')
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.profile) {
+              setProfile((prev) => ({ ...prev, ...normalizeAuthProfile(data.profile) }))
+            }
+          })
+          .catch(() => {
+            // Keep the local profile fallback if the backend profile lookup fails.
+          })
+      }
       if (AUTH_UI_DEBUG) {
         console.info('[auth-ui] navbar_auth_state', { uid: user?.uid || null })
       }
@@ -38,6 +54,7 @@ export default function DashboardNavbar() {
 
   const displayName = authUser?.displayName || profile.fullName || authUser?.email || 'Not signed in'
   const companyLabel = profile.companyName || 'No company linked'
+  const adminLabel = isAdmin ? 'Platform Admin' : companyLabel
 
   const handleSignOut = async () => {
     try {
@@ -54,6 +71,7 @@ export default function DashboardNavbar() {
     { name: 'Hub', icon: LayoutDashboard, path: '/dashboard' },
     { name: 'Shortlist', icon: Briefcase, path: '/dashboard/shortlist' },
     { name: 'Search', icon: Search, path: '/dashboard/search' },
+    ...(isAdmin ? [{ name: 'Admin', icon: ShieldCheck, path: '/dashboard/admin' }] : []),
     { name: 'Settings', icon: Settings, path: '/dashboard/settings' },
   ]
 
@@ -122,7 +140,7 @@ export default function DashboardNavbar() {
       <div className="header-action" style={sideStyle}>
         <div style={{ textAlign: 'right', marginRight: '0.75rem', lineHeight: 1.2 }}>
           <div style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>{displayName}</div>
-          <div style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{companyLabel}</div>
+          <div style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{adminLabel}</div>
         </div>
         <motion.button 
           className="btn-premium btn-sm"

@@ -7,6 +7,7 @@ import math
 import uuid
 import time
 import logging
+from datetime import datetime, timezone
 from typing import Literal
 from contextlib import asynccontextmanager
 
@@ -32,6 +33,7 @@ from app.models.schema import (
     CandidateGithubSummary,
     CandidateGithubCommit,
     ShortlistRun,
+    OrganizationProfile,
 )
 from app.services.transformer import transform_resume_data
 from app.services.db_writer import save_to_db
@@ -124,7 +126,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-PROTECTED_PATH_PREFIXES = ("/hiring", "/resume")
+PROTECTED_PATH_PREFIXES = ("/hiring", "/resume", "/account", "/admin")
 
 
 def _auth_snapshot(auth: AuthContext | None) -> dict:
@@ -136,6 +138,14 @@ def _auth_snapshot(auth: AuthContext | None) -> dict:
         "tenant_id": auth.tenant_id,
         "role": auth.role,
     }
+
+
+def _current_email(auth: AuthContext) -> str:
+    return str(auth.claims.get("email") or "").strip().lower()
+
+
+def _is_admin_auth(auth: AuthContext) -> bool:
+    return auth.role in {"admin", "owner"} or _current_email(auth) == "admin@kovidam.co.in"
 
 
 def _shortlist_progress_cleanup() -> None:
@@ -215,6 +225,114 @@ def _load_shortlist_run(auth: AuthContext, trace_id: str) -> ShortlistRun | None
         db.close()
 
 
+def _profile_defaults(auth: AuthContext) -> dict:
+    email = _current_email(auth)
+    full_name = str(auth.claims.get("name") or auth.claims.get("full_name") or "").strip()
+    return {
+        "full_name": full_name,
+        "company_name": "",
+        "job_title": "",
+        "company_size": "",
+        "hiring_volume": "",
+        "work_email": email,
+    }
+
+
+def _serialize_profile(profile: OrganizationProfile | None, auth: AuthContext) -> dict:
+    defaults = _profile_defaults(auth)
+    if not profile:
+        return {
+            "id": None,
+            "tenant_id": auth.tenant_id,
+            "user_id": auth.user_id,
+            "auth_email": defaults["work_email"],
+            "status": "active",
+            "last_seen_at": None,
+            "created_at": None,
+            "updated_at": None,
+            **defaults,
+        }
+    return {
+        "id": profile.id,
+        "tenant_id": profile.tenant_id,
+        "user_id": profile.user_id,
+        "auth_email": profile.auth_email,
+        "full_name": profile.full_name or "",
+        "company_name": profile.company_name or "",
+        "job_title": profile.job_title or "",
+        "company_size": profile.company_size or "",
+        "hiring_volume": profile.hiring_volume or "",
+        "status": profile.status or "active",
+        "last_seen_at": profile.last_seen_at.isoformat(timespec="milliseconds") if profile.last_seen_at else None,
+        "created_at": profile.created_at.isoformat(timespec="milliseconds") if profile.created_at else None,
+        "updated_at": profile.updated_at.isoformat(timespec="milliseconds") if profile.updated_at else None,
+    }
+
+
+def _shortlist_count_from_payload(payload: dict) -> int:
+    shortlisted = payload.get("shortlisted") or []
+    counts = payload.get("counts") or {}
+    return int(counts.get("ranked") or len(shortlisted) or 0)
+
+
+def _build_company_summary(db, profile: OrganizationProfile) -> dict:
+    shortlist_rows = (
+        db.query(ShortlistRun)
+        .filter(
+            ShortlistRun.tenant_id == profile.tenant_id,
+            ShortlistRun.user_id == profile.user_id,
+        )
+        .order_by(ShortlistRun.created_at.desc())
+        .all()
+    )
+    candidate_count = (
+        db.query(Candidate.id)
+        .filter(Candidate.tenant_id == profile.tenant_id, Candidate.user_id == profile.user_id)
+        .count()
+    )
+
+    total_shortlisted_resumes = 0
+    recent_shortlists: list[dict] = []
+    last_shortlist_at = None
+    latest_role = ""
+
+    for row in shortlist_rows:
+        payload = row.response_json if isinstance(row.response_json, dict) else {}
+        job_summary = row.job_summary if isinstance(row.job_summary, dict) else {}
+        shortlisted_count = _shortlist_count_from_payload(payload)
+        total_shortlisted_resumes += shortlisted_count
+        if last_shortlist_at is None:
+            last_shortlist_at = row.created_at
+            latest_role = str(job_summary.get("role") or job_summary.get("position_title") or "").strip()
+
+        recent_shortlists.append(
+            {
+                "id": row.trace_id,
+                "role": job_summary.get("role") or "Unknown Role",
+                "company_name": job_summary.get("company_name") or "",
+                "position_title": job_summary.get("position_title") or "",
+                "date": row.created_at.isoformat(timespec="milliseconds") if row.created_at else None,
+                "matches": shortlisted_count,
+            }
+        )
+
+    last_activity = profile.updated_at or profile.last_seen_at or last_shortlist_at or profile.created_at
+
+    return {
+        **_serialize_profile(profile, AuthContext(user_id=profile.user_id, tenant_id=profile.tenant_id, role="viewer", claims={"email": profile.auth_email})),
+        "company_name": profile.company_name or "",
+        "work_email": profile.auth_email or "",
+        "candidate_count": candidate_count,
+        "shortlist_count": len(shortlist_rows),
+        "total_shortlisted_resumes": total_shortlisted_resumes,
+        "last_shortlist_at": last_shortlist_at.isoformat(timespec="milliseconds") if last_shortlist_at else None,
+        "last_activity_at": last_activity.isoformat(timespec="milliseconds") if last_activity else None,
+        "latest_role": latest_role,
+        "recent_shortlists": recent_shortlists[:5],
+        "is_active": bool(last_activity),
+    }
+
+
 def _shortlist_merge_key(candidate: dict) -> str:
     resume_hash = str(candidate.get("resume_hash") or "").strip().lower()
     if resume_hash:
@@ -234,6 +352,20 @@ def _dedupe_shortlisted_rows(rows: list[dict]) -> list[dict]:
             seen.add(key)
         deduped.append(row)
     return deduped
+
+
+class AccountProfilePayload(BaseModel):
+    full_name: str = Field(default="", max_length=120)
+    company_name: str = Field(default="", max_length=160)
+    job_title: str = Field(default="", max_length=120)
+    company_size: str = Field(default="", max_length=40)
+    hiring_volume: str = Field(default="", max_length=40)
+    work_email: str = Field(default="", max_length=120)
+
+
+def _require_admin(auth: AuthContext) -> None:
+    if not _is_admin_auth(auth):
+        raise HTTPException(status_code=403, detail="Admin access required")
 
 
 @app.middleware("http")
@@ -290,6 +422,87 @@ async def root():
         "message": "Welcome to Kovidam Skill Graph API",
         "resume_concurrency": RESUME_CONCURRENCY,
     }
+
+
+@app.get("/account/profile")
+async def get_account_profile(request: Request):
+    db = SessionLocal()
+    auth = _get_auth_context(request)
+    try:
+        profile = (
+            db.query(OrganizationProfile)
+            .filter(
+                OrganizationProfile.tenant_id == auth.tenant_id,
+                OrganizationProfile.user_id == auth.user_id,
+            )
+            .first()
+        )
+        if profile:
+            profile.last_seen_at = datetime.now(timezone.utc)
+            db.commit()
+        return {"profile": _serialize_profile(profile, auth)}
+    except Exception:
+        db.rollback()
+        logger.exception("failed_to_fetch_account_profile")
+        raise HTTPException(status_code=500, detail="Failed to fetch account profile")
+    finally:
+        db.close()
+
+
+@app.put("/account/profile")
+async def upsert_account_profile(payload: AccountProfilePayload, request: Request):
+    db = SessionLocal()
+    auth = _get_auth_context(request)
+    try:
+        email = str(payload.work_email or _current_email(auth) or "").strip().lower()
+        if not email:
+            raise HTTPException(status_code=400, detail="Work email is required")
+
+        profile = (
+            db.query(OrganizationProfile)
+            .filter(
+                OrganizationProfile.tenant_id == auth.tenant_id,
+                OrganizationProfile.user_id == auth.user_id,
+            )
+            .first()
+        )
+        now = datetime.now(timezone.utc)
+        if profile:
+            profile.full_name = payload.full_name.strip()
+            profile.company_name = payload.company_name.strip()
+            profile.job_title = payload.job_title.strip()
+            profile.company_size = payload.company_size.strip()
+            profile.hiring_volume = payload.hiring_volume.strip()
+            profile.auth_email = email
+            profile.last_seen_at = now
+        else:
+            profile = OrganizationProfile(
+                id=str(uuid.uuid4()),
+                tenant_id=auth.tenant_id,
+                user_id=auth.user_id,
+                auth_email=email,
+                full_name=payload.full_name.strip(),
+                company_name=payload.company_name.strip(),
+                job_title=payload.job_title.strip(),
+                company_size=payload.company_size.strip(),
+                hiring_volume=payload.hiring_volume.strip(),
+                status="active",
+                last_seen_at=now,
+            )
+            db.add(profile)
+
+        db.commit()
+        db.refresh(profile)
+        return {"profile": _serialize_profile(profile, auth)}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        logger.exception("failed_to_upsert_account_profile")
+        raise HTTPException(status_code=500, detail="Failed to save account profile")
+    finally:
+        db.close()
 
 
 @app.get("/hiring/dashboard-metrics")
@@ -518,6 +731,89 @@ async def delete_shortlist(trace_id: str, request: Request):
         db.rollback()
         logger.exception("failed_to_delete_shortlist")
         raise HTTPException(status_code=500, detail="Failed to delete shortlist")
+    finally:
+        db.close()
+
+
+@app.get("/admin/overview")
+async def admin_overview(request: Request):
+    db = SessionLocal()
+    auth = _get_auth_context(request)
+    _require_admin(auth)
+    try:
+        profiles = db.query(OrganizationProfile).order_by(OrganizationProfile.updated_at.desc()).all()
+        companies = [_build_company_summary(db, profile) for profile in profiles]
+        total_candidates = sum(company["candidate_count"] for company in companies)
+        total_shortlists = sum(company["shortlist_count"] for company in companies)
+        total_shortlisted_resumes = sum(company["total_shortlisted_resumes"] for company in companies)
+        active_companies = sum(1 for company in companies if company["is_active"])
+        recent_shortlists = []
+        for company in companies:
+            for shortlist in company.get("recent_shortlists", []):
+                recent_shortlists.append(
+                    {
+                        **shortlist,
+                        "company_name": company.get("company_name") or "",
+                        "work_email": company.get("work_email") or "",
+                        "user_id": company.get("user_id") or "",
+                    }
+                )
+        recent_shortlists.sort(key=lambda item: item.get("date") or "", reverse=True)
+        return {
+            "summary": {
+                "total_companies": len(companies),
+                "active_companies": active_companies,
+                "total_candidates": total_candidates,
+                "total_shortlists": total_shortlists,
+                "total_shortlisted_resumes": total_shortlisted_resumes,
+            },
+            "companies": companies,
+            "recent_shortlists": recent_shortlists[:15],
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("failed_to_fetch_admin_overview")
+        raise HTTPException(status_code=500, detail="Failed to fetch admin overview")
+    finally:
+        db.close()
+
+
+@app.get("/admin/companies")
+async def admin_companies(request: Request):
+    db = SessionLocal()
+    auth = _get_auth_context(request)
+    _require_admin(auth)
+    try:
+        profiles = db.query(OrganizationProfile).order_by(OrganizationProfile.updated_at.desc()).all()
+        return {"companies": [_build_company_summary(db, profile) for profile in profiles]}
+    except Exception:
+        logger.exception("failed_to_fetch_admin_companies")
+        raise HTTPException(status_code=500, detail="Failed to fetch companies")
+    finally:
+        db.close()
+
+
+@app.get("/admin/companies/{user_id}")
+async def admin_company_detail(user_id: str, request: Request):
+    db = SessionLocal()
+    auth = _get_auth_context(request)
+    _require_admin(auth)
+    try:
+        profile = (
+            db.query(OrganizationProfile)
+            .filter(OrganizationProfile.user_id == user_id)
+            .order_by(OrganizationProfile.updated_at.desc())
+            .first()
+        )
+        if not profile:
+            raise HTTPException(status_code=404, detail="Company not found")
+        return {"company": _build_company_summary(db, profile)}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("failed_to_fetch_admin_company_detail")
+        raise HTTPException(status_code=500, detail="Failed to fetch company detail")
     finally:
         db.close()
 

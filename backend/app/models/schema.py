@@ -172,6 +172,30 @@ class ShortlistRun(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
+class OrganizationProfile(Base):
+    __tablename__ = "organization_profiles"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", name="uq_organization_profiles_tenant_user"),
+        Index("ix_organization_profiles_tenant_id", "tenant_id"),
+        Index("ix_organization_profiles_user_id", "user_id"),
+        Index("ix_organization_profiles_company_name", "company_name"),
+    )
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    auth_email = Column(String, nullable=False, index=True)
+    full_name = Column(String)
+    company_name = Column(String)
+    job_title = Column(String)
+    company_size = Column(String)
+    hiring_volume = Column(String)
+    status = Column(String, nullable=False, default="active")
+    last_seen_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
 # Backward-compatible aliases for existing imports.
 candidates = Candidate
 jobs = Job
@@ -183,3 +207,4 @@ platform_stats = PlatformStat
 candidate_github_summary = CandidateGithubSummary
 candidate_github_commits = CandidateGithubCommit
 shortlist_runs = ShortlistRun
+organization_profiles = OrganizationProfile

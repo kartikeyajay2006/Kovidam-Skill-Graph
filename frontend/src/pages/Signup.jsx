@@ -5,7 +5,9 @@ import { useNavigate } from 'react-router-dom'
 import { createUserWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
 import { auth, googleProvider } from '../firebase'
-import { saveAuthProfile } from '../utils/authProfile'
+import { saveAuthProfile, normalizeAuthProfile } from '../utils/authProfile'
+import { authFetch } from '../utils/api'
+import { isAdminEmail } from '../utils/admin'
 import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Auth.css'
 
@@ -35,6 +37,26 @@ export default function Signup() {
     workEmail: String(resolvedEmail || email).trim().toLowerCase(),
     createdAtIso: new Date().toISOString(),
   })
+
+  const persistProfile = async (payload) => {
+    const response = await authFetch('/account/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        full_name: payload.fullName,
+        company_name: payload.companyName,
+        job_title: payload.jobTitle,
+        company_size: payload.companySize,
+        hiring_volume: payload.hiringVolume,
+        work_email: payload.workEmail,
+      }),
+    })
+    if (!response.ok) {
+      throw new Error(await response.text())
+    }
+    const data = await response.json()
+    return data?.profile ? normalizeAuthProfile(data.profile) : null
+  }
 
   const validateBusinessFields = () => {
     if (!fullName.trim()) return 'Full name is required.'
@@ -68,11 +90,13 @@ export default function Signup() {
       if (fullName.trim()) {
         await updateProfile(cred.user, { displayName: fullName.trim() })
       }
-      saveAuthProfile(cred.user.uid, buildProfilePayload(cred.user.email || email))
+      const payload = buildProfilePayload(cred.user.email || email)
+      const serverProfile = await persistProfile(payload)
+      saveAuthProfile(cred.user.uid, serverProfile || payload)
       if (AUTH_UI_DEBUG) {
         console.info('[auth-ui] signup_success_email', { uid: cred.user.uid, email: cred.user.email })
       }
-      navigate('/dashboard')
+      navigate(isAdminEmail(cred.user.email) ? '/dashboard/admin' : '/dashboard')
     } catch (err) {
       setError(err.message || 'Signup failed. Please try again.')
     } finally {
@@ -98,11 +122,13 @@ export default function Signup() {
         await updateProfile(cred.user, { displayName: fullName.trim() })
       }
       // For Google sign-up, use verified Google account email as source of truth.
-      saveAuthProfile(cred.user.uid, buildProfilePayload(cred.user.email || email))
+      const payload = buildProfilePayload(cred.user.email || email)
+      const serverProfile = await persistProfile(payload)
+      saveAuthProfile(cred.user.uid, serverProfile || payload)
       if (AUTH_UI_DEBUG) {
         console.info('[auth-ui] signup_success_google', { uid: cred.user.uid, email: cred.user.email })
       }
-      navigate('/dashboard')
+      navigate(isAdminEmail(cred.user.email) ? '/dashboard/admin' : '/dashboard')
     } catch (err) {
       setError(err.message || 'Google sign-up failed. Please try again.')
     } finally {

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
 import { auth, googleProvider } from '../firebase'
+import { isAdminEmail } from '../utils/admin'
 import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Auth.css'
 
@@ -35,7 +36,7 @@ export default function Login() {
       if (AUTH_UI_DEBUG) {
         console.info('[auth-ui] login_success_email', { uid: cred.user.uid, email: cred.user.email })
       }
-      navigate('/dashboard')
+      navigate(isAdminEmail(cred.user.email) ? '/dashboard/admin' : '/dashboard')
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.')
     } finally {
@@ -51,7 +52,7 @@ export default function Login() {
       if (AUTH_UI_DEBUG) {
         console.info('[auth-ui] login_success_google', { uid: cred.user.uid, email: cred.user.email })
       }
-      navigate('/dashboard')
+      navigate(isAdminEmail(cred.user.email) ? '/dashboard/admin' : '/dashboard')
     } catch (err) {
       setError(err.message || 'Google sign-in failed. Please try again.')
     } finally {

@@ -20,6 +20,11 @@ JWT_SECRET = os.getenv("AUTH_JWT_SECRET", "change-me")
 JWT_ALGORITHM = os.getenv("AUTH_JWT_ALGORITHM", "HS256")
 AUTH_DEFAULT_TENANT = os.getenv("AUTH_DEFAULT_TENANT", "default")
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "").strip()
+ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("ADMIN_EMAILS", "admin@kovidam.co.in").split(",")
+    if email.strip()
+}
 FIREBASE_JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
 _firebase_jwk_client = PyJWKClient(FIREBASE_JWKS_URL)
 
@@ -69,6 +74,10 @@ def authenticate_request(request: Request) -> AuthContext:
     user_id = str(claims.get("sub") or "").strip()
     tenant_id = str(claims.get("tenant_id") or claims.get("firebase", {}).get("tenant") or AUTH_DEFAULT_TENANT).strip()
     role = str(claims.get("role") or "viewer").strip().lower()
+    email = str(claims.get("email") or "").strip().lower()
+
+    if email and email in ADMIN_EMAILS:
+        role = "admin"
 
     if not user_id:
         raise HTTPException(

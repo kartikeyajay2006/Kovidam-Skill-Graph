@@ -26,7 +26,8 @@ import {
   Info
 } from 'lucide-react'
 import { auth } from '../firebase'
-import { loadAuthProfile, saveAuthProfile } from '../utils/authProfile'
+import { loadAuthProfile, saveAuthProfile, normalizeAuthProfile } from '../utils/authProfile'
+import { authFetch } from '../utils/api'
 import './SettingsPage.css'
 
 export default function SettingsPage() {
@@ -66,7 +67,7 @@ export default function SettingsPage() {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user) {
         setAuthUser(user)
-        const profile = loadAuthProfile(user.uid)
+        const profile = normalizeAuthProfile(loadAuthProfile(user.uid))
         
         // Load Profile Fields
         setFullName(user.displayName || profile.fullName || '')
@@ -75,6 +76,23 @@ export default function SettingsPage() {
         setCompanySize(profile.companySize || '')
         setHiringVolume(profile.hiringVolume || '')
         setWorkEmail(profile.workEmail || user.email || '')
+
+        authFetch('/account/profile')
+          .then((response) => (response.ok ? response.json() : null))
+          .then((data) => {
+            if (!data?.profile) return
+            const serverProfile = normalizeAuthProfile(data.profile)
+            setFullName(serverProfile.fullName || user.displayName || '')
+            setCompanyName(serverProfile.companyName || '')
+            setJobTitle(serverProfile.jobTitle || '')
+            setCompanySize(serverProfile.companySize || '')
+            setHiringVolume(serverProfile.hiringVolume || '')
+            setWorkEmail(serverProfile.workEmail || user.email || '')
+            saveAuthProfile(user.uid, serverProfile)
+          })
+          .catch(() => {
+            // Local cache already populated.
+          })
 
         // Load Custom Settings if saved in localStorage
         try {
@@ -167,8 +185,23 @@ export default function SettingsPage() {
         updatedAtIso: new Date().toISOString()
       }
 
-      // 3. Save to localStorage
-      saveAuthProfile(authUser.uid, updatedProfile)
+      const response = await authFetch('/account/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: updatedProfile.fullName,
+          company_name: updatedProfile.companyName,
+          job_title: updatedProfile.jobTitle,
+          company_size: updatedProfile.companySize,
+          hiring_volume: updatedProfile.hiringVolume,
+          work_email: updatedProfile.workEmail,
+        }),
+      })
+      if (!response.ok) {
+        throw new Error(await response.text())
+      }
+      const data = await response.json()
+      saveAuthProfile(authUser.uid, normalizeAuthProfile(data?.profile || updatedProfile))
 
       showNotification('Profile and organization details saved successfully.')
     } catch (err) {

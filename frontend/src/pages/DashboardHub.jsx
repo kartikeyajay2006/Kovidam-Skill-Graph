@@ -3,7 +3,9 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
-import { loadAuthProfile } from '../utils/authProfile';
+import { loadAuthProfile, normalizeAuthProfile } from '../utils/authProfile';
+import { authFetch } from '../utils/api';
+import { isAdminEmail } from '../utils/admin';
 import {
   Users, 
   Briefcase, 
@@ -16,8 +18,6 @@ import {
   Activity,
   Trash2
 } from 'lucide-react';
-
-import { authFetch } from '../utils/api';
 
 export default function DashboardHub() {
   const navigate = useNavigate();
@@ -66,12 +66,24 @@ export default function DashboardHub() {
 
   React.useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      const profile = loadAuthProfile(user?.uid)
-      setViewerName(user?.displayName || profile.fullName || user?.email || 'Not signed in')
-      setCompanyName(profile.companyName || 'No company linked')
+      const cachedProfile = normalizeAuthProfile(loadAuthProfile(user?.uid))
+      setViewerName(user?.displayName || cachedProfile.fullName || user?.email || 'Not signed in')
+      setCompanyName(isAdminEmail(user?.email) ? 'Platform Admin' : (cachedProfile.companyName || 'No company linked'))
       
       // Fetch metrics once auth state is determined
       if (user) {
+        authFetch('/account/profile')
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.profile) {
+              const profile = normalizeAuthProfile(data.profile)
+              setViewerName(user?.displayName || profile.fullName || user?.email || 'Not signed in')
+              setCompanyName(isAdminEmail(user?.email) ? 'Platform Admin' : (profile.companyName || 'No company linked'))
+            }
+          })
+          .catch(() => {
+            // Cached profile already populated.
+          })
         authFetch('/hiring/dashboard-metrics')
           .then(res => res.json())
           .then(data => {
