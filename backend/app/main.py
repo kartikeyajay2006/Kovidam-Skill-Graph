@@ -254,7 +254,7 @@ def _serialize_profile(profile: OrganizationProfile | None, auth: AuthContext) -
             "user_id": auth.user_id,
             "auth_email": defaults["work_email"],
             "status": "active",
-            "credits": 10,
+            "credits": _default_profile_credits(auth),
             "last_seen_at": None,
             "created_at": None,
             "updated_at": None,
@@ -276,6 +276,10 @@ def _serialize_profile(profile: OrganizationProfile | None, auth: AuthContext) -
         "created_at": profile.created_at.isoformat(timespec="milliseconds") if profile.created_at else None,
         "updated_at": profile.updated_at.isoformat(timespec="milliseconds") if profile.updated_at else None,
     }
+
+
+def _default_profile_credits(auth: AuthContext) -> int:
+    return 10
 
 
 def _shortlist_count_from_payload(payload: dict) -> int:
@@ -496,6 +500,7 @@ async def upsert_account_profile(payload: AccountProfilePayload, request: Reques
                 company_size=payload.company_size.strip(),
                 hiring_volume=payload.hiring_volume.strip(),
                 status="active",
+                credits=_default_profile_credits(auth),
                 last_seen_at=now,
             )
             db.add(profile)

@@ -116,6 +116,9 @@ export default function SettingsPage() {
     return () => unsub()
   }, [])
 
+  const billingCreditsLabel = isAdmin ? 'Unlimited' : `${credits} credits`
+  const billingPlanLabel = isAdmin ? 'Admin account' : '10 free credits on signup'
+
   // Sync active tab with URL query parameter
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -743,10 +746,10 @@ export default function SettingsPage() {
                   <div className="pricing-balance-banner">
                     <div className="pricing-balance-info">
                       <h3>Active Resume Balance</h3>
-                      <p>Used to parse candidate GitHub context, run semantic search & calculate fit scores.</p>
+                      <p>{isAdmin ? 'Admin accounts are not charged for shortlist runs.' : 'Used to parse candidate GitHub context, run semantic search & calculate fit scores.'}</p>
                     </div>
                     <div className="pricing-balance-value">
-                      {credits} credits
+                      {billingCreditsLabel}
                     </div>
                   </div>
 
@@ -760,7 +763,7 @@ export default function SettingsPage() {
                       <div className="pricing-price-wrapper">
                         <span className="pricing-price">FREE</span>
                       </div>
-                      <p className="custom-price-note" style={{ minHeight: '3rem' }}>Start testing with 10 FREE analyses (included on signup)</p>
+                      <p className="custom-price-note" style={{ minHeight: '3rem' }}>{billingPlanLabel}</p>
                       <ul className="pricing-features-list">
                         <li className="pricing-feature-item"><Check size={14} /> AI Resume Scoring</li>
                         <li className="pricing-feature-item"><Check size={14} /> GitHub & Project Analysis</li>

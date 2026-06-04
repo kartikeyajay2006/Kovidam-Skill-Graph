@@ -54,7 +54,7 @@ export default function DashboardNavbar() {
 
   const displayName = authUser?.displayName || profile.fullName || authUser?.email || 'Not signed in'
   const companyLabel = profile.companyName || 'No company linked'
-  const adminLabel = isAdmin ? 'Platform Admin' : companyLabel
+  const adminLabel = isAdmin ? 'Platform Admin · Unlimited' : companyLabel
 
   const handleSignOut = async () => {
     try {

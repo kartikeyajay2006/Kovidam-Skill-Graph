@@ -31,6 +31,31 @@ def test_create_order_insufficient_params(auth_context):
         )
         assert response.status_code == 422
 
+
+def test_account_profile_defaults_to_free_trial_credits(auth_context):
+    with patch("app.main.authenticate_request", return_value=auth_context), \
+         patch("app.main.SessionLocal") as mock_session_local:
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_session_local.return_value = mock_db
+
+        response = client.put(
+            "/account/profile",
+            headers={"Authorization": "Bearer test-token"},
+            json={
+                "full_name": "Test User",
+                "company_name": "Test Co",
+                "job_title": "Recruiter",
+                "company_size": "1-10",
+                "hiring_volume": "1-5",
+                "work_email": "test@example.com",
+            },
+        )
+
+        assert response.status_code == 200
+        added_profile = mock_db.add.call_args[0][0]
+        assert added_profile.credits == 10
+
 @patch("razorpay.Client")
 def test_create_order_success(mock_razorpay_client, auth_context):
     # Setup mock razorpay response
