@@ -21,9 +21,8 @@ export default function DashboardLayout() {
         <main style={{ 
           flex: 1, 
           width: '100%', 
-          maxWidth: '1400px', 
-          margin: '0 auto', 
-          padding: '120px 2rem 2rem 2rem', /* Padding top accounts for fixed header */
+          maxWidth: '100%', 
+          padding: '120px 3rem 2rem 3rem', /* Padding top accounts for fixed header */
           zIndex: 10, 
           color: 'white',
           display: 'flex',

@@ -16,9 +16,23 @@ export default function DashboardNavbar() {
   const [profile, setProfile] = useState({})
   const [scrolled, setScrolled] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isParsing, setIsParsing] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const AUTH_UI_DEBUG = import.meta.env.VITE_AUTH_UI_DEBUG === 'true'
+
+  const fetchProfile = React.useCallback(() => {
+    if (auth.currentUser) {
+      authFetch('/account/profile')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.profile) {
+            setProfile((prev) => ({ ...prev, ...normalizeAuthProfile(data.profile) }))
+          }
+        })
+        .catch(() => {})
+    }
+  }, [])
 
   React.useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -26,23 +40,27 @@ export default function DashboardNavbar() {
       setIsAdmin(isAdminEmail(user?.email))
       setProfile(normalizeAuthProfile(loadAuthProfile(user?.uid)))
       if (user) {
-        authFetch('/account/profile')
-          .then((res) => (res.ok ? res.json() : null))
-          .then((data) => {
-            if (data?.profile) {
-              setProfile((prev) => ({ ...prev, ...normalizeAuthProfile(data.profile) }))
-            }
-          })
-          .catch(() => {
-            // Keep the local profile fallback if the backend profile lookup fails.
-          })
-      }
-      if (AUTH_UI_DEBUG) {
-        console.info('[auth-ui] navbar_auth_state', { uid: user?.uid || null })
+        fetchProfile()
       }
     })
     return () => unsub()
-  }, [AUTH_UI_DEBUG])
+  }, [fetchProfile])
+
+  React.useEffect(() => {
+    fetchProfile()
+    const handleStart = () => setIsParsing(true)
+    const handleEnd = () => setIsParsing(false)
+    
+    window.addEventListener('profile-update', fetchProfile)
+    window.addEventListener('shortlist-start', handleStart)
+    window.addEventListener('shortlist-end', handleEnd)
+    
+    return () => {
+      window.removeEventListener('profile-update', fetchProfile)
+      window.removeEventListener('shortlist-start', handleStart)
+      window.removeEventListener('shortlist-end', handleEnd)
+    }
+  }, [fetchProfile, location.pathname])
 
   useEffect(() => {
     const handleScroll = () => {
@@ -142,24 +160,58 @@ export default function DashboardNavbar() {
           <div style={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>{displayName}</div>
           <div style={{ color: '#94a3b8', fontSize: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
             <span>{adminLabel}</span>
-            {!isAdmin && (
-              <span 
-                style={{ 
-                  background: 'rgba(99, 102, 241, 0.15)', 
-                  color: '#818cf8', 
-                  padding: '2px 6px', 
-                  borderRadius: '4px', 
-                  fontWeight: 800, 
-                  fontSize: '0.65rem',
-                  border: '1px solid rgba(99, 102, 241, 0.3)',
-                  cursor: 'pointer'
-                }}
-                onClick={() => navigate('/dashboard/settings?tab=billing')}
-                title="Remaining credits. Click to buy more."
-              >
-                {profile.credits ?? 10} Cr
-              </span>
-            )}
+            {!isAdmin && (() => {
+              const currentCredits = profile.credits ?? 10;
+              const maxCredits = currentCredits <= 10 ? 10 : (currentCredits <= 100 ? 100 : (currentCredits <= 250 ? 250 : (currentCredits <= 500 ? 500 : 1000)));
+              const percentage = isParsing ? 100 : Math.min(100, Math.max(0, (currentCredits / maxCredits) * 100));
+              const midTick = Math.max(0, currentCredits - 1);
+              return (
+                <div 
+                  className="credits-cylinder-widget" 
+                  onClick={() => navigate('/dashboard/settings?tab=billing')}
+                  title={`Remaining credits: ${currentCredits} / ${maxCredits}. Click to buy more.`}
+                  style={{ display: 'inline-flex', marginLeft: '8px' }}
+                >
+                  <div className="cylinder-glass-container">
+                    <div 
+                      className="cylinder-liquid-fill" 
+                      style={{ 
+                        height: `${percentage}%`,
+                        background: isParsing 
+                          ? 'linear-gradient(to top, #10b981, #34d399, #6ee7b7)' 
+                          : 'linear-gradient(to top, #4f46e5, #818cf8, #a78bfa)',
+                        boxShadow: isParsing 
+                          ? '0 0 10px rgba(52, 211, 153, 0.9)' 
+                          : '0 0 10px rgba(129, 140, 248, 0.9)'
+                      }} 
+                    >
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '2px',
+                        background: 'rgba(255, 255, 255, 0.8)',
+                        borderRadius: '50% 50% 0 0',
+                        boxShadow: '0 0 4px #ffffff'
+                      }} />
+                    </div>
+                    <div className="cylinder-glass-highlight" />
+                    <div className="cylinder-tick tick-top">{currentCredits}</div>
+                    <div className="cylinder-tick tick-mid">{midTick}</div>
+                    <div className="cylinder-tick tick-bottom">0</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', lineHeight: 1.1 }}>
+                    <span style={{ color: '#e2e8f0', fontSize: '0.78rem', fontWeight: 800 }}>
+                      {isParsing ? 'Parsing...' : `${currentCredits} Cr`}
+                    </span>
+                    <span style={{ color: '#64748b', fontSize: '0.55rem', fontWeight: 650 }}>
+                      cap: {maxCredits}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
         <motion.button 

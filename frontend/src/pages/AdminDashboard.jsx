@@ -253,6 +253,13 @@ export default function AdminDashboard() {
 
   const statCards = [
     {
+      label: 'Total collections',
+      value: `₹${formatCount(summary.total_collections || 0)}`,
+      icon: Flame,
+      subtext: 'Gross revenue collected via Razorpay',
+      accentClass: 'accent-green',
+    },
+    {
       label: 'Companies signed up',
       value: formatCount(summary.total_companies),
       icon: Building2,
@@ -264,7 +271,7 @@ export default function AdminDashboard() {
       value: formatCount(summary.active_companies),
       icon: ShieldCheck,
       subtext: 'Workspaces with recent activity',
-      accentClass: 'accent-green',
+      accentClass: 'accent-cyan',
     },
     {
       label: 'Total candidates',
@@ -285,7 +292,7 @@ export default function AdminDashboard() {
       value: formatCount(summary.total_shortlisted_resumes),
       icon: FileCheck2,
       subtext: 'Total ranked candidates returned',
-      accentClass: 'accent-cyan',
+      accentClass: 'accent-indigo',
     },
   ]
 
@@ -462,6 +469,18 @@ export default function AdminDashboard() {
                   <strong>{selectedCompany.work_email || 'Not provided'}</strong>
                 </div>
                 <div className="admin-detail-card">
+                  <span>Purchased plan(s)</span>
+                  <strong style={{ textTransform: 'capitalize' }}>
+                    {selectedCompany.purchased_plans && selectedCompany.purchased_plans.length > 0
+                      ? selectedCompany.purchased_plans.join(', ')
+                      : 'None'}
+                  </strong>
+                </div>
+                <div className="admin-detail-card">
+                  <span>Total spent</span>
+                  <strong>₹{formatCount(selectedCompany.total_spent || 0)}</strong>
+                </div>
+                <div className="admin-detail-card">
                   <span>Hiring volume</span>
                   <strong>{selectedCompany.hiring_volume || 'Not provided'}</strong>
                 </div>
@@ -472,6 +491,15 @@ export default function AdminDashboard() {
               </div>
 
               <div className="admin-metric-stack">
+                <div className="admin-mini-metric">
+                  <div>
+                    <span>Credit balance</span>
+                    <strong style={{ color: '#818cf8' }}>{selectedCompany.credits ?? 10} Cr</strong>
+                  </div>
+                  <div className="admin-mini-metric__icon" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8' }}>
+                    <Flame size={16} />
+                  </div>
+                </div>
                 <div className="admin-mini-metric">
                   <div>
                     <span>Candidates</span>

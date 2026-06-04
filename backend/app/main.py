@@ -34,6 +34,7 @@ from app.models.schema import (
     CandidateGithubCommit,
     ShortlistRun,
     OrganizationProfile,
+    PaymentTransaction,
 )
 from app.services.transformer import transform_resume_data
 from app.services.db_writer import save_to_db
@@ -331,6 +332,17 @@ def _build_company_summary(db, profile: OrganizationProfile) -> dict:
 
     last_activity = profile.updated_at or profile.last_seen_at or last_shortlist_at or profile.created_at
 
+    transactions = (
+        db.query(PaymentTransaction)
+        .filter(
+            PaymentTransaction.tenant_id == profile.tenant_id,
+            PaymentTransaction.user_id == profile.user_id,
+        )
+        .all()
+    )
+    total_spent = sum(t.amount for t in transactions)
+    purchased_plans = list(set(t.plan_id for t in transactions))
+
     return {
         **_serialize_profile(profile, AuthContext(user_id=profile.user_id, tenant_id=profile.tenant_id, role="viewer", claims={"email": profile.auth_email})),
         "company_name": profile.company_name or "",
@@ -343,6 +355,8 @@ def _build_company_summary(db, profile: OrganizationProfile) -> dict:
         "latest_role": latest_role,
         "recent_shortlists": recent_shortlists[:5],
         "is_active": bool(last_activity),
+        "total_spent": total_spent,
+        "purchased_plans": purchased_plans,
     }
 
 
@@ -761,6 +775,7 @@ async def admin_overview(request: Request):
         total_shortlists = sum(company["shortlist_count"] for company in companies)
         total_shortlisted_resumes = sum(company["total_shortlisted_resumes"] for company in companies)
         active_companies = sum(1 for company in companies if company["is_active"])
+        total_collections = sum(company.get("total_spent", 0) for company in companies)
         recent_shortlists = []
         for company in companies:
             for shortlist in company.get("recent_shortlists", []):
@@ -780,6 +795,7 @@ async def admin_overview(request: Request):
                 "total_candidates": total_candidates,
                 "total_shortlists": total_shortlists,
                 "total_shortlisted_resumes": total_shortlisted_resumes,
+                "total_collections": total_collections,
             },
             "companies": companies,
             "recent_shortlists": recent_shortlists[:15],
@@ -3804,19 +3820,36 @@ async def verify_razorpay_payment(payload: VerifyPaymentRequest, request: Reques
     if not hmac.compare_digest(generated, payload.razorpay_signature):
         raise HTTPException(status_code=400, detail="Payment signature verification failed. Mismatch.")
         
-    # Calculate credits
+    # Calculate credits and price
     plan_id = payload.plan_id
     credits_purchased = payload.credits
+    price_rs = 0
     if plan_id in PLAN_PRICES:
         credits_purchased = PLAN_PRICES[plan_id]["credits"]
+        price_rs = PLAN_PRICES[plan_id]["price_rs"]
     elif plan_id == "individual":
         if credits_purchased < 5:
             raise HTTPException(status_code=400, detail="Invalid credit purchase amount.")
+        price_rs = credits_purchased * 20
     else:
         raise HTTPException(status_code=400, detail="Invalid plan ID.")
         
     db_session = SessionLocal()
     try:
+        # Create transaction record
+        tx = PaymentTransaction(
+            id=str(uuid.uuid4()),
+            tenant_id=auth.tenant_id,
+            user_id=auth.user_id,
+            email=auth.claims.get("email") or "unknown@kovidam.co.in",
+            payment_id=payload.razorpay_payment_id,
+            order_id=payload.razorpay_order_id,
+            plan_id=plan_id,
+            amount=price_rs,
+            credits=credits_purchased
+        )
+        db_session.add(tx)
+
         profile = (
             db_session.query(OrganizationProfile)
             .filter(

@@ -67,6 +67,26 @@ def _auto_fix_legacy_constraints(conn) -> None:
             """
         )
     )
+
+    # Create payment_transactions table if it does not exist
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS payment_transactions (
+                id VARCHAR(255) PRIMARY KEY,
+                tenant_id VARCHAR(255) NOT NULL,
+                user_id VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                payment_id VARCHAR(255) NOT NULL,
+                order_id VARCHAR(255) NOT NULL,
+                plan_id VARCHAR(255) NOT NULL,
+                amount INTEGER NOT NULL,
+                credits INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+    )
     print("[DB] Legacy constraint check complete.")
 
 

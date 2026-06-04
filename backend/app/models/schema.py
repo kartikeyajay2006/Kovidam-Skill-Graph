@@ -209,3 +209,21 @@ candidate_github_summary = CandidateGithubSummary
 candidate_github_commits = CandidateGithubCommit
 shortlist_runs = ShortlistRun
 organization_profiles = OrganizationProfile
+
+
+class PaymentTransaction(Base):
+    __tablename__ = "payment_transactions"
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    payment_id = Column(String, nullable=False)
+    order_id = Column(String, nullable=False)
+    plan_id = Column(String, nullable=False)
+    amount = Column(Integer, nullable=False) # Rupees
+    credits = Column(Integer, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+payment_transactions = PaymentTransaction
+

@@ -363,6 +363,7 @@ export default function SettingsPage() {
             if (verifyData.success) {
               saveAuthProfile(authUser.uid, verifyData.profile)
               setCredits(verifyData.profile.credits ?? 10)
+              window.dispatchEvent(new Event('profile-update'))
               showNotification(`Successfully purchased ${orderData.credits} credits!`, 'success')
             }
           } catch (verifyErr) {

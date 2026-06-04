@@ -205,6 +205,7 @@ export function ShortlistProvider({ children }) {
     setLoadingElapsedSec(0);
     setLoadingStageIdx(0);
     setStep(3);
+    window.dispatchEvent(new Event('shortlist-start'));
 
     const data = new FormData();
     const clientTraceId =
@@ -265,6 +266,8 @@ export function ShortlistProvider({ children }) {
       if (progressTimerRef.current) clearInterval(progressTimerRef.current);
       progressTimerRef.current = null;
       setLoading(false);
+      window.dispatchEvent(new Event('shortlist-end'));
+      window.dispatchEvent(new Event('profile-update'));
     }
   }, [formData, requiredSkills, mustHaveSkills, autoSendEmails, notifyShortlistCompletion, notifyShortlistFailure, historicalRerunContext]);
 
