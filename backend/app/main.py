@@ -43,10 +43,52 @@ from app.utils.hash_utils import generate_resume_hash
 from app.schemas.shortlist_response import ShortlistResponse
 from app.integrations.qdrant import QdrantResumeIndex
 from app.core.security import AUTH_REQUIRED, AuthContext, authenticate_request
+import razorpay
+
 
 load_environment()
 logger = logging.getLogger("kovidam.shortlist")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+RAZORPAY_CLIENT: razorpay.Client | None = None
+
+
+def _initialize_razorpay_client() -> None:
+    """Create one shared Razorpay client for the whole process."""
+    global RAZORPAY_CLIENT
+
+    if RAZORPAY_CLIENT is not None:
+        return
+
+    if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
+        logger.warning("razorpay_credentials_missing_on_startup")
+        return
+
+    try:
+        client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
+        if hasattr(client, "enable_retry"):
+            client.enable_retry(True)
+        else:
+            logger.warning("razorpay_retry_not_supported_by_installed_sdk")
+        RAZORPAY_CLIENT = client
+        logger.info("razorpay_client_initialized")
+    except Exception:
+        logger.exception("razorpay_client_initialization_failed")
+
+
+def _log_razorpay_connectivity() -> None:
+    """Probe Razorpay once at startup and log whether the API is reachable."""
+    if RAZORPAY_CLIENT is None:
+        logger.warning("razorpay_connectivity_check_skipped_client_not_initialized")
+        return
+
+    try:
+        RAZORPAY_CLIENT.order.all({"count": 1})
+        logger.info("razorpay_connectivity_check_passed")
+    except Exception as exc:
+        logger.warning("razorpay_connectivity_check_failed: %s", exc)
 
 # Limit in-process resume parsing concurrency. Default: 2 at a time.
 RESUME_CONCURRENCY = max(1, int(os.getenv("RESUME_CONCURRENCY", "2")))
@@ -91,6 +133,8 @@ async def _lifespan(_: FastAPI):
         init_db()
         qdrant_status = qdrant_index.init_collection()
         _json_log("qdrant_init", qdrant_status)
+        _initialize_razorpay_client()
+        _log_razorpay_connectivity()
     except Exception:
         logger.exception("database_initialization_failed")
         raise
@@ -3759,9 +3803,7 @@ PLAN_PRICES = {
 @app.post("/api/create-order")
 async def create_razorpay_order(payload: CreateOrderRequest, request: Request):
     auth = _get_auth_context(request)
-    key_id = os.getenv("RAZORPAY_KEY_ID")
-    key_secret = os.getenv("RAZORPAY_KEY_SECRET")
-    if not key_id or not key_secret:
+    if RAZORPAY_CLIENT is None or not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
         raise HTTPException(status_code=500, detail="Razorpay credentials not configured on backend.")
     
     plan_id = payload.plan_id
@@ -3780,20 +3822,18 @@ async def create_razorpay_order(payload: CreateOrderRequest, request: Request):
     amount_paise = price_rs * 100
     
     try:
-        import razorpay
-        client = razorpay.Client(auth=(key_id, key_secret))
         order_data = {
             "amount": amount_paise,
             "currency": "INR",
             "receipt": f"rcpt_{uuid.uuid4().hex[:12]}",
         }
-        order = client.order.create(data=order_data)
+        order = RAZORPAY_CLIENT.order.create(data=order_data)
         return {
             "order_id": order["id"],
             "amount": order["amount"],
             "currency": order["currency"],
             "credits": credits_to_buy,
-            "key_id": key_id,
+            "key_id": RAZORPAY_KEY_ID,
         }
     except Exception as e:
         logger.exception("razorpay_order_creation_failed")
