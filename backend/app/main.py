@@ -3819,7 +3819,9 @@ async def create_razorpay_order(payload: CreateOrderRequest, request: Request):
     else:
         raise HTTPException(status_code=400, detail="Invalid plan ID.")
         
-    amount_paise = price_rs * 100
+    platform_fee = price_rs * 0.02
+    total_price_rs = price_rs + platform_fee
+    amount_paise = int(round(total_price_rs * 100))
     
     try:
         order_data = {
@@ -3874,6 +3876,9 @@ async def verify_razorpay_payment(payload: VerifyPaymentRequest, request: Reques
     else:
         raise HTTPException(status_code=400, detail="Invalid plan ID.")
         
+    platform_fee = price_rs * 0.02
+    total_price_rs = price_rs + platform_fee
+    
     db_session = SessionLocal()
     try:
         # Create transaction record
@@ -3885,7 +3890,7 @@ async def verify_razorpay_payment(payload: VerifyPaymentRequest, request: Reques
             payment_id=payload.razorpay_payment_id,
             order_id=payload.razorpay_order_id,
             plan_id=plan_id,
-            amount=price_rs,
+            amount=int(round(total_price_rs)),
             credits=credits_purchased
         )
         db_session.add(tx)

@@ -56,18 +56,17 @@ def test_account_profile_defaults_to_free_trial_credits(auth_context):
         added_profile = mock_db.add.call_args[0][0]
         assert added_profile.credits == 10
 
-@patch("razorpay.Client")
-def test_create_order_success(mock_razorpay_client, auth_context):
+def test_create_order_success(auth_context):
     # Setup mock razorpay response
     mock_rzp_instance = MagicMock()
     mock_rzp_instance.order.create.return_value = {
         "id": "order_test123",
-        "amount": 170000,
+        "amount": 173400,
         "currency": "INR"
     }
-    mock_razorpay_client.return_value = mock_rzp_instance
 
-    with patch("app.main.authenticate_request", return_value=auth_context):
+    with patch("app.main.RAZORPAY_CLIENT", mock_rzp_instance), \
+         patch("app.main.authenticate_request", return_value=auth_context):
         # Call create-order for starter plan
         response = client.post(
             "/api/create-order",
@@ -77,7 +76,7 @@ def test_create_order_success(mock_razorpay_client, auth_context):
         assert response.status_code == 200
         data = response.json()
         assert data["order_id"] == "order_test123"
-        assert data["amount"] == 170000
+        assert data["amount"] == 173400
         assert data["currency"] == "INR"
         assert data["credits"] == 100
 
@@ -120,3 +119,7 @@ def test_verify_payment_success(mock_compare_digest, auth_context):
         data = response.json()
         assert data["success"] is True
         assert data["profile"]["credits"] == 110  # 10 initial + 100 starter credits
+        
+        # Verify transaction record was added with 2% platform fee (1700 * 1.02 = 1734)
+        added_tx = mock_db.add.call_args[0][0]
+        assert added_tx.amount == 1734

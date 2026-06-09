@@ -754,6 +754,13 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  <div className="portability-info-box" style={{ marginBottom: '2rem', background: 'rgba(129, 140, 248, 0.05)', borderColor: 'rgba(129, 140, 248, 0.15)' }}>
+                    <Info size={16} className="info-icon" style={{ color: '#818cf8' }} />
+                    <p style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.8rem' }}>
+                      A <strong>2% platform fee</strong> will be added to the transaction amount at checkout.
+                    </p>
+                  </div>
+
                   <div className="pricing-cards-grid">
                     {/* 1. FREE TRIAL */}
                     <div className="pricing-card">
