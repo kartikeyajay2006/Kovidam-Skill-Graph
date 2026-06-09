@@ -16,7 +16,8 @@ import {
   Search,
   ArrowRight,
   Activity,
-  Trash2
+  Trash2,
+  AlertCircle
 } from 'lucide-react';
 
 export default function DashboardHub() {
@@ -32,6 +33,7 @@ export default function DashboardHub() {
   const [deletingId, setDeletingId] = React.useState(null);
   const [viewerName, setViewerName] = React.useState('Not signed in');
   const [companyName, setCompanyName] = React.useState('No company linked');
+  const [profile, setProfile] = React.useState(null);
 
   const formatDate = (dateString) => {
     if (!dateString || dateString === "Recently") return "Recently";
@@ -63,6 +65,38 @@ export default function DashboardHub() {
       return dateString;
     }
   };
+
+  React.  // Fetch pending credit status on mount
+  useEffect(() => {
+    // Load overview first
+    const loadOverview = () => {
+      authFetch('/hiring/dashboard-metrics')
+        .then(res => res.json())
+        .then(data => {
+          if (data.metrics) {
+            setMetricsData(data.metrics);
+          }
+          if (data.recent_shortlists) {
+            setRecentShortlists(data.recent_shortlists);
+          }
+        })
+        .catch(err => console.error("Error fetching dashboard metrics:", err))
+        .finally(() => setLoading(false));
+    };
+
+    // Load overview first
+    loadOverview();
+    // Then fetch user profile for pending flag
+    authFetch('/account/profile')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (data?.profile) {
+          setProfile(data.profile);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
