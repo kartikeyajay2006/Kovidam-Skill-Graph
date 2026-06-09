@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  Activity,
+  Activity, AlertCircle,
   ArrowLeft,
   BarChart3,
   Briefcase,
@@ -590,6 +590,49 @@ export default function AdminDashboard() {
             </div>
           )}
         </motion.aside>
+
+{/* ----- Pending Credit Purchases ----- */}
+<motion.section
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: 0.4 }}
+  className="glass-panel"
+  style={{ padding: '2rem', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '2rem' }}
+>
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+    <h3 style={{ margin: 0, fontSize: '1.35rem', color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <AlertCircle size={22} color="#facc15" /> Pending Credit Purchases
+    </h3>
+  </div>
+  <div className="admin-activity-list" style={{ display: 'grid', gap: '1rem' }}>
+    {overview?.pending_transactions?.map((tx) => (
+      <div key={tx.id} style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <strong>{tx.email || 'Unknown user'}</strong> – {tx.credits} credits – ₹{formatCount(tx.amount)}
+          <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{formatDate(tx.created_at)}</div>
+        </div>
+        <button
+          className="btn-premium btn-primary"
+          style={{ padding: '0.5rem 1rem' }}
+          onClick={async () => {
+            const ok = window.confirm('Approve this credit purchase?');
+            if (!ok) return;
+            const resp = await authFetch(`/admin/approve-transaction/${tx.id}`, { method: 'POST' });
+            if (resp.ok) {
+              alert('Approved!');
+              loadOverview();
+            } else {
+              const err = await resp.text();
+              alert('Failed: ' + err);
+            }
+          }}
+        >
+          Approve
+        </button>
+      </div>
+    ))}
+  </div>
+</motion.section>
       </section>
 
       <motion.section

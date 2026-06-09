@@ -290,8 +290,16 @@ def _profile_defaults(auth: AuthContext) -> dict:
     }
 
 
-def _serialize_profile(profile: OrganizationProfile | None, auth: AuthContext) -> dict:
+def _serialize_profile(profile: OrganizationProfile | None, auth: AuthContext, db = None) -> dict:
     defaults = _profile_defaults(auth)
+    has_pending_transactions = False
+    if db and profile:
+        has_pending_transactions = db.query(PaymentTransaction).filter(
+            PaymentTransaction.tenant_id == profile.tenant_id,
+            PaymentTransaction.user_id == profile.user_id,
+            PaymentTransaction.status == "pending"
+        ).first() is not None
+
     if not profile:
         return {
             "id": None,
@@ -303,6 +311,7 @@ def _serialize_profile(profile: OrganizationProfile | None, auth: AuthContext) -
             "last_seen_at": None,
             "created_at": None,
             "updated_at": None,
+            "has_pending_transactions": has_pending_transactions,
             **defaults,
         }
     return {
@@ -320,6 +329,7 @@ def _serialize_profile(profile: OrganizationProfile | None, auth: AuthContext) -
         "last_seen_at": profile.last_seen_at.isoformat(timespec="milliseconds") if profile.last_seen_at else None,
         "created_at": profile.created_at.isoformat(timespec="milliseconds") if profile.created_at else None,
         "updated_at": profile.updated_at.isoformat(timespec="milliseconds") if profile.updated_at else None,
+        "has_pending_transactions": has_pending_transactions,
     }
 
 
@@ -388,7 +398,7 @@ def _build_company_summary(db, profile: OrganizationProfile) -> dict:
     purchased_plans = list(set(t.plan_id for t in transactions))
 
     return {
-        **_serialize_profile(profile, AuthContext(user_id=profile.user_id, tenant_id=profile.tenant_id, role="viewer", claims={"email": profile.auth_email})),
+        **_serialize_profile(profile, AuthContext(user_id=profile.user_id, tenant_id=profile.tenant_id, role="viewer", claims={"email": profile.auth_email}), db),
         "company_name": profile.company_name or "",
         "work_email": profile.auth_email or "",
         "candidate_count": candidate_count,
@@ -511,7 +521,7 @@ async def get_account_profile(request: Request):
         if profile:
             profile.last_seen_at = datetime.now(timezone.utc)
             db.commit()
-        return {"profile": _serialize_profile(profile, auth)}
+        return {"profile": _serialize_profile(profile, auth, db)}
     except Exception:
         db.rollback()
         logger.exception("failed_to_fetch_account_profile")
@@ -565,7 +575,7 @@ async def upsert_account_profile(payload: AccountProfilePayload, request: Reques
 
         db.commit()
         db.refresh(profile)
-        return {"profile": _serialize_profile(profile, auth)}
+        return {"profile": _serialize_profile(profile, auth, db)}
     except HTTPException:
         db.rollback()
         raise
@@ -832,6 +842,28 @@ async def admin_overview(request: Request):
                     }
                 )
         recent_shortlists.sort(key=lambda item: item.get("date") or "", reverse=True)
+        pending_transactions = (
+            db.query(PaymentTransaction)
+            .filter(PaymentTransaction.status == "pending")
+            .order_by(PaymentTransaction.created_at.desc())
+            .all()
+        )
+        pending_txs = [
+            {
+                "id": tx.id,
+                "tenant_id": tx.tenant_id,
+                "user_id": tx.user_id,
+                "email": tx.email,
+                "payment_id": tx.payment_id,
+                "order_id": tx.order_id,
+                "plan_id": tx.plan_id,
+                "amount": tx.amount,
+                "credits": tx.credits,
+                "created_at": tx.created_at.isoformat() if tx.created_at else None,
+                "status": tx.status,
+            }
+            for tx in pending_transactions
+        ]
         return {
             "summary": {
                 "total_companies": len(companies),
@@ -843,6 +875,7 @@ async def admin_overview(request: Request):
             },
             "companies": companies,
             "recent_shortlists": recent_shortlists[:15],
+            "pending_transactions": pending_txs,
         }
     except HTTPException:
         raise
@@ -888,6 +921,55 @@ async def admin_company_detail(user_id: str, request: Request):
     except Exception:
         logger.exception("failed_to_fetch_admin_company_detail")
         raise HTTPException(status_code=500, detail="Failed to fetch company detail")
+    finally:
+        db.close()
+
+
+@app.post("/admin/approve-transaction/{tx_id}")
+async def approve_transaction(tx_id: str, request: Request):
+    db = SessionLocal()
+    auth = _get_auth_context(request)
+    _require_admin(auth)
+    try:
+        tx = db.query(PaymentTransaction).filter(PaymentTransaction.id == tx_id).first()
+        if not tx:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        
+        if tx.status == "approved":
+            return {"success": True, "message": "Transaction already approved"}
+            
+        tx.status = "approved"
+        
+        profile = (
+            db.query(OrganizationProfile)
+            .filter(
+                OrganizationProfile.tenant_id == tx.tenant_id,
+                OrganizationProfile.user_id == tx.user_id,
+            )
+            .first()
+        )
+        if profile:
+            profile.credits = getattr(profile, "credits", 10) + tx.credits
+        else:
+            profile = OrganizationProfile(
+                id=str(uuid.uuid4()),
+                tenant_id=tx.tenant_id,
+                user_id=tx.user_id,
+                auth_email=tx.email,
+                status="active",
+                credits=10 + tx.credits,
+            )
+            db.add(profile)
+            
+        db.commit()
+        return {"success": True, "message": "Credits approved successfully"}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.exception("failed_to_approve_transaction")
+        raise HTTPException(status_code=500, detail=f"Failed to approve transaction: {str(e)}")
     finally:
         db.close()
 
@@ -3891,7 +3973,8 @@ async def verify_razorpay_payment(payload: VerifyPaymentRequest, request: Reques
             order_id=payload.razorpay_order_id,
             plan_id=plan_id,
             amount=int(round(total_price_rs)),
-            credits=credits_purchased
+            credits=credits_purchased,
+            status="pending"
         )
         db_session.add(tx)
 
@@ -3903,26 +3986,23 @@ async def verify_razorpay_payment(payload: VerifyPaymentRequest, request: Reques
             )
             .first()
         )
-        if profile:
-            profile.credits = getattr(profile, "credits", 10) + credits_purchased
-            db_session.commit()
-            db_session.refresh(profile)
-        else:
+        if not profile:
             profile = OrganizationProfile(
                 id=str(uuid.uuid4()),
                 tenant_id=auth.tenant_id,
                 user_id=auth.user_id,
                 auth_email=auth.claims.get("email") or "unknown@kovidam.co.in",
                 status="active",
-                credits=10 + credits_purchased,
+                credits=10,
             )
             db_session.add(profile)
-            db_session.commit()
-            db_session.refresh(profile)
+            
+        db_session.commit()
+        db_session.refresh(profile)
             
         return {
             "success": True,
-            "profile": _serialize_profile(profile, auth)
+            "profile": _serialize_profile(profile, auth, db_session)
         }
     except Exception as e:
         db_session.rollback()

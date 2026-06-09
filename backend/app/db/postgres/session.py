@@ -87,6 +87,13 @@ def _auto_fix_legacy_constraints(conn) -> None:
             """
         )
     )
+    conn.execute(
+        text(
+            """
+            ALTER TABLE payment_transactions ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending';
+            """
+        )
+    )
     print("[DB] Legacy constraint check complete.")
 
 
