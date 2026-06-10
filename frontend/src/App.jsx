@@ -18,6 +18,7 @@ import ProductPage from './pages/ProductPage'
 import FeaturesPage from './pages/FeaturesPage'
 import SettingsPage from './pages/SettingsPage'
 import AdminRoute from './components/AdminRoute'
+import ProtectedRoute from './components/ProtectedRoute'
 import AdminDashboard from './pages/AdminDashboard'
 import './App.css'
 
@@ -50,16 +51,18 @@ function App() {
       </Route>
 
       {/* Core Web App / Dashboard Pages */}
-      <Route path="/dashboard" element={<DashboardLayout />}>
-        <Route index element={<DashboardHub />} />
-        <Route path="shortlist" element={<ShortlistPage />} />
-        <Route path="history" element={<AllShortlistsPage />} />
-        <Route path="history/:traceId" element={<PastShortlistPage />} />
-        <Route path="search" element={<SemanticSearchPage />} />
-        <Route path="candidate/:id" element={<PlaceholderPage title="Candidate Profile" />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route element={<AdminRoute />}>
-          <Route path="admin" element={<AdminDashboard />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path="/dashboard" element={<DashboardLayout />}>
+          <Route index element={<DashboardHub />} />
+          <Route path="shortlist" element={<ShortlistPage />} />
+          <Route path="history" element={<AllShortlistsPage />} />
+          <Route path="history/:traceId" element={<PastShortlistPage />} />
+          <Route path="search" element={<SemanticSearchPage />} />
+          <Route path="candidate/:id" element={<PlaceholderPage title="Candidate Profile" />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route element={<AdminRoute />}>
+            <Route path="admin" element={<AdminDashboard />} />
+          </Route>
         </Route>
       </Route>
     </Routes>

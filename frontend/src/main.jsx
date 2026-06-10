@@ -16,7 +16,8 @@ window.fetch = async (input, init = {}) => {
   } catch {
     pathname = requestUrl
   }
-  const isBackendRoute = pathname.startsWith('/hiring') || pathname.startsWith('/resume')
+  const backendPrefixes = ['/hiring', '/resume', '/account', '/admin', '/chat', '/api', '/debug']
+  const isBackendRoute = backendPrefixes.some(prefix => pathname.startsWith(prefix))
   if (!isBackendRoute) {
     return originalFetch(input, init)
   }
