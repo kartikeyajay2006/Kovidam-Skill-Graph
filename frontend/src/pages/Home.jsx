@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { useMotionValue, useScroll, useTransform, motion, useMotionValueEvent } from 'framer-motion'
+import { useMotionValue, useScroll, useTransform, motion, useMotionValueEvent, AnimatePresence } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { onAuthStateChanged } from 'firebase/auth'
-import { auth } from '../firebase'
+import { auth, authReady } from '../firebase'
 import { isAdminEmail } from '../utils/admin'
+import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import HeroLeft from '../components/HeroLeft'
 import HeroRight from '../components/HeroRight'
 
@@ -14,14 +14,27 @@ import '../components/HomeSections.css'
 
 export default function Home() {
   const navigate = useNavigate()
+  const [checkingAuth, setCheckingAuth] = useState(true)
+  const [redirecting, setRedirecting] = useState(false)
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        navigate(isAdminEmail(user.email) ? '/dashboard/admin' : '/dashboard', { replace: true })
+    let active = true
+    authReady.then(() => {
+      if (!active) return
+      if (auth.currentUser) {
+        setRedirecting(true)
+        setTimeout(() => {
+          if (active) {
+            navigate(isAdminEmail(auth.currentUser.email) ? '/dashboard/admin' : '/dashboard', { replace: true })
+          }
+        }, 800)
+      } else {
+        setCheckingAuth(false)
       }
     })
-    return () => unsub()
+    return () => {
+      active = false
+    }
   }, [navigate])
 
   const mouseX = useMotionValue(0)
@@ -100,6 +113,124 @@ export default function Home() {
 
   return (
     <div className="home-scroll-container">
+      <AnimatePresence>
+        {checkingAuth && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.6, ease: "easeInOut" }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '100vh',
+              width: '100vw',
+              backgroundColor: '#0b0f19',
+              color: '#f8fafc',
+              fontFamily: "'Outfit', sans-serif",
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              zIndex: 99999,
+              overflow: 'hidden'
+            }}
+          >
+            {/* Animated Glow Background */}
+            <motion.div 
+              animate={{
+                scale: [1, 1.15, 1],
+                opacity: [0.15, 0.25, 0.15]
+              }}
+              transition={{
+                duration: 3,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+              style={{
+                position: 'absolute',
+                width: '400px',
+                height: '400px',
+                background: 'radial-gradient(circle, rgba(99, 102, 241, 0.3) 0%, rgba(139, 92, 246, 0) 70%)',
+                filter: 'blur(50px)',
+                zIndex: 1
+              }} 
+            />
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+                style={{ marginBottom: '2rem', position: 'relative' }}
+              >
+                {/* Rotating outer ring */}
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                  style={{
+                    position: 'absolute',
+                    top: -10,
+                    left: -10,
+                    right: -10,
+                    bottom: -10,
+                    borderRadius: '50%',
+                    border: '2px solid transparent',
+                    borderTopColor: '#6366f1',
+                    borderBottomColor: '#a78bfa',
+                    opacity: 0.8
+                  }}
+                />
+                <img 
+                  src={logoCroppedTight} 
+                  alt="Logo" 
+                  style={{ 
+                    width: '64px', 
+                    height: '64px', 
+                    display: 'block',
+                    filter: 'drop-shadow(0 0 10px rgba(99, 102, 241, 0.5))'
+                  }} 
+                />
+              </motion.div>
+
+              <motion.h2
+                initial={{ y: 10, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.2, duration: 0.4 }}
+                style={{ 
+                  margin: 0, 
+                  fontSize: '1.5rem', 
+                  fontWeight: 700, 
+                  letterSpacing: '1px',
+                  background: 'linear-gradient(to right, #f8fafc, #cbd5e1)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  textShadow: '0 2px 10px rgba(0,0,0,0.3)'
+                }}
+              >
+                KOVI<span style={{ color: '#818cf8' }}>दम्</span>
+              </motion.h2>
+
+              <motion.p
+                key={redirecting ? 'redirecting' : 'checking'}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                transition={{ duration: 0.3 }}
+                style={{ 
+                  margin: '0.75rem 0 0 0', 
+                  fontSize: '0.95rem', 
+                  color: redirecting ? '#a78bfa' : '#94a3b8',
+                  fontWeight: redirecting ? 600 : 400,
+                  letterSpacing: '0.5px'
+                }}
+              >
+                {redirecting ? 'Welcome back! Opening your workspace...' : 'Connecting to security gateway...'}
+              </motion.p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* MASTER 1000vh Cinematic Scroll Sequence Container */}
       <div 
