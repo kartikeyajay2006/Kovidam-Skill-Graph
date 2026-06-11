@@ -2,7 +2,7 @@ import React from 'react'
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { signInWithEmailAndPassword, signInWithPopup, onAuthStateChanged } from 'firebase/auth'
+import { signInWithEmailAndPassword, signInWithPopup, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
 import { auth, googleProvider } from '../firebase'
 import { isAdminEmail } from '../utils/admin'
@@ -41,6 +41,7 @@ export default function Login() {
     setIsLoading(true)
 
     try {
+      await setPersistence(auth, browserLocalPersistence)
       const cred = await signInWithEmailAndPassword(auth, email, password)
       if (AUTH_UI_DEBUG) {
         console.info('[auth-ui] login_success_email', { uid: cred.user.uid, email: cred.user.email })
@@ -57,6 +58,7 @@ export default function Login() {
     setError('')
     setIsLoading(true)
     try {
+      await setPersistence(auth, browserLocalPersistence)
       const cred = await signInWithPopup(auth, googleProvider)
       if (AUTH_UI_DEBUG) {
         console.info('[auth-ui] login_success_google', { uid: cred.user.uid, email: cred.user.email })

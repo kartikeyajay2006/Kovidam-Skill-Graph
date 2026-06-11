@@ -2,7 +2,7 @@ import React from 'react'
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { createUserWithEmailAndPassword, signInWithPopup, updateProfile, onAuthStateChanged } from 'firebase/auth'
+import { createUserWithEmailAndPassword, signInWithPopup, updateProfile, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
 import { auth, googleProvider } from '../firebase'
 import { saveAuthProfile, normalizeAuthProfile } from '../utils/authProfile'
@@ -95,6 +95,7 @@ export default function Signup() {
     setIsLoading(true)
 
     try {
+      await setPersistence(auth, browserLocalPersistence)
       const cred = await createUserWithEmailAndPassword(auth, email, password)
       if (fullName.trim()) {
         await updateProfile(cred.user, { displayName: fullName.trim() })
@@ -126,6 +127,7 @@ export default function Signup() {
     }
     setIsLoading(true)
     try {
+      await setPersistence(auth, browserLocalPersistence)
       const cred = await signInWithPopup(auth, googleProvider)
       if (fullName.trim() && !cred.user.displayName) {
         await updateProfile(cred.user, { displayName: fullName.trim() })

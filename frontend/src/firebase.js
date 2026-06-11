@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAnalytics, isSupported } from 'firebase/analytics'
-import { GoogleAuthProvider, getAuth, onAuthStateChanged } from 'firebase/auth'
+import { GoogleAuthProvider, getAuth, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -14,6 +14,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 const auth = getAuth(app)
+
+// Explicitly set persistence to local to ensure sessions survive tab closures
+setPersistence(auth, browserLocalPersistence)
+  .catch((err) => {
+    console.warn('[firebase] Failed to set local persistence:', err)
+  })
+
 const googleProvider = new GoogleAuthProvider()
 const AUTH_UI_DEBUG = import.meta.env.VITE_AUTH_UI_DEBUG === 'true'
 const authReady = new Promise((resolve) => {
