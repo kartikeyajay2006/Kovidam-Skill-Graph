@@ -1,8 +1,8 @@
 import React from 'react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { createUserWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth'
+import { createUserWithEmailAndPassword, signInWithPopup, updateProfile, onAuthStateChanged } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
 import { auth, googleProvider } from '../firebase'
 import { saveAuthProfile, normalizeAuthProfile } from '../utils/authProfile'
@@ -13,6 +13,15 @@ import './Auth.css'
 
 export default function Signup() {
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        navigate(isAdminEmail(user.email) ? '/dashboard/admin' : '/dashboard', { replace: true })
+      }
+    })
+    return () => unsub()
+  }, [navigate])
   const [fullName, setFullName] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [jobTitle, setJobTitle] = useState('')

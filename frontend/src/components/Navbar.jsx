@@ -1,13 +1,33 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Home, Sparkles, Zap, Info, Mail } from 'lucide-react'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { auth } from '../firebase'
+import { isAdminEmail } from '../utils/admin'
 import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import './Navbar.css'
 
 export default function Navbar() {
   const [isHovered, setIsHovered] = useState(false)
+  const [user, setUser] = useState(null)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser || null)
+    })
+    return () => unsub()
+  }, [])
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth)
+      navigate('/')
+    } catch (err) {
+      console.error('[auth-ui] navbar signout failed', err)
+    }
+  }
   
   const navItems = [
     { name: 'Home', icon: Home, path: '/' },
@@ -64,32 +84,56 @@ export default function Navbar() {
       </motion.nav>
 
       <div className="header-action" style={{ display: 'flex', gap: '10px' }}>
-        <motion.button 
-          className="btn-premium btn-primary btn-sm"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => navigate('/contact')}
-        >
-          Book a Demo
-        </motion.button>
-        <motion.button
-          className="btn-premium btn-sm"
-          style={{ background: 'rgba(79, 70, 229, 0.22)', border: '1px solid rgba(129,140,248,0.35)', color: 'white' }}
-          whileHover={{ scale: 1.02, background: 'rgba(79, 70, 229, 0.35)' }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => navigate('/signup')}
-        >
-          Sign Up
-        </motion.button>
-        <motion.button 
-          className="btn-premium btn-sm"
-          style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white' }}
-          whileHover={{ scale: 1.02, background: 'rgba(255,255,255,0.2)' }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => navigate('/login')}
-        >
-          Login
-        </motion.button>
+        {user ? (
+          <>
+            <motion.button 
+              className="btn-premium btn-primary btn-sm"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => navigate(isAdminEmail(user.email) ? '/dashboard/admin' : '/dashboard')}
+            >
+              Go to Dashboard
+            </motion.button>
+            <motion.button 
+              className="btn-premium btn-sm"
+              style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white' }}
+              whileHover={{ scale: 1.02, background: 'rgba(255,255,255,0.2)' }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleSignOut}
+            >
+              Sign Out
+            </motion.button>
+          </>
+        ) : (
+          <>
+            <motion.button 
+              className="btn-premium btn-primary btn-sm"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => navigate('/contact')}
+            >
+              Book a Demo
+            </motion.button>
+            <motion.button
+              className="btn-premium btn-sm"
+              style={{ background: 'rgba(79, 70, 229, 0.22)', border: '1px solid rgba(129,140,248,0.35)', color: 'white' }}
+              whileHover={{ scale: 1.02, background: 'rgba(79, 70, 229, 0.35)' }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => navigate('/signup')}
+            >
+              Sign Up
+            </motion.button>
+            <motion.button 
+              className="btn-premium btn-sm"
+              style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: 'white' }}
+              whileHover={{ scale: 1.02, background: 'rgba(255,255,255,0.2)' }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => navigate('/login')}
+            >
+              Login
+            </motion.button>
+          </>
+        )}
       </div>
     </header>
   )

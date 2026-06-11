@@ -1,8 +1,8 @@
 import React from 'react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth'
+import { signInWithEmailAndPassword, signInWithPopup, onAuthStateChanged } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
 import { auth, googleProvider } from '../firebase'
 import { isAdminEmail } from '../utils/admin'
@@ -11,6 +11,15 @@ import './Auth.css'
 
 export default function Login() {
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        navigate(isAdminEmail(user.email) ? '/dashboard/admin' : '/dashboard', { replace: true })
+      }
+    })
+    return () => unsub()
+  }, [navigate])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)

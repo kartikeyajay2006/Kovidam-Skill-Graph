@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMotionValue, useScroll, useTransform, motion, useMotionValueEvent } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { onAuthStateChanged } from 'firebase/auth'
+import { auth } from '../firebase'
+import { isAdminEmail } from '../utils/admin'
 import HeroLeft from '../components/HeroLeft'
 import HeroRight from '../components/HeroRight'
 
@@ -9,6 +13,17 @@ import Footer from '../components/Footer'
 import '../components/HomeSections.css'
 
 export default function Home() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        navigate(isAdminEmail(user.email) ? '/dashboard/admin' : '/dashboard', { replace: true })
+      }
+    })
+    return () => unsub()
+  }, [navigate])
+
   const mouseX = useMotionValue(0)
   const mouseY = useMotionValue(0)
   
