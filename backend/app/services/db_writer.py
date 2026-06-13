@@ -105,8 +105,11 @@ def save_to_db(
                 codechef_username=cand_data.get("codechef_username") or None,
                 atcoder_username=cand_data.get("atcoder_username") or None,
                 kaggle_username=cand_data.get("kaggle_username") or None,
+                email=cand_data.get("email") or None,
+                phone=cand_data.get("phone") or None,
             )
             db.add(candidate_record)
+
 
         # 2. jobs (ALWAYS INSERTED for new evaluations)
         job_data = structured_data.get("job") or {}

@@ -37,6 +37,45 @@ def extract_candidate_email(extracted: dict[str, Any]) -> str | None:
     return None
 
 
+PHONE_REGEX = re.compile(
+    r"\+?\b[0-9]{1,4}[-.\s]?\(?[0-9]{2,4}\)?[-.\s]?[0-9]{3,4}[-.\s]?[0-9]{3,4}\b"
+)
+
+
+def extract_candidate_phone(extracted: dict[str, Any]) -> str | None:
+    data = extracted or {}
+    preferred_sources = [
+        str(data.get("raw_text_full") or ""),
+        str(data.get("raw_text_preview") or ""),
+        str((data.get("contact") or {}).get("phone") or ""),
+        str((data.get("contact") or {}).get("mobile") or ""),
+    ]
+    for text in preferred_sources:
+        for match in PHONE_REGEX.finditer(text):
+            num = match.group(0).strip()
+            digits = re.sub(r"[^\d+]", "", num)
+            digit_count = sum(c.isdigit() for c in digits)
+            if 10 <= digit_count <= 14:
+                # Ensure it's not a standard date format like YYYY-MM-DD
+                if not (len(num) == 10 and num[4] == '-' and num[7] == '-'):
+                    return digits
+
+    # Fallback: scan the full extracted payload for any phone token.
+    try:
+        payload_text = json.dumps(data, ensure_ascii=False)
+    except Exception:
+        payload_text = str(data)
+    for match in PHONE_REGEX.finditer(payload_text):
+        num = match.group(0).strip()
+        digits = re.sub(r"[^\d+]", "", num)
+        digit_count = sum(c.isdigit() for c in digits)
+        if 10 <= digit_count <= 14:
+            if not (len(num) == 10 and num[4] == '-' and num[7] == '-'):
+                return digits
+    return None
+
+
+
 def build_interview_link(base_url: str, *, email: str, role: str, company_name: str, position_title: str) -> str:
     base = (base_url or "").strip()
     if not base:

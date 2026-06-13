@@ -28,8 +28,11 @@ class Candidate(Base):
     codechef_username = Column(String)
     atcoder_username = Column(String)
     kaggle_username = Column(String)
+    email = Column(String)
+    phone = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
 
 
 class Job(Base):

@@ -11,10 +11,15 @@ import {
   Activity,
   FileText,
   Info,
-  FilePlus
+  FilePlus,
+  FileSpreadsheet,
+  Mail,
+  Phone
 } from 'lucide-react';
 
 import { authFetch } from '../utils/api';
+import * as XLSX from 'xlsx';
+
 
 export default function PastShortlistPage() {
   const { traceId } = useParams();
@@ -37,6 +42,34 @@ export default function PastShortlistPage() {
   const addMoreFileInputRef = useRef(null);
   const targetHeadcount = 3; // Default or fetched from config
   const addMoreFileInputId = 'add-more-resumes-input';
+
+  const handleExportSheets = () => {
+    if (!results || !results.shortlisted) return;
+    const data = results.shortlisted.map((c) => ({
+      "Rank": c.rank || "",
+      "Candidate Name": c.filename ? c.filename.replace(/\.[^/.]+$/, "") : "Unknown",
+      "Email": c.email || "N/A",
+      "Phone Number": c.phone || "N/A",
+      "Fit Score": c.fit_score_100 ? `${c.fit_score_100.toFixed(2)}%` : "0%",
+      "Experience (Years)": c.experience?.candidate_years !== undefined ? c.experience.candidate_years.toFixed(1) : "0"
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const colWidths = [
+      { wch: 6 },
+      { wch: 30 },
+      { wch: 30 },
+      { wch: 20 },
+      { wch: 12 },
+      { wch: 20 }
+    ];
+    worksheet['!cols'] = colWidths;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Shortlisted Candidates");
+    XLSX.writeFile(workbook, `shortlisted_candidates_${results.trace_id || 'export'}.xlsx`);
+  };
+
 
   useEffect(() => {
     authFetch(`/hiring/shortlist/${traceId}`)
@@ -300,6 +333,27 @@ export default function PastShortlistPage() {
                 <span style={{ background: 'rgba(52, 211, 153, 0.1)', color: '#34d399', padding: '0.5rem 1rem', borderRadius: '100px', fontSize: '1rem', fontWeight: '600' }}>
                   {results.counts?.ranked || 0} Found
                 </span>
+                {results.shortlisted?.length > 0 && (
+                  <motion.button 
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleExportSheets}
+                    className="btn-premium"
+                    style={{ 
+                      padding: '0.65rem 1rem', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '0.5rem', 
+                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.15))',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      color: '#34d399',
+                      fontSize: '0.95rem'
+                    }}
+                  >
+                    <FileSpreadsheet size={18} />
+                    Export to Sheets
+                  </motion.button>
+                )}
                 <button
                   type="button"
                   className="btn-premium"
@@ -310,6 +364,7 @@ export default function PastShortlistPage() {
                   Add More Resumes
                 </button>
               </div>
+
             </div>
 
             {typeof document !== 'undefined'
@@ -662,6 +717,25 @@ export default function PastShortlistPage() {
                                 style={{ overflow: 'hidden', padding: '0 2rem' }}
                               >
                                 <div style={{ padding: '2rem', background: 'rgba(0,0,0,0.25)', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', borderTop: 'none', marginBottom: '1.5rem' }}>
+                                  {(c.email || c.phone) && (
+                                    <div style={{ marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '1.25rem' }}>
+                                      <h4 style={{ color: '#818cf8', marginBottom: '0.75rem', marginTop: 0, fontSize: '1.1rem' }}>Contact Information</h4>
+                                      <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                                        {c.email && (
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+                                            <Mail size={16} color="#34d399" />
+                                            <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{c.email}</span>
+                                          </div>
+                                        )}
+                                        {c.phone && (
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+                                            <Phone size={16} color="#34d399" />
+                                            <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{c.phone}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
                                   <h4 style={{ color: '#818cf8', marginBottom: '1.5rem', marginTop: 0, fontSize: '1.1rem' }}>Score Breakdown</h4>
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', fontSize: '1rem' }}>
                                     {c.ranking_decision_log?.candidate_metrics && Object.entries(c.ranking_decision_log.candidate_metrics).map(([key, value]) => {
@@ -746,6 +820,25 @@ export default function PastShortlistPage() {
                                       style={{ overflow: 'hidden', padding: '0 2rem' }}
                                     >
                                       <div style={{ padding: '2rem', background: 'rgba(0,0,0,0.25)', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', borderTop: 'none', marginBottom: '1.5rem' }}>
+                                        {(c.email || c.phone) && (
+                                          <div style={{ marginBottom: '1.5rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '1.25rem' }}>
+                                            <h4 style={{ color: '#818cf8', marginBottom: '0.75rem', marginTop: 0, fontSize: '1.1rem' }}>Contact Information</h4>
+                                            <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                                              {c.email && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+                                                  <Mail size={16} color="#34d399" />
+                                                  <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{c.email}</span>
+                                                </div>
+                                              )}
+                                              {c.phone && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1rem' }}>
+                                                  <Phone size={16} color="#34d399" />
+                                                  <span style={{ color: '#e2e8f0', fontWeight: '500' }}>{c.phone}</span>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
                                         <h4 style={{ color: '#818cf8', marginBottom: '1.5rem', marginTop: 0, fontSize: '1.1rem' }}>Score Breakdown</h4>
                                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', fontSize: '1rem' }}>
                                           {c.ranking_decision_log?.candidate_metrics && Object.entries(c.ranking_decision_log.candidate_metrics).map(([key, value]) => {

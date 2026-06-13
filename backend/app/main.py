@@ -38,7 +38,7 @@ from app.models.schema import (
 )
 from app.services.transformer import transform_resume_data
 from app.services.db_writer import save_to_db
-from app.services.shortlist_notifier import send_shortlist_notifications
+from app.services.shortlist_notifier import send_shortlist_notifications, extract_candidate_email, extract_candidate_phone
 from app.utils.hash_utils import generate_resume_hash
 from app.schemas.shortlist_response import ShortlistResponse
 from app.integrations.qdrant import QdrantResumeIndex
@@ -1051,9 +1051,12 @@ async def get_past_shortlist(trace_id: str, request: Request):
                 "experience": {
                     "candidate_years": cand.work_experience_years or 0.0,
                     "meets_min_experience": (cand.work_experience_years or 0.0) >= (job.min_experience_years or 0.0)
-                }
+                },
+                "email": getattr(cand, "email", None),
+                "phone": getattr(cand, "phone", None),
             }
             shortlisted.append(candidate_summary)
+
 
         # Sort shortlisted by fit score desc
         shortlisted.sort(key=lambda x: x["fit_score_100"], reverse=True)
@@ -2872,6 +2875,9 @@ def _summarize_candidate_for_table(candidate: dict) -> dict:
     fit = candidate.get("fit", {}) or {}
     decision_log = fit.get("ranking_decision_log", {}) or {}
     experience = fit.get("experience", {}) or {}
+    extracted = candidate.get("extracted", {}) or {}
+    email = extract_candidate_email(extracted) or candidate.get("email")
+    phone = extract_candidate_phone(extracted) or candidate.get("phone")
     summary = {
         "filename": candidate.get("filename"),
         "rank": candidate.get("rank"),
@@ -2884,8 +2890,11 @@ def _summarize_candidate_for_table(candidate: dict) -> dict:
             "required_min_years": experience.get("required_min_years"),
             "quality_meta": experience.get("quality_meta", {}),
         },
+        "email": email,
+        "phone": phone,
     }
     return summary
+
 
 
 def _top_ranking_insights(shortlisted: list[dict], rejected: list[dict]) -> list[str]:

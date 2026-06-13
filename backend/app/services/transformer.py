@@ -1,7 +1,9 @@
 import logging
 from typing import Any, Dict, List
+from app.services.shortlist_notifier import extract_candidate_email, extract_candidate_phone
 
 logger = logging.getLogger(__name__)
+
 
 
 def _safe_float(val: Any, default: Any = None) -> Any:
@@ -55,6 +57,10 @@ def transform_resume_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
         if not exp_years or exp_years == "N/A":
             exp_years = raw_data.get("fit", {}).get("experience", {}).get("candidate_years")
 
+        # Extract email and phone
+        email = extract_candidate_email(c_data)
+        phone = extract_candidate_phone(c_data)
+
         candidate = {
             "filename": raw_data.get("filename") or raw_data.get("source_filename") or None,
             "work_experience_years": _safe_float(exp_years),
@@ -64,7 +70,10 @@ def transform_resume_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
             "codechef_username": profiles.get("codechef_username") or None,
             "atcoder_username": profiles.get("atcoder_username") or None,
             "kaggle_username": profiles.get("kaggle_username") or None,
+            "email": email,
+            "phone": phone,
         }
+
 
         # 3. Candidate Scores
         fit = raw_data.get("fit") or {}
