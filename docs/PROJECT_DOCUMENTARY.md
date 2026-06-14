@@ -1934,7 +1934,7 @@ Use this checklist during release readiness, QA signoff, and enterprise demos.
 30. Verify circular ring appears around Kovidam Team intro text.
 31. Verify team cards slide in sequentially (staggered).
 32. Verify team member names and roles match current founder data.
-33. Verify Varun card does not include removed title.
+33. Verify Chitwan card does not include removed title.
 34. Verify third member displays Vikram J Purohit.
 35. Verify all three team cards include Co-Founder where expected.
 36. Verify public pages share same global home background style.

@@ -16,11 +16,11 @@ const members = [
     expertise: ['GenAI', 'Python', 'Ruby', 'Database Management', 'AWS', 'Backend Development', 'Data Analysis'],
   },
   {
-    id: 'varun',
-    name: 'Varun Patil',
+    id: 'chitwan',
+    name: 'Chitwan Patel',
     focus: 'Operations and Delivery',
     roles: ['Chief Operating Officer (COO)', 'Co-Founder'],
-    bio1: 'Varun specializes in building robust and scalable backend systems using Java. He focuses on clean architecture, efficient code, and reliable APIs.',
+    bio1: 'Chitwan specializes in building robust and scalable backend systems using Java. He focuses on clean architecture, efficient code, and reliable APIs.',
     bio2: 'Driven by problem-solving and performance optimization, he delivers stable, secure, and maintainable solutions aligned with both client and business goals.',
     expertise: ['Java', 'Data Analysis', 'Backend Architecture', 'API Development', 'System Design'],
   },
@@ -364,7 +364,7 @@ export default function TeamPage() {
                 <div className="team-card-head">
                   <div className="team-avatar-shell" aria-hidden="true">
                     <div className="team-avatar-ring">
-                      <span className="team-avatar-letter">{member.id === 'kartikeya' ? 'K' : 'V'}</span>
+                      <span className="team-avatar-letter">{member.name.charAt(0)}</span>
                     </div>
                     <div className="team-avatar-badge">
                       {member.id === 'kartikeya' ? <Code2 size={18} /> : <Crown size={18} />}
