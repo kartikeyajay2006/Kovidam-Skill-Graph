@@ -7,6 +7,7 @@ import { isAdminEmail } from '../utils/admin'
 import logoCroppedTight from '../assets/logo-cropped-tight.png'
 import HeroLeft from '../components/HeroLeft'
 import HeroRight from '../components/HeroRight'
+import HowToUse from '../components/HowToUse'
 
 import WhyKovidam from '../components/WhyKovidam'
 import Footer from '../components/Footer'
@@ -56,42 +57,31 @@ export default function Home() {
 
   // Animation values derived from absolute scroll position
   // Master sequence container: 1000vh
-  // 0 to 300vh: Hero -> Video morph
-  // 300vh to 450vh: Lens Pull transition to Why Kovidam
+  // 0 to 150vh: Hero section
+  // 150vh to 350vh: HowToUse card deck
+  // 350vh to 450vh: Transition to Why Kovidam
   // 450vh to 900vh: Why Kovidam horizontal scroll
   
-  // Hero text fades out, drifts up, and blurs
-  const heroOpacity = useTransform(scrollY, [vh * 0.2, vh * 1.5], [1, 0])
-  const heroY = useTransform(scrollY, [0, vh * 1.5], ["0px", "-60px"])
-  const heroBlur = useTransform(scrollY, [vh * 0.2, vh * 1.5], ["blur(0px)", "blur(10px)"])
+  // Hero text & neural system fade out
+  const heroOpacity = useTransform(scrollY, [vh * 0.2, vh * 1.2], [1, 0])
+  const heroY = useTransform(scrollY, [0, vh * 1.2], ["0px", "-60px"])
+  const heroBlur = useTransform(scrollY, [vh * 0.2, vh * 1.2], ["blur(0px)", "blur(10px)"])
+  const neuralLinesOpacity = useTransform(scrollY, [0, vh * 0.8], [1, 0])
+  const logoOpacity = useTransform(scrollY, [vh * 0.3, vh * 0.8], [1, 0])
   
-  // Video text fades in, drifts up, and un-blurs
-  const videoHeaderOpacity = useTransform(scrollY, [vh * 1.2, vh * 2.5], [0, 1])
-  const videoHeaderY = useTransform(scrollY, [vh * 1.2, vh * 2.5], ["60px", "0px"])
-  const videoHeaderBlur = useTransform(scrollY, [vh * 1.2, vh * 2.5], ["blur(10px)", "blur(0px)"])
+  // HowToUse section fades in then out
+  const howtoOpacity = useTransform(scrollY, [vh * 0.8, vh * 1.5, vh * 3.5, vh * 4.2], [0, 1, 1, 0])
+  const howtoScale = useTransform(scrollY, [vh * 0.8, vh * 1.5, vh * 3.5, vh * 4.2], [1.05, 1, 1, 0.92])
+  const howtoBlur = useTransform(scrollY, [vh * 0.8, vh * 1.5, vh * 3.5, vh * 4.2], ["blur(15px)", "blur(0px)", "blur(0px)", "blur(15px)"])
 
   // Scroll indicator disappears
   const indicatorOpacity = useTransform(scrollY, [0, vh * 0.5], [1, 0])
-  
-  // Right side morphing
-  const morphWidth = useTransform(scrollY, [vh * 0.5, vh * 2.5], ["240px", "800px"])
-  const morphHeight = useTransform(scrollY, [vh * 0.5, vh * 2.5], ["240px", "450px"])
-  const morphBorderRadius = useTransform(scrollY, [vh * 0.5, vh * 2.5], ["120px", "20px"])
-  
-  const logoOpacity = useTransform(scrollY, [vh * 0.5, vh * 1.2], [1, 0])
-  const videoContentOpacity = useTransform(scrollY, [vh * 1.8, vh * 2.5], [0, 1])
-  const neuralLinesOpacity = useTransform(scrollY, [0, vh * 1.0], [1, 0])
 
-  // Crossfade between Phase 1 (Hero/Video) and Phase 2 (Why Kovidam)
-  // Upgraded to a cinematic "lens pull" transition
-  const phase1Opacity = useTransform(scrollY, [vh * 3.5, vh * 4.5], [1, 0])
-  const phase1Scale = useTransform(scrollY, [vh * 3.5, vh * 4.5], [1, 0.8])
-  const phase1Blur = useTransform(scrollY, [vh * 3.5, vh * 4.5], ["blur(0px)", "blur(20px)"])
-  
-  const phase2Opacity = useTransform(scrollY, [vh * 3.5, vh * 4.5], [0, 1])
-  const phase2Scale = useTransform(scrollY, [vh * 3.5, vh * 4.5], [1.1, 1])
-  const phase2Blur = useTransform(scrollY, [vh * 3.5, vh * 4.5], ["blur(20px)", "blur(0px)"])
-  const phase2Y = useTransform(scrollY, [vh * 3.5, vh * 4.5], ["100px", "0px"])
+  // Crossfade between Phase 1+2 (Hero/HowToUse) and Phase 3 (Why Kovidam)  
+  const phase2Opacity = useTransform(scrollY, [vh * 3.8, vh * 4.5], [0, 1])
+  const phase2Scale = useTransform(scrollY, [vh * 3.8, vh * 4.5], [1.1, 1])
+  const phase2Blur = useTransform(scrollY, [vh * 3.8, vh * 4.5], ["blur(20px)", "blur(0px)"])
+  const phase2Y = useTransform(scrollY, [vh * 3.8, vh * 4.5], ["100px", "0px"])
   
   // Phase 2 Horizontal Scroll
   const whyKovidamX = useTransform(scrollY, [vh * 4.5, vh * 9.0], ["0vw", "-180vw"])
@@ -105,10 +95,21 @@ export default function Home() {
     return () => window.removeEventListener('mousemove', handleMouseMove)
   }, [mouseX, mouseY])
 
-  // Custom pointer events based on opacity
-  const [phase1Active, setPhase1Active] = useState(true)
-  useMotionValueEvent(phase1Opacity, "change", (latest) => {
-    setPhase1Active(latest > 0.1)
+  // Custom pointer events based on visibility
+  const [heroActive, setHeroActive] = useState(true)
+  const [howtoActive, setHowtoActive] = useState(false)
+  const [whyActive, setWhyActive] = useState(false)
+  
+  useMotionValueEvent(heroOpacity, "change", (latest) => {
+    setHeroActive(latest > 0.1)
+  })
+  
+  useMotionValueEvent(howtoOpacity, "change", (latest) => {
+    setHowtoActive(latest > 0.3)
+  })
+  
+  useMotionValueEvent(phase2Opacity, "change", (latest) => {
+    setWhyActive(latest > 0.1)
   })
 
   return (
@@ -240,34 +241,26 @@ export default function Home() {
       >
         <div className="sticky-viewport" style={{ position: 'sticky', top: 0, height: '100vh', overflow: 'hidden' }}>
           
-          {/* Phase 1: Hero & Video */}
+          {/* Layer 1: Hero (Neural System + Text) — Fades out first */}
           <motion.main 
             className="hero-container" 
             style={{ 
               height: '100%', 
-              opacity: phase1Opacity,
-              scale: phase1Scale,
-              filter: phase1Blur,
-              pointerEvents: phase1Active ? 'auto' : 'none'
+              opacity: heroOpacity,
+              filter: heroBlur,
+              pointerEvents: heroActive ? 'auto' : 'none'
             }}
           >
             <HeroLeft 
               heroOpacity={heroOpacity} 
               heroY={heroY}
               heroBlur={heroBlur}
-              videoHeaderOpacity={videoHeaderOpacity}
-              videoHeaderY={videoHeaderY}
-              videoHeaderBlur={videoHeaderBlur}
             />
             
             <HeroRight 
               mouseX={mouseX} 
               mouseY={mouseY} 
-              morphWidth={morphWidth}
-              morphHeight={morphHeight}
-              morphBorderRadius={morphBorderRadius}
               logoOpacity={logoOpacity}
-              videoContentOpacity={videoContentOpacity}
               neuralLinesOpacity={neuralLinesOpacity}
             />
           </motion.main>
@@ -281,7 +274,25 @@ export default function Home() {
             </div>
           </motion.div>
 
-          {/* Phase 2: Why Kovidam */}
+          {/* Layer 2: How to Use Kovidam — Fades in after hero, fades out before WhyKovidam */}
+          <motion.div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              opacity: howtoOpacity,
+              scale: howtoScale,
+              filter: howtoBlur,
+              pointerEvents: howtoActive && !whyActive ? 'auto' : 'none',
+              zIndex: 25,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <HowToUse scrollY={scrollY} vh={vh} />
+          </motion.div>
+
+          {/* Layer 3: Why Kovidam — Fades in last */}
           <motion.div
             style={{
               position: 'absolute',
@@ -290,7 +301,7 @@ export default function Home() {
               scale: phase2Scale,
               filter: phase2Blur,
               y: phase2Y,
-              pointerEvents: phase1Active ? 'none' : 'auto',
+              pointerEvents: whyActive ? 'auto' : 'none',
               zIndex: 30
             }}
           >

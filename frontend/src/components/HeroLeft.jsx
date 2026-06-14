@@ -66,26 +66,6 @@ export default function HeroLeft({
         </motion.div>
       </motion.div>
 
-      {/* Video Showcase Header - Fades in and shifts to final position */}
-      <motion.div
-        style={{
-          gridColumn: 1, 
-          gridRow: 1,
-          opacity: videoHeaderOpacity,
-          y: videoHeaderY,
-          filter: videoHeaderBlur,
-          pointerEvents: videoHeaderOpacity === 0 ? 'none' : 'auto'
-        }}
-      >
-        <div className="section-header" style={{ textAlign: 'left', marginBottom: 0 }}>
-          <h2 className="section-title">See Kovidam in Action</h2>
-          <p className="section-subtitle">
-            A quick 90-second overview of how we evaluate real skills<br/>
-            and deliver smarter shortlists.
-          </p>
-        </div>
-      </motion.div>
-
     </section>
   )
 }

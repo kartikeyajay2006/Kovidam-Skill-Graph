@@ -1,6 +1,5 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Play, Pause } from 'lucide-react'
 import SkillNode from './SkillNode'
 import logo from '../assets/logo.png'
 import './HeroRight.css'
@@ -8,14 +7,9 @@ import './HeroRight.css'
 export default function HeroRight({ 
   mouseX, 
   mouseY,
-  morphWidth,
-  morphHeight,
-  morphBorderRadius,
   logoOpacity,
-  videoContentOpacity,
   neuralLinesOpacity
 }) {
-  const [isPlaying, setIsPlaying] = useState(false)
   const radius = 240
   const skillLabels = [
     "Skill Graph AI",
@@ -116,71 +110,25 @@ export default function HeroRight({
         </div>
       </motion.div>
 
-      {/* 2. Seamless Morphing Container (Orb -> Video Player) */}
-      <motion.div 
-        className="video-container"
-        style={{ 
-          width: morphWidth,
-          height: morphHeight,
-          borderRadius: morphBorderRadius,
+      {/* 2. Central Logo Orb */}
+      <motion.div
+        style={{
+          width: '240px',
+          height: '240px',
+          borderRadius: '120px',
           background: 'var(--bg-glass)',
           border: '1px solid var(--border-glass)',
           boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)',
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          x: '-50%',
-          y: '-50%',
-          overflow: 'hidden',
           display: 'flex',
           justifyContent: 'center',
-          alignItems: 'center'
+          alignItems: 'center',
+          overflow: 'hidden',
+          position: 'relative',
+          opacity: logoOpacity
         }}
       >
-        {/* Initial Logo Content */}
-        <motion.div 
-          style={{ 
-            opacity: logoOpacity, 
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            pointerEvents: 'none'
-          }}
-        >
-          <div className="orb-inner-reflection" />
-          <img src={logo} alt="Kovidam AI" className="orb-dolphin" style={{ width: '120px', height: '120px' }} />
-        </motion.div>
-
-        {/* Final Video Content */}
-        <motion.div
-          style={{
-            opacity: videoContentOpacity,
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            pointerEvents: videoContentOpacity === 0 ? 'none' : 'auto'
-          }}
-        >
-          <button 
-            className="play-btn"
-            onClick={() => setIsPlaying(!isPlaying)}
-          >
-            {isPlaying ? <Pause size={32} /> : <Play size={32} />}
-          </button>
-          <div className="video-controls" style={{ position: 'absolute', bottom: 0, width: '100%', padding: '20px', display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            <span>{isPlaying ? '▶ 0:12 / 1:30' : '▶ 0:00 / 1:30'}</span>
-            <div className="controls-right" style={{ display: 'flex', gap: '15px' }}>
-              <span>⚙</span>
-              <span>⛶</span>
-            </div>
-          </div>
-        </motion.div>
-
+        <div className="orb-inner-reflection" />
+        <img src={logo} alt="Kovidam AI" className="orb-dolphin" style={{ width: '120px', height: '120px' }} />
       </motion.div>
 
     </section>
