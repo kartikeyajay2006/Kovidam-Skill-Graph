@@ -1722,3 +1722,18 @@
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 480px) {
+  .features-main-title { font-size: 1.8rem; }
+  .features-section { padding: 70px 4% 20px 4%; }
+  .features-grid-split { gap: 30px; }
+  .section-heading { font-size: 1.5rem; }
+  .glass-dashboard-wrapper { width: 100%; border-radius: 12px; }
+  .radial-progress-wrapper { width: 72px; height: 72px; }
+  .score-number-display .big-number { font-size: 1.4rem; }
+  .bottom-card { height: auto; }
+  .body-grid-bottom { grid-template-columns: 1fr; }
+  .body-grid-top { grid-template-columns: 1fr; }
+  .orbit-interactive-graphic { height: 60px; }
+  .node-icon-wrapper { width: 36px; height: 36px; }
+}

@@ -579,6 +579,7 @@
 
   .team-card h3 {
     font-size: 1.45rem;
+    text-align: center;
   }
 
   .team-card {
@@ -593,19 +594,78 @@
   .team-avatar-shell {
     display: grid;
     place-items: center;
+    margin-bottom: 8px;
   }
 
   .team-card-top {
     grid-template-columns: 1fr;
     gap: 7px;
+    justify-items: center;
   }
 
   .team-card-focus {
-    text-align: left;
+    text-align: center;
+    grid-column: 1 / -1;
+  }
+
+  .team-card-index {
+    text-align: center;
+    grid-column: 1 / -1;
+  }
+
+  .team-role-pills {
+    justify-content: center;
   }
 
   .team-footer-strip {
     border-radius: 22px;
     padding: 12px 14px;
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .about-team-page {
+    padding: 100px 14px 70px;
+  }
+
+  .team-avatar-ring {
+    width: 96px;
+    height: 96px;
+  }
+
+  .team-avatar-letter {
+    font-size: 2.2rem;
+  }
+
+  .team-avatar-badge {
+    width: 40px;
+    height: 40px;
+  }
+
+  .team-card h3 {
+    font-size: 1.25rem;
+  }
+
+  .team-bio-stack {
+    padding: 12px 14px;
+  }
+
+  .team-card p {
+    font-size: 0.95rem;
+  }
+
+  .team-tags {
+    justify-content: center;
+  }
+
+  .team-tags span {
+    font-size: 0.78rem;
+    padding: 6px 10px;
+  }
+
+  .about-hero-card h1 {
+    font-size: 2.2rem;
   }
 }

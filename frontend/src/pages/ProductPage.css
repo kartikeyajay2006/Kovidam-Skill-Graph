@@ -857,3 +857,18 @@
     display: none; /* Hide trust row dotted line on stacked screens */
   }
 }
+
+@media (max-width: 480px) {
+  .product-hero h1 { font-size: 1.8rem; }
+  .product-page { padding: 90px 10px 60px; }
+  .cosmos-globe { width: 240px; height: 240px; top: 70px; }
+  .cosmos-fit-card { width: 260px; bottom: -20px; padding: 12px; }
+  .cta-primary, .cta-secondary { font-size: 0.85rem; padding: 0 16px; height: 42px; }
+  .product-panel { padding: 16px; gap: 12px; }
+  .panel-user h3 { font-size: 1.3rem; }
+  .product-score-row { grid-template-columns: 1fr; }
+  .signal-card h3, .product-trust-card h4 { font-size: 1.15rem; }
+  .cosmos-center { height: 360px; }
+  .panel-user-avatar { width: 56px; height: 56px; }
+  .panel-title { margin: 0 0 10px; font-size: 0.75rem; }
+}

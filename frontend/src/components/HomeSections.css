@@ -431,3 +431,24 @@
     align-items: center;
   }
 }
+
+@media (max-width: 768px) {
+  .section-title { font-size: 2.2rem; }
+  .section-subtitle { font-size: 1rem; }
+  .home-section { padding: 80px 4vw; }
+  .video-brand-text { font-size: 1.5rem; }
+  .video-brand-text .sanskrit { font-size: 1.8rem; }
+  .footer-cta-title { font-size: 2.5rem; }
+  .footer-brand-image { height: 50px; left: -10px; }
+  .play-btn { width: 60px; height: 60px; }
+  .explore-btn { padding: 14px 0; font-size: 1rem; }
+}
+
+@media (max-width: 480px) {
+  .section-title { font-size: 1.8rem; }
+  .home-section { padding: 60px 4vw; }
+  .footer-cta-title { font-size: 2rem; }
+  .video-brand-image { height: 40px; }
+  .feature-icon-wrapper { width: 50px; height: 50px; }
+  .video-container { margin-bottom: 30px; }
+}
